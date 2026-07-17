@@ -27,10 +27,15 @@ secret-scan:
   script:
     - |
       if [ -n "${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}" ]; then
-        gitleaks detect --redact --no-banner -v --log-opts="${CI_MERGE_REQUEST_DIFF_BASE_SHA}..HEAD"
+        RANGE="--log-opts=${CI_MERGE_REQUEST_DIFF_BASE_SHA}..HEAD"      # MR: only the MR's commits
+      elif [ "${CI_PIPELINE_SOURCE:-}" = "schedule" ]; then
+        RANGE=""                                                        # scheduled: full-history audit
+      elif [ -n "${CI_COMMIT_BEFORE_SHA:-}" ] && ! printf '%s' "$CI_COMMIT_BEFORE_SHA" | grep -qE '^0+$'; then
+        RANGE="--log-opts=${CI_COMMIT_BEFORE_SHA}..${CI_COMMIT_SHA}"    # default branch: only new commits
       else
-        gitleaks detect --redact --no-banner -v
+        RANGE=""                                                        # first push / zero-sha: full scan
       fi
+      gitleaks detect --redact --no-banner -v $RANGE
 
 migration-guard:
   extends: .gate_base

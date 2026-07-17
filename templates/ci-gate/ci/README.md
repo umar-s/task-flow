@@ -15,6 +15,25 @@ replace) unit tests and LLM review.
 pip install pre-commit && pre-commit install   # catches secrets before push
 bash ci/gate.sh --staged                        # run the full gate on staged changes
 ```
+`gate.sh` uses a `gitleaks` on PATH, else fetches a pinned, checksum-verified
+binary via `ci/gitleaks-fetch.sh` (no docker needed).
+
+## CI variant (GitLab)
+Two include files ship — pick by your runner **executor**:
+- **docker / kubernetes** executor → `ci/ci-gate.gitlab-ci.yml` (uses `image:`).
+- **shell** executor → `ci/ci-gate.shell.gitlab-ci.yml`. On a shell runner
+  `image:` is ignored, so the docker variant won't run. The shell variant fetches
+  a pinned gitleaks in-job (no docker, no runner change) and needs a project
+  CI/CD variable `GATE_RUNNER_TAG` = your shell runner's tag.
+
+Secret-scan is **incremental**: MR → the MR's commits; default-branch push → only
+new commits; scheduled pipeline → full-history audit. Set up a pipeline schedule
+so the periodic full scan runs.
+
+## Pinned gitleaks (shell variant / local)
+`ci/gitleaks-fetch.sh` pins a version + a **committed** SHA256 (the trust anchor).
+A frozen scanner goes stale — bump `PIN_VERSION` + both SHA256s together from the
+release `checksums.txt`, and keep `.pre-commit-config.yaml`'s `rev` in step.
 
 ## migration-guard policy
 On any changed file under a migrations dir:

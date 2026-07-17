@@ -1,0 +1,56 @@
+# ci-gate — SHELL-executor variant for GitLab.
+#
+# Use this instead of ci-gate.gitlab-ci.yml when your runner uses the `shell`
+# executor: there `image:` is IGNORED and jobs run directly on the host, so the
+# Docker variant silently won't run. This variant needs no docker and no runner
+# changes — gitleaks is fetched as a pinned, checksum-verified binary in-job
+# (ci/gitleaks-fetch.sh), which also avoids putting the runner in the docker
+# group (docker socket access on a shell runner ≈ host root).
+#
+# Setup:
+#   include: [ { local: 'ci/ci-gate.shell.gitlab-ci.yml' } ]
+#   Set a project CI/CD variable  GATE_RUNNER_TAG = <your shell runner's tag>.
+#   Host needs: git, bash, grep, curl (or wget), tar, sha256sum (or shasum).
+
+.gate_base_shell:
+  stage: .pre
+  tags: ["$GATE_RUNNER_TAG"]
+  variables:
+    GIT_DEPTH: 0            # full history: MR base + before-sha must be reachable
+  interruptible: true
+
+secret-scan:
+  extends: .gate_base_shell
+  rules:
+    - if: '$CI_MERGE_REQUEST_IID'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  script:
+    - GL="$(bash ci/gitleaks-fetch.sh)"
+    - |
+      if [ -n "${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}" ]; then
+        RANGE="--log-opts=${CI_MERGE_REQUEST_DIFF_BASE_SHA}..HEAD"      # MR: only the MR's commits
+      elif [ "${CI_PIPELINE_SOURCE:-}" = "schedule" ]; then
+        RANGE=""                                                        # scheduled: full-history audit
+      elif [ -n "${CI_COMMIT_BEFORE_SHA:-}" ] && ! printf '%s' "$CI_COMMIT_BEFORE_SHA" | grep -qE '^0+$'; then
+        RANGE="--log-opts=${CI_COMMIT_BEFORE_SHA}..${CI_COMMIT_SHA}"    # default branch: only new commits
+      else
+        RANGE=""                                                        # first push / zero-sha: full scan
+      fi
+      "$GL" detect --redact --no-banner -v $RANGE
+
+migration-guard:
+  extends: .gate_base_shell
+  rules:
+    - if: '$CI_MERGE_REQUEST_IID'
+  script:
+    - bash ci/migration-guard.sh          # runs directly on host (git/bash/grep)
+
+# Opt-in alternative for a DEDICATED shell runner that already has docker access
+# and a warm image cache (faster, no per-run download). Only where you accept the
+# docker-group trade-off — never on a shared runner:
+#   secret-scan:
+#     extends: .gate_base_shell
+#     rules: [ { if: '$CI_MERGE_REQUEST_IID' }, { if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH' } ]
+#     script:
+#       - command -v docker >/dev/null || { echo "docker not available on this runner"; exit 2; }
+#       - docker run --rm -v "$PWD:/repo" -w /repo ghcr.io/gitleaks/gitleaks:latest detect --redact --no-banner -v

@@ -10,11 +10,22 @@ useDefault = true
 # files are the only broadly-safe defaults.
 [allowlist]
 description = "project false-positives"
+regexTarget = "line"
 paths = [
   '''(^|/)tests?/.*fixtures?/''',
   '''(^|/)testdata/''',
   '''.*\.example$''',
   '''.*\.sample$''',
 ]
-# Allowlist a specific known-safe string by regex (use sparingly):
-# regexes = ['''EXAMPLE_DO_NOT_MATCH_[A-Z0-9]+''']
+# Confirmed false-positives, allowlisted by SPECIFIC string — not broad pattern.
+# Each line is a hole: add only values you have seen fire, keep them exact.
+regexes = [
+  # AWS canonical documentation example credentials (not a real key/secret).
+  '''AKIAIOSFODNN7EXAMPLE''',
+  '''wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY''',
+  # curl / URL basic-auth PLACEHOLDERS in docs — literal user:pass, not real.
+  '''https?://(user|username|USER):(pass|password|PASSWORD|token|TOKEN|xxx+|<[^>]+>|\$\{?[A-Z_]+\}?)@''',
+]
+# For a ONE-OFF example in code/docs prefer an inline comment on that line —
+# more surgical than a global regex and visible in review:
+#   my_token = "sk_live_deadbeef..."   # gitleaks:allow

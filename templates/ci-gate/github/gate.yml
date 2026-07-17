@@ -7,6 +7,8 @@ on:
   pull_request:
   push:
     branches: [main, master]
+  schedule:
+    - cron: '0 4 * * 1'          # weekly full-history secret audit (Mon 04:00 UTC)
 
 permissions:
   contents: read
@@ -23,8 +25,13 @@ jobs:
           RANGE=""
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             git fetch --no-tags origin "${{ github.base_ref }}"
-            RANGE="--log-opts=origin/${{ github.base_ref }}..HEAD"
-          fi
+            RANGE="--log-opts=origin/${{ github.base_ref }}..HEAD"         # PR: only the PR's commits
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            BEFORE="${{ github.event.before }}"
+            if ! printf '%s' "$BEFORE" | grep -qE '^0+$'; then
+              RANGE="--log-opts=${BEFORE}..${{ github.sha }}"              # push: only new commits
+            fi                                                             # first push / zero-sha → full scan
+          fi                                                               # schedule (RANGE="") → full-history audit
           docker run --rm -v "$PWD:/repo" -w /repo ghcr.io/gitleaks/gitleaks:latest \
             detect --source /repo --redact --no-banner -v $RANGE
 

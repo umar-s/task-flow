@@ -39,6 +39,11 @@ Invoke with `/ci-gate` in a repo. It copies `ci/`, the gitleaks + pre-commit
 config, the GitLab **or** GitHub CI file, and prints the protected-branch
 commands. Template payload lives in `templates/ci-gate/`.
 
+Executor-aware for GitLab: a **docker/k8s** variant (uses `image:`) and a
+**shell** variant that fetches a pinned, checksum-verified gitleaks in-job — no
+docker, no runner change, no docker-group escalation. Secret-scan is incremental
+(MR range / new commits on push / full-history on a schedule).
+
 ## Install
 
 ```

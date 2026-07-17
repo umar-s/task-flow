@@ -25,16 +25,31 @@ under it.
 
 ## Steps
 
-1. **Confirm target + platform.** Run from the repo root (`git rev-parse
-   --show-toplevel`). Detect the CI platform: `.gitlab-ci.yml` → GitLab,
-   `.github/` → GitHub. If ambiguous, ask.
+1. **Confirm target + platform + executor.** Run from the repo root (`git
+   rev-parse --show-toplevel`). Detect the CI platform: `.gitlab-ci.yml` →
+   GitLab, `.github/` → GitHub. For **GitLab**, also determine the runner
+   **executor** — this decides which CI file to drop:
+   - `docker` / `kubernetes` executor → `gitlab/ci-gate.gitlab-ci.yml` (uses `image:`).
+   - `shell` executor → `gitlab/ci-gate.shell.gitlab-ci.yml`. On a shell runner
+     `image:` is **ignored**, so the docker variant silently won't run. The shell
+     variant fetches a pinned, checksum-verified gitleaks in-job (no docker, no
+     runner change, no docker-group escalation) and runs migration-guard directly.
+   Check `.gitlab-ci.yml`/runner config if visible; if unknown, **ask** (executor
+   type + the shell runner's tag). GitHub hosted runners have docker — use
+   `github/gate.yml` as-is.
 
 2. **Copy the payload** from `${CLAUDE_PLUGIN_ROOT}/templates/ci-gate/`:
-   - `ci/` (migration-guard.sh, gate.sh, README.md) → `<repo>/ci/`
+   - `ci/` (migration-guard.sh, gate.sh, gitleaks-fetch.sh, README.md) → `<repo>/ci/`
    - `.gitleaks.toml`, `.pre-commit-config.yaml` → repo root
-   - **GitLab:** `gitlab/ci-gate.gitlab-ci.yml` → `<repo>/ci/ci-gate.gitlab-ci.yml`,
-     then add `include: [ { local: 'ci/ci-gate.gitlab-ci.yml' } ]` to the
-     project `.gitlab-ci.yml` (create if absent).
+   - **GitLab (docker/k8s):** `gitlab/ci-gate.gitlab-ci.yml` →
+     `<repo>/ci/ci-gate.gitlab-ci.yml`, then add
+     `include: [ { local: 'ci/ci-gate.gitlab-ci.yml' } ]` to the project
+     `.gitlab-ci.yml` (create if absent).
+   - **GitLab (shell):** `gitlab/ci-gate.shell.gitlab-ci.yml` →
+     `<repo>/ci/ci-gate.shell.gitlab-ci.yml`, add the matching `include:`, and set
+     a project CI/CD variable `GATE_RUNNER_TAG` = the shell runner's tag (the CI
+     file references `tags: ["$GATE_RUNNER_TAG"]`). Host needs git/bash/grep/curl/
+     tar/sha256sum.
    - **GitHub:** `github/gate.yml` → `<repo>/.github/workflows/gate.yml`.
    - `chmod +x ci/*.sh`.
    Do not overwrite an existing project `.gitlab-ci.yml` — merge the `include:`.
@@ -77,9 +92,29 @@ under it.
    throwaway staged change. `migration-guard` exit codes: `0` ok · `1` policy
    violation · `2` config/infra (fails closed).
 
+## Scan strategy (already wired in the CI files)
+- **Secret-scan is incremental:** MR/PR → the MR's commit range; default-branch
+  push → only the newly-pushed commits (`before..after`, with a full-scan
+  fallback on the zero-SHA first push); **scheduled** pipeline → full-history
+  audit. Don't switch default-branch pushes back to full history — it is O(history)
+  per push and re-flags every legacy secret forever.
+- Keep the scheduled full audit (GitLab: a pipeline schedule; GitHub: the `cron`
+  already in `gate.yml`) so a secret slipped into history out-of-band still gets
+  caught eventually.
+
 ## Guardrails
 - The gate is a floor, not a lint pass — never weaken a rule to make a diff pass;
   fix the diff or add the explicit `-- destructive: approved` marker with a reason.
-- Keep the gitleaks allowlist tight — every entry is a hole in the gate.
+- Keep the gitleaks allowlist tight — every entry is a hole. Prefer an inline
+  `# gitleaks:allow` on a one-off doc line over a global regex.
+- **Pinned gitleaks is a maintenance commitment.** `ci/gitleaks-fetch.sh` pins a
+  version + committed SHA256; a frozen scanner goes stale (misses new secret
+  formats). Bump `PIN_VERSION` and both SHA256s together from the release's
+  `checksums.txt`, and keep the `.pre-commit-config.yaml` gitleaks `rev` in step.
+- Never fetch and trust a `checksums.txt` alongside the binary in the same job —
+  the committed SHA256 in `gitleaks-fetch.sh` is the trust anchor.
+- On a shell runner, do **not** solve the docker dependency by adding the runner
+  to the `docker` group — socket access there is host root. The pinned fetch
+  exists precisely to avoid that.
 - `dep/SCA` is language-specific and shipped as a commented stub — wire it to the
   repo's runtime (`npm audit` / `pip-audit` / `govulncheck` / …).

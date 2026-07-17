@@ -4,7 +4,8 @@
 #   ci/gate.sh            # scan working state; migration-guard needs GATE_BASE_REF
 #   ci/gate.sh --staged   # scan the staged index (what pre-commit does)
 #
-# secret-scan uses a local `gitleaks` if present, else the official container.
+# secret-scan uses a local `gitleaks` if present, else fetches a pinned,
+# checksum-verified binary (ci/gitleaks-fetch.sh) — no docker required.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -14,18 +15,15 @@ mode="${1:-}"
 
 echo "== secret-scan (gitleaks) =="
 if command -v gitleaks >/dev/null 2>&1; then
-  if [ "$mode" = "--staged" ]; then
-    gitleaks protect --staged --redact --no-banner -v
-  else
-    gitleaks detect --redact --no-banner -v
-  fi
-elif command -v docker >/dev/null 2>&1; then
-  echo "gitleaks not on PATH; using ghcr.io/gitleaks/gitleaks container"
-  docker run --rm -v "$repo:/repo" -w /repo ghcr.io/gitleaks/gitleaks:latest \
-    detect --source /repo --redact --no-banner -v
+  GL=gitleaks
 else
-  echo "gate: neither gitleaks nor docker available" >&2
-  exit 2
+  echo "gitleaks not on PATH; fetching pinned binary"
+  GL="$(bash "$here/gitleaks-fetch.sh")"
+fi
+if [ "$mode" = "--staged" ]; then
+  "$GL" protect --staged --redact --no-banner -v
+else
+  "$GL" detect --redact --no-banner -v
 fi
 
 echo "== migration-guard =="
