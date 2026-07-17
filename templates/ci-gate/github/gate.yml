@@ -1,0 +1,51 @@
+# ci-gate — deterministic merge gate for GitHub Actions.
+# Install: copy this file to .github/workflows/gate.yml, vendor ci/ + .gitleaks.toml,
+# then make `secret-scan` and `migration-guard` required status checks (see ../README.md).
+name: ci-gate
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        run: |
+          RANGE=""
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch --no-tags origin "${{ github.base_ref }}"
+            RANGE="--log-opts=origin/${{ github.base_ref }}..HEAD"
+          fi
+          docker run --rm -v "$PWD:/repo" -w /repo ghcr.io/gitleaks/gitleaks:latest \
+            detect --source /repo --redact --no-banner -v $RANGE
+
+  migration-guard:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: migration-guard
+        env:
+          GATE_BASE_REF: origin/${{ github.base_ref }}
+        run: |
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          bash ci/migration-guard.sh
+
+  # Optional: dependency / SCA scan is language-specific — add a job here, e.g.
+  #   dep-audit:
+  #     if: github.event_name == 'pull_request'
+  #     runs-on: ubuntu-latest
+  #     steps:
+  #       - uses: actions/checkout@v4
+  #       - run: npm audit --audit-level=high   # pip-audit / govulncheck / etc.

@@ -1,0 +1,51 @@
+# ci-gate — deterministic merge gate for GitLab CI.
+#
+# Install (see ../README.md):
+#   1) vendor ci/ + .gitleaks.toml into the repo
+#   2) add to the project .gitlab-ci.yml:
+#        include:
+#          - local: 'ci/ci-gate.gitlab-ci.yml'
+#   3) Settings → Merge requests → enable "Pipelines must succeed"
+#
+# Jobs run in the built-in `.pre` stage, so your own `stages:` need no changes.
+# Requires merge-request pipelines to be enabled (CI_MERGE_REQUEST_IID).
+
+.gate_base:
+  stage: .pre
+  variables:
+    GIT_DEPTH: 0            # full history so the MR base sha is reachable
+  interruptible: true
+
+secret-scan:
+  extends: .gate_base
+  image:
+    name: ghcr.io/gitleaks/gitleaks:latest
+    entrypoint: [""]
+  rules:
+    - if: '$CI_MERGE_REQUEST_IID'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  script:
+    - |
+      if [ -n "${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}" ]; then
+        gitleaks detect --redact --no-banner -v --log-opts="${CI_MERGE_REQUEST_DIFF_BASE_SHA}..HEAD"
+      else
+        gitleaks detect --redact --no-banner -v
+      fi
+
+migration-guard:
+  extends: .gate_base
+  image: alpine:3.20
+  rules:
+    - if: '$CI_MERGE_REQUEST_IID'
+  before_script:
+    - apk add --no-cache git bash grep
+  script:
+    - bash ci/migration-guard.sh
+
+# Optional: dependency / SCA scan is language-specific — wire your own here, e.g.
+#   dep-audit:
+#     extends: .gate_base
+#     rules: [ { if: '$CI_MERGE_REQUEST_IID' } ]
+#     image: node:22-alpine        # or your runtime
+#     script:
+#       - npm audit --audit-level=high        # pip-audit / govulncheck / etc.

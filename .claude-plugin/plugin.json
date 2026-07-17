@@ -1,0 +1,20 @@
+{
+  "name": "task-flow",
+  "version": "1.0.0",
+  "description": "Per-task quality flow + deterministic CI gate for Claude Code — ingest → 2× premortem → TDD → adversarial code-review → conditional security-review → live verify → close, plus a portable secret-scan + migration-guard + protected-branch gate scaffolded into any repo.",
+  "author": {
+    "name": "Sergei",
+    "email": "sergei.bitsmedia@gmail.com"
+  },
+  "license": "MIT",
+  "keywords": [
+    "workflow",
+    "quality-gate",
+    "code-review",
+    "security-review",
+    "ci",
+    "gitleaks",
+    "migrations",
+    "premortem"
+  ]
+}

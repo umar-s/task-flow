@@ -1,0 +1,17 @@
+# pre-commit hooks — the LOCAL half of the gate (catches secrets before push).
+# Install once per clone:  pip install pre-commit && pre-commit install
+# The pinned revs below are a starting point — bump with `pre-commit autoupdate`.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: migration-guard
+        name: migration-guard (forward-only + destructive DDL)
+        entry: bash ci/migration-guard.sh --staged
+        language: system
+        pass_filenames: false
+        always_run: true

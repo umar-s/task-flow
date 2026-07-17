@@ -1,0 +1,20 @@
+# gitleaks config — extends the built-in ruleset.
+# Docs: https://github.com/gitleaks/gitleaks
+title = "ci-gate gitleaks config"
+
+[extend]
+useDefault = true
+
+# Keep the allowlist TIGHT. Every entry here is a hole in the gate — prefer
+# fixing/rotating a real secret over allowlisting it. Fixtures and *.example
+# files are the only broadly-safe defaults.
+[allowlist]
+description = "project false-positives"
+paths = [
+  '''(^|/)tests?/.*fixtures?/''',
+  '''(^|/)testdata/''',
+  '''.*\.example$''',
+  '''.*\.sample$''',
+]
+# Allowlist a specific known-safe string by regex (use sparingly):
+# regexes = ['''EXAMPLE_DO_NOT_MATCH_[A-Z0-9]+''']
