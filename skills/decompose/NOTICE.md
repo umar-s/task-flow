@@ -1,11 +1,13 @@
 # NOTICE
 
-The splitting logic in `references/splitting.md` — the five SPIDR axes, the
-capability-level trigger signals, and the task-level size signals — is
-adapted from **Open GSD** (`@opengsd/gsd-core`), © 2026, distributed upstream
-under the MIT License.
+The decomposition methodology in this skill's `references/` — the SPIDR
+splitting axes (`splitting.md`), the edge-case probe taxonomy
+(`edge-probe.md`), the planning thinking-models (`thinking-models.md`), the
+task field model (`task-schema.md`), and the plan-QA checks
+(`qa-checklist.md`) — is adapted from **Open GSD** (`@opengsd/gsd-core`),
+© 2026, distributed upstream under the MIT License.
 
-Nothing in that file is copied verbatim from the upstream source. The
+Nothing in those files is copied verbatim from the upstream source. The
 material has been reworded and restructured to fit this plugin's own task
 model: a flat epic → tasks → `depends_on` graph instead of GSD's
 story/phase workflow, an optional `story_points` annotation instead of a
