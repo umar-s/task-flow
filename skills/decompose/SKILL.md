@@ -37,7 +37,7 @@ exactly when a missing dependency or an uncovered requirement hides.
 
 ## Reference loading (resolve once, read lazily per phase)
 
-Every phase below names one reference file under this skill's `references/`
+Most phases below name a reference file under this skill's `references/`
 dir. Resolve the base path **once**, at the start, with a bash step:
 
 ```bash
@@ -142,7 +142,7 @@ Dispatch an **independent** subagent, via the Agent tool, in a **fresh
 context** — it must not have seen Phases 0-4 run, so it has no attachment to
 the breakdown it's grading. Load `references/qa-checklist.md` now and hand
 its full text as that subagent's brief, along with the `REQ-NN` list and the
-full task breakdown (all 6 fields + `wave` per task). The subagent runs the 7
+full task breakdown (all 6 author fields + computed `wave` per task). The subagent runs the 7
 checks (requirement coverage, field completeness, graph acyclicity,
 atomicity, key-links, no silent scope reduction, MECE) and reports BLOCKER/
 WARNING findings.

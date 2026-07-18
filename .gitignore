@@ -2,3 +2,6 @@
 *.log
 __pycache__/
 .venv/
+
+# SDD dev scratch (not part of the plugin)
+.superpowers/
