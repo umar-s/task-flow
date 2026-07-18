@@ -1,7 +1,7 @@
 {
   "name": "task-flow",
-  "version": "1.1.0",
-  "description": "Per-task quality flow + deterministic CI gate for Claude Code — ingest → 2× premortem → TDD → adversarial code-review → conditional security-review → live verify → close, plus a portable secret-scan + migration-guard + protected-branch gate scaffolded into any repo.",
+  "version": "1.2.0",
+  "description": "Per-task quality flow + deterministic CI gate for Claude Code — ingest → 2× premortem → TDD → adversarial code-review → conditional security-review → live verify → close, plus a portable secret-scan + migration-guard + protected-branch gate scaffolded into any repo + a decompose skill that slices an epic/feature/spec into dependency-linked tasks (DoD, Story Points, graph) and pushes them to the tracker.",
   "author": {
     "name": "Sergei",
     "email": "sergei.bitsmedia@gmail.com"
@@ -15,6 +15,10 @@
     "ci",
     "gitleaks",
     "migrations",
-    "premortem"
+    "premortem",
+    "decomposition",
+    "planning",
+    "story-points",
+    "youtrack"
   ]
 }

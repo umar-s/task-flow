@@ -1,11 +1,45 @@
 # task-flow
 
 A Claude Code plugin: a disciplined **per-task quality flow** plus the
-**deterministic CI gate** it leans on. Two skills, one product.
+**deterministic CI gate** it leans on — and a `decompose` skill that feeds
+both. Three skills, one product.
 
 > Русская версия — [README.ru.md](README.ru.md).
 
+## Pipeline
+
+```
+decompose → task → ci-gate
+```
+
+`decompose` cuts an epic/feature/spec into tasks; each task runs the `task`
+flow end-to-end; `ci-gate` is the deterministic floor every merge goes
+through.
+
 ## Skills
+
+### `decompose` — epic/feature/spec → task breakdown
+Turns one large unit of work — a free-text feature description, an existing
+tracker epic `<TASK-ID>`, or a spec/design doc — into well-formed,
+dependency-linked tasks with a full **6-field** contract (`name`, `context`,
+`requirements`, `dod` with `truths`, `story_points`, `depends_on`), a
+`depends_on` graph, and computed parallelism waves:
+
+```
+0 ingest → 1 requirements → 2 decompose → 3 enrich → 4 graph/waves
+→ 5 QA (fresh-context subagent) → 6 MD draft → 7 tracker sync*
+```
+
+`*` optional: Phase 7 only runs after explicit approval of the draft, always
+dry-run-first, and stops gracefully at the draft if no tracker is configured.
+Story Points use Fibonacci (`1/2/3/5/8/13`) as an **optional annotation, not a
+gate** — splitting is driven by SPIDR/vertical-slices/dependencies. The MD
+draft (`docs/decompose/YYYY-MM-DD-<epic>.md`) is the self-contained primary
+artifact; tracker push (YouTrack and other adapters) is a generic, optional
+extra.
+
+Invoke with `/decompose` (or "нарежь на задачи", "декомпозируй эпик"). Each
+produced `<TASK-ID>` is then picked up end-to-end by `task`.
 
 ### `task` — per-task quality flow
 Takes one tracked ticket from ingest to closed through fixed quality gates:
@@ -50,6 +84,10 @@ docker, no runner change, no docker-group escalation. Secret-scan is incremental
 /plugin marketplace add umar-s/devpowers
 /plugin install task-flow@devpowers
 ```
+
+Then drive the pipeline: `/decompose` an epic into tasks, `/task DEV-475` each
+one through the quality flow, `/ci-gate` once per repo to scaffold the merge
+gate they all land behind.
 
 ## Design notes
 - The gate is deterministic on purpose: an LLM reviewer optimizes for "green",
