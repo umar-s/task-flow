@@ -148,10 +148,15 @@ atomicity, key-links, no silent scope reduction, MECE) and reports BLOCKER/
 WARNING findings.
 
 On any BLOCKER, revise the breakdown (back to whichever of Phases 1-4 the
-finding traces to) and re-submit to the same check — up to **3 cycles**. If
-BLOCKERs remain after the 3rd cycle, stop looping and surface the unresolved
-findings to the user rather than forcing an automatic 4th pass. WARNINGs
-alone never block the loop from ending.
+finding traces to) and re-check with the same subagent. **Loop until a
+check-run returns zero BLOCKERs — that clean run is the only exit; never stop
+on a cycle count.** Cap the *fix-rounds* at **3** as a runaway backstop, but a
+check-run always follows the last fix-round, so no fix ships without a
+verifying run behind it. If BLOCKERs still remain on the check-run after the
+3rd fix-round, escalate to the user per `references/qa-checklist.md`'s
+non-convergence rule (list open BLOCKERs, flag UNVERIFIED fixes, read
+persistent non-convergence as a likely-underspecified epic/requirements)
+rather than forcing more automatic passes. WARNINGs alone never block the exit.
 
 ## 6. Draft
 Load `references/draft-template.md` and write the epic header, task table,
@@ -204,5 +209,6 @@ not this skill's job.
 - Phase 7 never writes to a tracker without an explicit dry-run the user
   confirmed first, and never assumes a tracker's id-prefix shape anywhere in
   this skill's own contracts.
-- Report honestly: if a QA cycle capped out with BLOCKERs still open, or a
-  tracker push partially failed, say so with the actual findings/output.
+- Report honestly: if QA hit the fix-round cap with BLOCKERs still open
+  (non-convergence), or a tracker push partially failed, say so with the
+  actual findings/output.

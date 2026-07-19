@@ -222,34 +222,43 @@ doesn't have to re-derive what you meant.
 
 ## Revision loop
 
-On `ISSUES FOUND` with any BLOCKER, the breakdown goes back for revision
-and is re-submitted to this same check. This can repeat up to **3 cycles**.
-WARNINGs alone never block the loop from ending; only outstanding BLOCKERs
-count against the cap.
+The loop alternates two distinct steps: a **check-run** (this full 7-check
+pass, which applies no fixes) and a **fix-round** (the breakdown goes back
+and its BLOCKERs are addressed). It runs:
 
-**Verified vs UNVERIFIED fixes.** A fix is *verified* only once a check-run
-performed **after** it returned no BLOCKER against it. So fixes from earlier
-cycles that a later check-run then cleared are verified. What is **UNVERIFIED**
-is any fix with no check-run after it: the fixes made in response to the
-final check-run's findings (a 4th check-run would be needed, and the cap
-forbids it), plus any fix applied by hand after the cap is reached. The loop
-must say so out loud instead of letting those pass silently as "resolved."
+1. Do a check-run.
+2. Zero BLOCKERs → **PASSED**. This is the only clean exit.
+3. BLOCKERs present → a fix-round addresses them, then go back to step 1.
 
-**On cap exhaustion** (BLOCKERs found on the 3rd cycle, or still remaining
-after it), stop the automatic loop and escalate to the user — do not attempt
-a 4th automatic revision. The escalation MUST:
+**Run until a clean check-run, not until a cycle count.** The exit condition
+is a check-run that comes back with no BLOCKER — keep going until you get
+one. WARNINGs never block the exit; only outstanding BLOCKERs do. Because
+step 2 can only fire off a check-run that *already saw the latest fixes*, no
+fix ever ships without a verifying run behind it.
 
-1. List the still-open BLOCKERs (the current `ISSUES FOUND`).
-2. **Explicitly flag as `UNVERIFIED` every fix that no check-run has cleared
-   since it was applied** — i.e. the fixes made in response to the final
-   check-run's findings — naming each one, so the user sees exactly what
-   changed with no independent check behind it.
-3. **Offer a targeted re-check of ONLY those final fixes** — re-run just the
-   checks the changed tasks touch, not a full 4th sweep of the whole
-   breakdown. This confirms the last fixes without resetting the cap or
-   looping indefinitely. The user chooses: run the targeted re-check, accept
-   the UNVERIFIED fixes as-is, or revise further by hand.
+**Fix-rounds are capped; the verifying check-run is not.** Allow at most
+**3 fix-rounds** as a runaway backstop. The cap bounds how many times you
+*apply fixes* — it does **not** authorise stopping the instant a fix is
+applied. A check-run always follows the last fix-round, and `PASSED` may only
+be reported off a zero-BLOCKER check-run — never off "the cap is spent." A
+fix is *verified* once a check-run performed after it found no BLOCKER
+against it; a fix with no check-run after it is **UNVERIFIED**.
 
-Never report `PASSED` while any fix is UNVERIFIED. `PASSED` means every task
-cleared a check-run with no BLOCKER against it — including the fixes made on
-the last cycle.
+**On non-convergence** — BLOCKERs still present on the check-run that follows
+the 3rd fix-round — stop and escalate to the user; do not silently accept.
+The escalation MUST:
+
+1. List the still-open BLOCKERs (current `ISSUES FOUND`).
+2. Flag as `UNVERIFIED` any fix no check-run has cleared since it was applied,
+   naming each one.
+3. **Read non-convergence as a signal, not just a failure.** Three fix-rounds
+   that keep surfacing fresh BLOCKERs usually means the **input is
+   underspecified** — a missing requirement, an ambiguous epic, an undecided
+   constraint — more often than a merely hard breakdown. Say concretely which,
+   so the user fixes the root (the spec/requirements) instead of patching
+   symptoms.
+4. Offer a targeted re-check of only the changed tasks once the user acts.
+
+Never report `PASSED` while any BLOCKER is open or any fix is `UNVERIFIED`.
+`PASSED` means the most recent check-run — one that saw every applied fix —
+found no BLOCKER.
