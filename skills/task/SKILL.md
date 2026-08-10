@@ -60,9 +60,10 @@ decisions, ~10–15 min of the user's time), so it is offered, never forced;
 declined or absent → the inline pass above is the gate, as before. When it
 runs, its artifact `docs/premortem/<slug>.md` feeds the rest of the flow:
 accepted holes → design fixes now; their edge cases → the phase-5 tests and
-the `[PREMORTEM_EDGES]` slot of the phase-6/6b review dispatches. Phase 4's
-plan premortem stays inline regardless — it attacks execution mechanics, not
-the design.
+the `[PREMORTEM_EDGES]` slot of the phase-6 review dispatch (deliberately not
+6b: the security pass walks the trust boundaries itself instead of inheriting
+the team's worry-list). Phase 4's plan premortem stays inline regardless — it
+attacks execution mechanics, not the design.
 
 ## 3. Execution plan
 Turn the corrected design into ordered, concrete steps: files to touch, tests to
