@@ -50,6 +50,20 @@ Adversarially assume the design shipped and caused a problem. Enumerate concrete
 failure modes: missing fields, wrong states, cache/permission/transaction gaps,
 concurrency, back-compat. Fix the design for each real risk before planning.
 
+**Escalation — full `premortem` session (conditional).** If the `premortem`
+skill is installed (check the available skills list) AND the task is
+high-risk — destructive or data-bearing migrations, auth/permission changes,
+payment paths, external integrations, irreversible operations — or the user
+asks for it, **offer** to run that skill on the design-spec instead of the
+inline pass above. It is an interactive session (parallel helpers, per-hole
+decisions, ~10–15 min of the user's time), so it is offered, never forced;
+declined or absent → the inline pass above is the gate, as before. When it
+runs, its artifact `docs/premortem/<slug>.md` feeds the rest of the flow:
+accepted holes → design fixes now; their edge cases → the phase-5 tests and
+the `[PREMORTEM_EDGES]` slot of the phase-6/6b review dispatches. Phase 4's
+plan premortem stays inline regardless — it attacks execution mechanics, not
+the design.
+
 ## 3. Execution plan
 Turn the corrected design into ordered, concrete steps: files to touch, tests to
 write, migrations, grants, docs, deploy + cache-flush steps.

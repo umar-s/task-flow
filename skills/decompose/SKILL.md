@@ -2,7 +2,7 @@
 name: decompose
 description: >-
   Turn one large unit of work — a free-text feature description, an existing
-  tracker epic `<TASK-ID>`, or a spec/design doc — into well-formed, linked
+  tracker epic `TASK-ID`, or a spec/design doc — into well-formed, linked
   tasks (name, context, requirements, DoD with truths, story points,
   depends_on) with a dependency graph and parallelism waves. Produces a
   self-contained MD draft for review; on approval, an optional dry-run-first
@@ -10,7 +10,7 @@ description: >-
   Use when the user invokes /decompose, or asks to "нарежь на задачи",
   "декомпозируй эпик/фичу", "разбей проект на задачи", or otherwise wants an
   epic/feature/spec cut into a task breakdown. Runs **before** `task` — each
-  produced `<TASK-ID>` is then executed end-to-end by `task-flow:task`.
+  produced `TASK-ID` is then executed end-to-end by `task-flow:task`.
 ---
 
 # Epic/feature → task breakdown flow
@@ -170,6 +170,21 @@ Phase 7 never runs, this is a complete deliverable on its own.
 going anywhere near Phase 7. "The skill finished running" is not approval;
 the user reviewing (and, if needed, editing) the actual tasks/fields/graph
 is.
+
+**Optional deep premortem on the draft.** If the `premortem` skill is
+installed (check the available skills list), **offer** — alongside the
+approval request, one line, never forced — a full premortem session on the
+draft for large or risky epics: many waves, data-bearing migrations,
+auth/permission surface, external integrations, irreversible rollout steps.
+The draft is exactly the "concrete plan" that skill wants as input, and the
+session costs the user ~10–15 min. If accepted, run it on the draft; then
+fold its outcome back **before** approval: each accepted hole becomes a new
+task (all 6 author fields; re-run Phases 4–5 on the changed graph), a
+hardened `dod` on an existing task (edge cases into
+`acceptance_criteria`/`truths`), or a named assumption in the epic header —
+then re-seek approval on the updated draft. Declined or absent → the Phase 2
+thinking-models pre-mortem already ran; proceed to approval as usual. Small
+breakdowns: skip the offer silently.
 
 ## 7. Tracker sync (optional)
 Only after Phase 6's explicit approval. Load `references/tracker-sync.md`
