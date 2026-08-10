@@ -65,16 +65,36 @@ premortem edge cases. Run the project's **test + static-analysis + lint** to
 green. Keep spec-adjacent docs (API reference, OpenAPI) in the same change.
 
 ## 6. Code-review (adversarial)
-Run an independent, adversarial review of the diff (e.g. the `code-review`
-Workflow at high effort, or a dedicated review agent). Treat findings as
-suspects: fix the **real** correctness/security/grant/transaction ones and add a
-test that would have caught each; dismiss noise with a one-line reason.
+Run an independent, adversarial review of the diff — the `code-review` Workflow
+at high effort, or a **fresh reviewer subagent** dispatched with
+[references/code-review-prompt.md](references/code-review-prompt.md).
+Independence is structural, not aspirational: the reviewer receives the flow's
+artifacts — diff range (`git merge-base HEAD <integration-branch>` → `HEAD`),
+DoD, design-spec, premortem edge lists — and **never the session transcript,
+the implementation story, or the author's framing of what is "fine"**. A
+reviewer briefed on the author's doubts inherits the author's blind spots: it
+checks the five things you already worry about and skips the sixth you missed.
+The review is read-only on the checkout (rules in the template). Treat findings
+as suspects: fix the **real** correctness/security/grant/transaction ones and
+add a test that would have caught each; dismiss noise with a one-line reason.
+Fixes to Critical/Required findings go back through a fresh review of the delta
+(same clean dispatch) until none remain — a fix is a new change, not an
+epilogue.
 
 ## 6b. Security-review (conditional)
 Run an **independent** security pass on the diff (`/security-review`, or a fresh
-agent — never the one that implemented it). A distinct threat-model lens, not a
-correctness re-run: authz/permission bypass, injection (SQL/command/template),
-SSRF, unsafe deserialization, secrets committed to code, missing grants.
+subagent dispatched with
+[references/security-review-prompt.md](references/security-review-prompt.md) —
+never the agent that implemented it, same clean-context rule as phase 6). A
+distinct threat-model lens, not a correctness re-run: STRIDE walked from the
+trust boundaries the diff touches — authz/permission bypass, injection
+(SQL/command/template), SSRF, unsafe deserialization, secrets committed to
+code, missing grants; on AI/agentic surfaces, prompt injection and the OWASP
+LLM Top 10. **Critical/High findings require a PoC or a concrete exploitation
+path** — can't produce one → downgrade; severity maps to action (Critical/High
+block the merge, Medium → follow-up ticket, Low → backlog). A finding this pass
+and the phase-6 review surface **independently** is a priority signal — never
+collapse it as a duplicate.
 **Gate by risk profile:** run it whenever the diff touches auth, external input,
 network calls, secrets, data/PII, migrations, or grants; otherwise skip with a
 one-line reason (as you would dismiss code-review noise). This is the *LLM*
