@@ -197,7 +197,11 @@ least able to answer it.
 **Stop here and get explicit user approval** on the draft's content before
 going anywhere near Phase 7. "The skill finished running" is not approval;
 the user reviewing (and, if needed, editing) the actual tasks/fields/graph
-is.
+is. Neither is **an answer to a question you asked**: an answer is an input
+that changes the draft, so any approval you held before it was approval of a
+document that no longer exists. Fold the answer in, say what changed, show the
+revised draft, ask again. If you cannot quote the words that approved *this*
+version, you do not have approval.
 
 **Optional deep premortem on the draft.** If the `premortem` skill is
 installed (check the available skills list), **offer** — alongside the

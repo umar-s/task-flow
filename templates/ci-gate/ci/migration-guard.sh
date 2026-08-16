@@ -43,7 +43,7 @@ is_migration() { printf '%s' "$1" | grep -Eq "$dir_re"; }
 # Resolve the change set + how to read a file at the evaluated tip.
 if [ "$STAGED" = "1" ]; then
   changes=$(git -c core.quotePath=false diff --cached --name-status --no-renames)
-  read_tip() { git show ":$1" 2>/dev/null || true; }
+  read_tip() { git show ":$1"; }
 else
   BASE="${GATE_BASE_REF:-}"
   if [ -z "$BASE" ]; then
@@ -62,7 +62,7 @@ else
     exit 2
   fi
   changes=$(git -c core.quotePath=false diff --name-status --no-renames "${BASE}...HEAD")
-  read_tip() { git show "HEAD:$1" 2>/dev/null || true; }
+  read_tip() { git show "HEAD:$1"; }
 fi
 
 fail=0
@@ -71,7 +71,12 @@ while IFS=$'\t' read -r status path _rest; do
   is_migration "$path" || continue
   case "$status" in
     A)  # new migration — allowed, but scan for unapproved destructive DDL
-      content=$(read_tip "$path")
+      # Fail closed on an unreadable file: an empty read would sail through the
+      # destructive-DDL grep and report a pass the guard never established.
+      if ! content=$(read_tip "$path"); then
+        echo "migration-guard: cannot read '$path' at the evaluated tip; refusing to pass a migration it could not inspect. Failing closed." >&2
+        exit 2
+      fi
       if printf '%s' "$content" | grep -Eiq "$DESTRUCTIVE_RE"; then
         if printf '%s' "$content" | grep -Eiq "$APPROVAL_RE"; then
           echo "warn [destructive]  $path : destructive DDL present but approved" >&2

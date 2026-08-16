@@ -65,13 +65,19 @@ the checklist below only guards against blind spots.
    responses/logs, PII handling, tokens in URLs/localStorage/analytics.
 4. **Infra & dependencies** — CORS, security headers, verbose errors;
    new/upgraded deps: known CVEs, typosquats, postinstall scripts, lockfile
-   diff sane.
-5. **Third-party** — webhook signatures verified, OAuth with PKCE and state,
+   diff sane, and each new package justified by the change (an unjustified
+   dependency is a finding, not a detail).
+5. **Capability diff** — compare what the code could reach before and after:
+   did it start making network calls, spawning subprocesses, touching the
+   filesystem, or reading credentials/env it never used? A capability the
+   ticket never asked for is a finding even when the current use looks benign;
+   it is the part of the diff that changes what a future bug can do.
+6. **Third-party** — webhook signatures verified, OAuth with PKCE and state,
    SSRF on server-side fetches of user-supplied URLs.
-6. **Migrations** — a migration that drops/bypasses a permission check or
+7. **Migrations** — a migration that drops/bypasses a permission check or
    widens access is a security finding here (destructive-DDL mechanics
    belong to the deterministic CI gate, not to this pass).
-7. **AI / LLM surfaces** (if the diff touches prompts, agents, tools) —
+8. **AI / LLM surfaces** (if the diff touches prompts, agents, tools) —
    model output treated as untrusted (never into eval/SQL/shell/innerHTML);
    the system prompt not relied on as a security boundary (prompt
    injection); tool/agent permissions scoped; token/rate/recursion limits

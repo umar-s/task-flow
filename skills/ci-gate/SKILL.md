@@ -88,9 +88,18 @@ under it.
    JSON
    ```
 
-6. **Smoke-check** without waiting for CI: `bash ci/gate.sh --staged` on a
-   throwaway staged change. `migration-guard` exit codes: `0` ok · `1` policy
-   violation · `2` config/infra (fails closed).
+6. **Negative control — prove the gate can fail before trusting its pass.**
+   Don't just run it green: run it against a *known-bad* throwaway staged
+   change and watch it go red. Stage a new migration holding `DROP TABLE x;`
+   with no marker (expect `migration-guard` exit 1) plus a line shaped like a
+   real credential (expect gitleaks to trip), then `bash ci/gate.sh --staged`.
+   Restore the throwaway change afterwards. A gate nobody has seen fail is not
+   known to work: a mis-set `MIGRATION_DIRS`, a scanner that never started, and
+   a genuinely clean diff all print the same thing. Exit codes: `0` ok · `1`
+   policy violation · `2` config/infra (fails closed).
+   Be precise about what this buys — it proves one known-bad input reaches the
+   failure path. It does not prove the checker recognises every violation of
+   the rule it stands for.
 
 ## Scan strategy (already wired in the CI files)
 - **Secret-scan is incremental:** MR/PR → the MR's commit range; default-branch
@@ -105,6 +114,15 @@ under it.
 ## Guardrails
 - The gate is a floor, not a lint pass — never weaken a rule to make a diff pass;
   fix the diff or add the explicit `-- destructive: approved` marker with a reason.
+- **Gate code fails closed or it is theatre.** The dangerous failure of a checker
+  is not a crash — it is nothing crashing while the layer prints "pass". Keep
+  `set -euo pipefail`; never `|| true` and never `2>/dev/null` on a command whose
+  result decides the verdict; spell out ambiguous exit codes. For a
+  must-find-nothing grep, rc 1 (no match) is the only pass — rc 0 means the
+  forbidden pattern is present and rc ≥ 2 means the check itself broke, and both
+  must fail the job. The same rule covers reading a file the gate is about to
+  judge: an unreadable input is a failure, never an empty one that sails through
+  the pattern scan.
 - Keep the gitleaks allowlist tight — every entry is a hole. Prefer an inline
   `# gitleaks:allow` on a one-off doc line over a global regex.
 - **Pinned gitleaks is a maintenance commitment.** `ci/gitleaks-fetch.sh` pins a

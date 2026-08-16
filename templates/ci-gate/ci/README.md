@@ -18,6 +18,11 @@ bash ci/gate.sh --staged                        # run the full gate on staged ch
 `gate.sh` uses a `gitleaks` on PATH, else fetches a pinned, checksum-verified
 binary via `ci/gitleaks-fetch.sh` (no docker needed).
 
+Run it once against a deliberately bad change — an unmarked `DROP TABLE` in a
+new migration under a configured migrations dir — and watch it go red before
+you trust a green. A gate nobody has seen fail is not known to be wired up:
+a mis-set `MIGRATION_DIRS` looks exactly like a clean diff.
+
 ## CI variant (GitLab)
 Two include files ship — pick by your runner **executor**:
 - **docker / kubernetes** executor → `ci/ci-gate.gitlab-ci.yml` (uses `image:`).

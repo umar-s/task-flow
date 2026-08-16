@@ -43,6 +43,24 @@ what follows; questions that depend on its answer wait for it. Two options with
 the same consequences are not a decision — pick one, state it as an assumption,
 move on.
 
+**Declare the tier** in that restatement, one line. It scales the *artifacts*,
+never the gates:
+- **T1 trivial** — copy, config value, comment, one surface; no data, auth,
+  migration or external call. Phase 1 is three sentences in the ticket; phases
+  2 and 4 may legitimately conclude "no failure mode beyond X" in a line each.
+- **T2 normal** — a bug fix or a contained feature. The flow as written.
+- **T3 high-stakes** — money, auth/permissions, data loss, concurrency,
+  migrations, public API. Phase 2 starts from an explicit failure model, the
+  phase-5 mutation check is mandatory, and 6b is not optional.
+
+**A phase that finds nothing says so.** Never invent a risk to justify having
+run a premortem, and never harden beyond the DoD without a named requirement.
+Manufactured risk becomes manufactured scope: on a small ticket that is the
+likeliest way this flow damages the change instead of protecting it — an
+imagined failure mode in phase 2 turns into an invented requirement in the
+spec, which phase 6 then dutifully enforces. Phases 6b, 7 and 8 never scale
+down with the tier.
+
 ## 1. Design-spec
 Write a short design doc: data model / schema, endpoints or interfaces, the
 behavioural contract, and any scope forks. Cross-check every DoD field against
@@ -93,6 +111,12 @@ Attack the plan the same way: wrong ordering, a mutation that commits before a
 guard, a missing grant/migration, an un-flushed cache, an untested edge. Fix.
 
 ## 5. TDD implement
+Load [references/implementation-integrity.md](references/implementation-integrity.md)
+before the first test: baseline on a repo that isn't already green, RED means
+you *watched* it fail, the anti-gaming rules, the mutation check that proves the
+tests would notice a wrong answer, and the "numbers, not adjectives" rule that
+phases 7–8 report against.
+
 Branch off the integration branch (`fix/…` or `feature/…`, one branch per task).
 Implement to the DoD. Write tests **at the seam chosen in phase 3** that encode
 the DoD and the premortem edge cases. Run the project's **test +
@@ -124,6 +148,19 @@ task. Fixes to Critical/Required findings go back through a fresh review of the
 delta (same clean dispatch) until none remain — a fix is a new change, not an
 epilogue.
 
+**Grade findings, or the loop never terminates.** A *behavioural* finding — the
+code does the wrong thing, a test cannot fail, a guard cannot fire — is fixed
+and goes back through a fresh review of the delta. A *description* finding — the
+spec, a comment or the MR text says something untrue about code that is
+correct — is fixed and disclosed, and buys no new round. Without that split,
+"fix everything, re-review after every change" has no fixpoint: prose always has
+one more remark.
+
+**A verdict attaches to the commit it saw.** Fixes made after the last review
+mean the state you are about to merge was never reviewed — either re-review the
+delta, or say so plainly in the phase-8 comment. Inheriting the previous verdict
+silently is what turns the review into decoration.
+
 ## 6b. Security-review (conditional)
 Run an **independent** security pass on the diff (`/security-review`, or a fresh
 subagent dispatched with
@@ -133,7 +170,9 @@ distinct threat-model lens, not a correctness re-run: STRIDE walked from the
 trust boundaries the diff touches — authz/permission bypass, injection
 (SQL/command/template), SSRF, unsafe deserialization, secrets committed to
 code, missing grants; on AI/agentic surfaces, prompt injection and the OWASP
-LLM Top 10. **Critical/High findings require a PoC or a concrete exploitation
+LLM Top 10. It also owns the **capability diff** — did this change start using
+the network, subprocesses, the filesystem, or credentials/env it did not touch
+before? A capability nobody asked for is a finding even when it looks benign. **Critical/High findings require a PoC or a concrete exploitation
 path** — can't produce one → downgrade; severity maps to action (Critical/High
 block the merge, Medium → follow-up ticket, Low → backlog). A finding this pass
 and the phase-6 review surface **independently** is a priority signal — never
@@ -167,6 +206,11 @@ check). Clean up any test fixtures you seeded.
     config, the platform CI file, and prints the protected-branch commands.
 - Post a **"что сделано"** comment to the tracker: what shipped (per surface),
   how it was verified (tests + live), the MR/PR links, and any follow-ups.
+  Verification is reported as **numbers from one final fresh run** made after
+  the last edit — "47 passed, 0 failed; 5/5 mutants killed; verified live on
+  dev at <url>", never "всё зелёно" — and every check that was skipped is named
+  with its reason (see `references/implementation-integrity.md` §6). A check
+  nobody ran and nobody mentioned reads exactly like a check that passed.
 - Set state **Done** and log **Spent time**.
 - If the work spans surfaces (e.g. backend + frontend), create/link the paired
   ticket and note it.

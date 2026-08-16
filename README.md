@@ -93,8 +93,14 @@ gate they all land behind.
 - The gate is deterministic on purpose: an LLM reviewer optimizes for "green",
   not "correct", and shares blind spots with the implementer. Secrets and
   destructive migrations get a non-gameable check; logic gets the LLM pass.
+- Ceremony scales, gates don't: `task` phase 0 declares a tier (trivial /
+  normal / high-stakes) that sizes the **artifacts**, never the phases. A phase
+  that finds nothing says so — an invented risk becomes an invented
+  requirement, and on a small ticket that is the likeliest way a heavy flow
+  damages the change instead of protecting it.
 - `dep/SCA` ships as a commented stub — language-specific, wire it per repo.
-- migration-guard fails **closed** (exit 2) if it cannot resolve the base ref in
-  CI — a guard that silently passes is worse than none.
+- migration-guard fails **closed** (exit 2) when it cannot resolve the base ref
+  in CI, or cannot read a migration it is supposed to judge — a guard that
+  silently passes is worse than none. Prove it can fail before trusting a pass.
 
 MIT © Sergei (umar-s)
