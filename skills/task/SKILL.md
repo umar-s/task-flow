@@ -206,11 +206,15 @@ check). Clean up any test fixtures you seeded.
     config, the platform CI file, and prints the protected-branch commands.
 - Post a **"что сделано"** comment to the tracker: what shipped (per surface),
   how it was verified (tests + live), the MR/PR links, and any follow-ups.
-  Verification is reported as **numbers from one final fresh run** made after
-  the last edit — "47 passed, 0 failed; 5/5 mutants killed; verified live on
-  dev at <url>", never "всё зелёно" — and every check that was skipped is named
-  with its reason (see `references/implementation-integrity.md` §6). A check
-  nobody ran and nobody mentioned reads exactly like a check that passed.
+  The verification part is an **evidence block**, not an adjective: numbers
+  from one final fresh run made after the last edit, the single command that
+  reproduces them, and every skipped check named with its reason — e.g.
+  "тесты 47/47 · diff-coverage 31/31 (100%) · мутанты 5/5 killed · CI green
+  (secret-scan, migration-guard, diff-coverage) · live на dev: <url> · repro:
+  `make check` · property-тесты: пропущены, в изменении нет инвариантов".
+  Never "всё зелёно" — a check nobody ran and nobody mentioned reads exactly
+  like a check that passed. Shape and rules in
+  `references/implementation-integrity.md` §6.
 - Set state **Done** and log **Spent time**.
 - If the work spans surfaces (e.g. backend + frontend), create/link the paired
   ticket and note it.

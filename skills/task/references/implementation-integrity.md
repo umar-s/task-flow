@@ -65,9 +65,20 @@ Green tests prove the code passes the tests. They do not prove the tests would
 notice if the code were wrong. Before phase 6, spend a few minutes proving they
 would:
 
-- **Prefer the project's mutation tool** when one exists (mutmut, Stryker,
-  cargo-mutants, PIT, …) scoped to the changed files — it generates mutants
-  from the syntax tree and cannot silently skip one.
+- **Prefer the project's mutation tool** when one exists (Infection, Stryker,
+  mutmut, cargo-mutants, PIT, …) — it generates mutants from the syntax tree
+  and cannot silently skip one.
+- **Scope it by the diff. Always.** A whole-repo mutation run on anything
+  monolith-sized is not a gate, it is a weekend: cost scales with mutants ×
+  suite runtime, and both are large there. Point the tool at the changed files
+  or the module that owns them — `infection --filter=<changed files>
+  --only-covered`, `stryker run --mutate <changed files>`,
+  `mutmut run "pkg.module*"`, `cargo mutants --file`, PIT `targetClasses`. If
+  even the scoped run is too slow for CI, run it locally on the diff before
+  opening the MR and put the number in the close comment: this is a phase-5
+  discipline, not a pipeline job. On a legacy module with no coverage to start
+  from, mutate only the new code — an old file's survivors are a backlog item,
+  not this task's blocker.
 - No tool for this language? Do it by hand: introduce **3–5 plausible bugs**,
   one at a time, in the logic that matters most —
   - flip a comparison (`<` → `<=`, `==` → `!=`)
@@ -88,6 +99,16 @@ Scale this: skip it on a trivial-tier change and say so; on a high-stakes tier
 (money, auth, data loss, concurrency, migrations, public API) it is not
 optional, and the mutants should be drawn from the premortem's failure modes
 rather than from this generic list.
+
+**Where invariants exist, generate the cases instead of choosing them.**
+Parsing, serialization, money arithmetic, ordering, retries and idempotence all
+carry properties (round-trip, commutativity, bounds, "applying it twice changes
+nothing") — express those with a property-based library (fast-check, hypothesis,
+proptest, jqwik) and let it hunt the boundary. That is precisely the class of
+case a premortem cannot enumerate, because enumerating it is the hard part. One
+property with a shrinking counterexample is worth more than five hand-picked
+inputs. Pair one-sided invariants with their opposite bound: "never exceeds the
+limit" passes happily on a function that always returns zero.
 
 ## 5. Suite health
 
@@ -110,6 +131,13 @@ What phase 7 and phase 8 report must be:
 - **Explicit about what was skipped**, with the reason, on the same line as
   everything that ran. A check nobody ran and nobody mentioned reads exactly
   like a check that passed.
+- **Reproducible from the repo, not from the conversation.** Name the one
+  command that regenerates what you cite — `make check`, `composer gate`,
+  `npm run verify`, or the literal sequence if the project has no entry point.
+  A number nobody else can regenerate is a claim; a number with the command
+  behind it is evidence. If the mutation pass was manual, the script that
+  applied the mutants belongs in the repo as well — a mutant list that lived in
+  `/tmp` makes the score unauditable the moment the session ends.
 
 A step you got wrong and then fixed is a normal part of a task and costs
 nothing to admit. A step you quietly weakened is the only unrecoverable one.

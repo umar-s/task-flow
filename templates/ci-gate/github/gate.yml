@@ -49,6 +49,27 @@ jobs:
           git fetch --no-tags origin "${{ github.base_ref }}"
           bash ci/migration-guard.sh
 
+  # Changed-line coverage. The script is tool-agnostic (lcov / Cobertura / Clover);
+  # producing the report is your test job's business. Uncomment and point it at
+  # the report. Skips itself while GATE_COVERAGE_REPORT is unset; fails closed on
+  # a missing, empty or unparseable one.
+  #   diff-coverage:
+  #     if: github.event_name == 'pull_request'
+  #     runs-on: ubuntu-latest
+  #     steps:
+  #       - uses: actions/checkout@v4
+  #         with: { fetch-depth: 0 }
+  #       - run: <your test command producing coverage.xml / lcov.info / clover.xml>
+  #       - name: diff-coverage
+  #         env:
+  #           GATE_BASE_REF: origin/${{ github.base_ref }}
+  #           GATE_COVERAGE_REPORT: coverage.xml
+  #           GATE_COVERAGE_MIN: "80"
+  #           GATE_COVERAGE_STRICT: "1"      # once the report path is proven
+  #         run: |
+  #           git fetch --no-tags origin "${{ github.base_ref }}"
+  #           bash ci/diff-coverage.sh
+
   # Optional: dependency / SCA scan is language-specific — add a job here, e.g.
   #   dep-audit:
   #     if: github.event_name == 'pull_request'

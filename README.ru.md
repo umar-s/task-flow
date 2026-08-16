@@ -63,6 +63,9 @@ merge.
 - **secret-scan** — gitleaks, в pre-commit и CI
 - **migration-guard** — инструмент-агностичный, по путям: forward-only
   неизменяемость + деструктивный DDL только с маркером `-- destructive: approved`
+- **diff-coverage** — порог покрытия по изменённым строкам, опционально: читает
+  отчёт, который уже производит тестовый прогон проекта (lcov / Cobertura /
+  Clover), и судит только те строки, которых коснулось изменение
 - **protected-branch** — запрет force-push + required status checks (правило
   платформы, ставится один раз через `glab`/`gh`)
 

@@ -47,6 +47,25 @@ migration-guard:
   script:
     - bash ci/migration-guard.sh
 
+# Changed-line coverage. The script is tool-agnostic (lcov / Cobertura / Clover),
+# but only your test job knows how to PRODUCE the report — so wire that job to
+# publish it as an artifact and uncomment this. Threshold and report path are the
+# only knobs; the layer skips itself while GATE_COVERAGE_REPORT is unset, and
+# fails closed on a missing, empty or unparseable report.
+#   diff-coverage:
+#     extends: .gate_base
+#     image: alpine:3.20
+#     rules: [ { if: '$CI_MERGE_REQUEST_IID' } ]
+#     needs: [ { job: test, artifacts: true } ]     # ← your test job, publishing coverage.xml
+#     before_script:
+#       - apk add --no-cache git bash grep
+#     variables:
+#       GATE_COVERAGE_REPORT: coverage.xml          # or coverage/lcov.info, build/logs/clover.xml
+#       GATE_COVERAGE_MIN: "80"
+#       GATE_COVERAGE_STRICT: "1"                   # once the report path is proven
+#     script:
+#       - bash ci/diff-coverage.sh
+
 # Optional: dependency / SCA scan is language-specific — wire your own here, e.g.
 #   dep-audit:
 #     extends: .gate_base

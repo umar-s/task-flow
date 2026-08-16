@@ -39,7 +39,8 @@ under it.
    `github/gate.yml` as-is.
 
 2. **Copy the payload** from `${CLAUDE_PLUGIN_ROOT}/templates/ci-gate/`:
-   - `ci/` (migration-guard.sh, gate.sh, gitleaks-fetch.sh, README.md) → `<repo>/ci/`
+   - `ci/` (migration-guard.sh, diff-coverage.sh, gate.sh, gitleaks-fetch.sh,
+     README.md) → `<repo>/ci/`
    - `.gitleaks.toml`, `.pre-commit-config.yaml` → repo root
    - **GitLab (docker/k8s):** `gitlab/ci-gate.gitlab-ci.yml` →
      `<repo>/ci/ci-gate.gitlab-ci.yml`, then add
@@ -57,9 +58,20 @@ under it.
 3. **Local layer:** tell the user to run `pip install pre-commit && pre-commit
    install` so secrets are caught before push. Do not run global installs yourself.
 
-4. **Configure migration dirs** if the repo's migrations are not under a default
-   (`migrations db/migrate db/migration prisma/migrations`): set `MIGRATION_DIRS`
-   in the CI job env and the pre-commit hook `entry`.
+4. **Configure the two project-specific knobs.**
+   - **Migration dirs** — if the repo's migrations are not under a default
+     (`migrations db/migrate db/migration prisma/migrations`), set
+     `MIGRATION_DIRS` in the CI job env and the pre-commit hook `entry`.
+   - **Changed-line coverage** — `ci/diff-coverage.sh` *judges* a coverage
+     report, it never produces one. Uncomment the `diff-coverage` job in the CI
+     file, point `GATE_COVERAGE_REPORT` at whatever the project's test job
+     already writes (lcov / Cobertura / Clover — jest, vitest, pytest-cov,
+     PHPUnit, JaCoCo, `go tool cover` all emit one of the three), and declare
+     that job's artifact as its dependency. Start at `GATE_COVERAGE_MIN=80`:
+     global coverage % is vanity — it moves too slowly to notice an untested
+     change — changed lines are the constraint. Left unset, the layer skips
+     itself and says so; an honest skip is fine, a threshold nobody configured
+     is not a gate.
 
 5. **Protected-branch (one-time, per repo).** This CANNOT be a CI job — by the
    time a pipeline runs, the push already happened. It is a platform rule. Print
@@ -97,6 +109,10 @@ under it.
    known to work: a mis-set `MIGRATION_DIRS`, a scanner that never started, and
    a genuinely clean diff all print the same thing. Exit codes: `0` ok · `1`
    policy violation · `2` config/infra (fails closed).
+   Once coverage is wired, control it the same way: push a changed line the
+   report shows as `hits=0` and watch `diff-coverage` exit 1. Only after you
+   have seen that, set `GATE_COVERAGE_STRICT=1` — a report path that points at
+   nothing measurable otherwise reads exactly like a fully covered diff.
    Be precise about what this buys — it proves one known-bad input reaches the
    failure path. It does not prove the checker recognises every violation of
    the rule it stands for.
@@ -123,6 +139,12 @@ under it.
   must fail the job. The same rule covers reading a file the gate is about to
   judge: an unreadable input is a failure, never an empty one that sails through
   the pattern scan.
+- **Coverage is a detector, not a target.** The threshold exists to surface
+  changed code no test executes; it never justifies a test written to touch
+  lines without asserting anything. That kind of test converts a known gap into
+  a false green, and this gate cannot tell the difference — the phase-5 mutation
+  check in the `task` skill is what can. Raise the threshold as the suite earns
+  it; never lower it to make one MR pass.
 - Keep the gitleaks allowlist tight — every entry is a hole. Prefer an inline
   `# gitleaks:allow` on a one-off doc line over a global regex.
 - **Pinned gitleaks is a maintenance commitment.** `ci/gitleaks-fetch.sh` pins a

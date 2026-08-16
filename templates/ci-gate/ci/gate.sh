@@ -29,4 +29,11 @@ fi
 echo "== migration-guard =="
 bash "$here/migration-guard.sh" "$mode"
 
+# Changed-line coverage runs against a report a test run produced, so it only
+# makes sense on a real revision range — not on the staged index.
+if [ "$mode" != "--staged" ]; then
+  echo "== diff-coverage =="
+  bash "$here/diff-coverage.sh"
+fi
+
 echo "gate: OK"

@@ -8,6 +8,7 @@ replace) unit tests and LLM review.
 |---|---|---|
 | **secret-scan** | gitleaks — secret in the diff/history | pre-commit + CI |
 | **migration-guard** | forward-only + destructive DDL needs a marker | pre-commit + CI |
+| **diff-coverage** | changed lines actually executed by a test, above a threshold | CI (opt-in) |
 | **protected-branch** | no force-push, required status checks | platform rule (set once) |
 
 ## Local layer
@@ -55,6 +56,24 @@ Deliberate destructive change is fine — mark it:
 -- destructive: approved  (TICKET-123, data archived)
 DROP TABLE legacy_sessions;
 ```
+
+## diff-coverage policy
+
+Global coverage % is vanity — it moves too slowly to notice an untested change.
+This layer looks only at the lines the MR added or modified.
+
+`ci/diff-coverage.sh` **judges** a coverage report, it never produces one: your
+test job writes lcov / Cobertura / Clover, this reads it.
+
+Env: `GATE_COVERAGE_REPORT` (path(s); unset → layer skips itself),
+`GATE_COVERAGE_MIN` (default `80`), `GATE_COVERAGE_STRICT=1` (a change with
+nothing measurable fails instead of passing — turn on once the report path is
+proven), `GATE_BASE_REF`, `GATE_COVERAGE_MISSES`.
+Exit codes: `0` ok · `1` below threshold · `2` config/infra (fails closed).
+
+Coverage is a detector, not a target: a test that touches lines without
+asserting anything satisfies this gate and proves nothing. Mutation testing is
+what catches that — run it on the changed files, not the whole repo.
 
 ## Protected-branch (one-time, per repo)
 Force-push cannot be checked by a CI job — set it as a platform rule.

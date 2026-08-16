@@ -66,6 +66,9 @@ blast-radius categories tests and LLM review miss:
 - **secret-scan** — gitleaks, in pre-commit and CI
 - **migration-guard** — tool-agnostic, path-based: forward-only immutability +
   destructive DDL requires an explicit `-- destructive: approved` marker
+- **diff-coverage** — changed-line coverage threshold, opt-in: reads the report
+  the project's own test run produced (lcov / Cobertura / Clover), judges only
+  the lines this change touched
 - **protected-branch** — no force-push + required status checks (platform rule,
   set once via `glab`/`gh`)
 

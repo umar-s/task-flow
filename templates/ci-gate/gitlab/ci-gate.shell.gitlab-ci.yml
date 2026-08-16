@@ -45,6 +45,20 @@ migration-guard:
   script:
     - bash ci/migration-guard.sh          # runs directly on host (git/bash/grep)
 
+# Changed-line coverage — same layer as the docker variant, running on the host.
+# Your test job produces the report; this one only judges it. Skips itself while
+# GATE_COVERAGE_REPORT is unset, fails closed on an unreadable one.
+#   diff-coverage:
+#     extends: .gate_base_shell
+#     rules: [ { if: '$CI_MERGE_REQUEST_IID' } ]
+#     needs: [ { job: test, artifacts: true } ]     # ← your test job, publishing the report
+#     variables:
+#       GATE_COVERAGE_REPORT: coverage.xml          # or coverage/lcov.info, build/logs/clover.xml
+#       GATE_COVERAGE_MIN: "80"
+#       GATE_COVERAGE_STRICT: "1"                   # once the report path is proven
+#     script:
+#       - bash ci/diff-coverage.sh
+
 # Opt-in alternative for a DEDICATED shell runner that already has docker access
 # and a warm image cache (faster, no per-run download). Only where you accept the
 # docker-group trade-off — never on a shared runner:
