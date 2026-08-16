@@ -40,7 +40,10 @@ Review the diff plus enough surrounding code to trace how untrusted data flows
 through the changed paths — including the helpers the new code calls.
 Read-only: do not mutate the working tree, index, HEAD, or branch state;
 another revision → temporary worktree (`git worktree add /tmp/review-[SHA]
-[SHA]`), never checkout.
+[SHA]`), never checkout. Do not dispatch subagents — this lens is one
+independent threat model, not a relay. Do not open `.env` files or other secret
+stores unless this dispatch authorized it: reporting that a path leaks a secret
+never requires reading the secret.
 
 ## Method
 
@@ -108,4 +111,10 @@ Critical: N | High: N | Medium: N | Low: N
 - **Description / Impact / PoC (для Critical/High) / Fix**
 
 ### Positive observations
+
+### Residual risk / unverified assumptions
+Что осталось непроверенным и на каких допущениях держится вывод: границы,
+которые не удалось протрассировать, эксплуатируемость, которую не удалось ни
+подтвердить, ни опровергнуть, контроли, существование которых ты принял на
+веру. Молчание здесь читается как «проверено всё» — а это почти никогда не так.
 ````

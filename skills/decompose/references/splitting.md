@@ -80,6 +80,37 @@ validation now, richer policy later?
 If yes: ship the minimum viable rule set first and defer the more elaborate
 policy to a later task.
 
+## Wide incompatible changes — expand → migrate → contract
+
+SPIDR splits a capability that is being *added*. It has no good answer for a
+change to something consumers already depend on — a schema column, a response
+shape, a shared function signature — where the honest vertical slice ("change
+it and every caller") is exactly the task nobody can review or roll back
+safely.
+
+Cut those on a different axis, by **coexistence**:
+
+1. **Expand** — one task adds the new form *beside* the old one. Nothing
+   breaks, because nothing has moved yet; this task's `truths` are about the
+   new form existing and being writable, not about anyone using it.
+2. **Migrate** — one task per batch of consumers that can move independently.
+   Batches are chosen by who can be verified together (one service, one
+   surface, one job), not by counting call sites. Each batch is its own
+   vertical slice with its own `dod.verify`.
+3. **Contract** — a final task removes the old form, and its acceptance
+   criteria include the evidence that nothing reads it any more (a search, a
+   log/metric window, a grep of the consumer set named in step 2).
+
+The `depends_on` shape falls out of this: every migrate task depends on
+expand, and contract depends on every migrate task. That is also what keeps
+the contract step from being quietly dropped once the feature "works" — it is
+a task in the graph, not a cleanup someone remembers.
+
+Use the plain single-task form only when the full consumer set is small enough
+to name exhaustively in the task's `context`. "We'll find the callers during
+implementation" is the signal that the consumer set is not actually known, and
+therefore that expand → migrate → contract is the correct shape.
+
 ## Anti-patterns to reject
 
 - **Horizontal, layer-by-layer splits.** Slicing by architecture tier —

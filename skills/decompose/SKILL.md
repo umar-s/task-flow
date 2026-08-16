@@ -87,7 +87,11 @@ run each extracted requirement through the edge-case categories in
 `references/edge-probe.md` (load it now, per the resolved `$ROOT`). Keep
 this brief and targeted, not an interview: only raise the categories
 `references/edge-probe.md`'s relevance filter says apply to that
-requirement's shape.
+requirement's shape. Ask from the **frontier** — the question whose
+prerequisites are already answered and that unblocks the most of the
+decomposition; dependent questions wait for it. Two answers with the same
+consequences are not a question: choose one, record it as a named assumption
+in the epic header, and keep going.
 
 ## 1. Requirements
 Turn what Phase 0 gathered into a numbered `REQ-NN` list: each requirement
@@ -106,6 +110,14 @@ as separate tasks). Load `references/splitting.md` for the SPIDR axes and
 size signals, and apply exactly one axis per split. Load
 `references/thinking-models.md` and run pre-mortem, MECE-at-requirement-
 level, and constraint-first against the resulting graph.
+
+A **wide incompatible change** (a contract, schema, or interface existing
+consumers already depend on) has no honest vertical slice while both forms
+must work at once — cut it as expand → migrate → contract instead, per
+`references/splitting.md`: one task adds the new form beside the old, then one
+task per independently-migratable batch of consumers, then a final task
+removes the old form once nothing reads it. "Change it everywhere at once" is
+one task only when the consumer set is small enough to name in full.
 
 **Scope-reduction prohibition:** a task description carrying "v1,"
 "placeholder," "stub," or "basic version for now" is not a smaller task —
@@ -137,15 +149,24 @@ hand-authored. Roll up `story_points` across the epic as an informational
 total (not a commitment), and note the wave count as the breakdown's
 parallelism width.
 
+A wave is a **claim that those tasks can run side by side**, so verify it holds
+against shared resources, not just against `depends_on`: two tasks in one wave
+must not write the same files or the same shared state (a schema, a config, a
+shared contract). Where they do, that is a missing dependency rather than a
+scheduling detail — hoist the shared contract into its own earlier task and
+have both depend on it, or declare the edge directly and let the later task
+drop a wave. `depends_on` legitimately carries both kinds of edge: "needs its
+output" and "cannot safely run beside it."
+
 ## 5. QA
 Dispatch an **independent** subagent, via the Agent tool, in a **fresh
 context** — it must not have seen Phases 0-4 run, so it has no attachment to
 the breakdown it's grading. Load `references/qa-checklist.md` now and hand
 its full text as that subagent's brief, along with the `REQ-NN` list and the
-full task breakdown (all 6 author fields + computed `wave` per task). The subagent runs the 7
+full task breakdown (all 6 author fields + computed `wave` per task). The subagent runs the 8
 checks (requirement coverage, field completeness, graph acyclicity,
-atomicity, key-links, no silent scope reduction, MECE) and reports BLOCKER/
-WARNING findings.
+atomicity, key-links, no silent scope reduction, MECE, wave parallelism
+safety) and reports BLOCKER/WARNING findings.
 
 On any BLOCKER, revise the breakdown (back to whichever of Phases 1-4 the
 finding traces to) and re-check with the same subagent. **Loop until a
@@ -161,10 +182,17 @@ rather than forcing more automatic passes. WARNINGs alone never block the exit.
 ## 6. Draft
 Load `references/draft-template.md` and write the epic header, task table,
 one card per task (all 6 author fields; `wave` shows only in the table/graph, not on a
-card), the dependency graph (mermaid), and the traceability table into
+card), the dependency graph (mermaid), the traceability table, and the
+**risks** and **open questions** sections into
 `docs/decompose/YYYY-MM-DD-<epic>.md` (or the project's configured draft
 location). This MD file is the **self-contained primary artifact** — even if
 Phase 7 never runs, this is a complete deliverable on its own.
+
+Every open question names the tasks it blocks, and **no blocking open question
+survives approval**: resolve it, or mark those tasks blocked and keep them out
+of dispatch until it is. An epic approved with a live blocking question inside
+it is how that question gets rediscovered mid-implementation, by the one person
+least able to answer it.
 
 **Stop here and get explicit user approval** on the draft's content before
 going anywhere near Phase 7. "The skill finished running" is not approval;
@@ -212,6 +240,10 @@ optionally, a well-formed set of tracker issues) exists; running any task is
 not this skill's job.
 
 ## Fixed discipline (non-negotiable)
+- Where this flow and the project's `CLAUDE.md` genuinely conflict, the project
+  wins — apply its rule and say in one line which step you deviated from and
+  why. A silently skipped phase is the failure; a declared deviation is a
+  decision.
 - Splitting axis is SPIDR/vertical-slices/dependencies — story points are an
   annotation computed after the fact, never a splitting trigger.
 - Every task's `dod` carries all four members including `truths`; a task

@@ -41,6 +41,13 @@ enters the picture, and only after user approval.
 6. Fill the traceability table with one row per `REQ-NN` from Phase 1 — a
    row with an empty `Tasks` cell is the same defect the QA subagent's
    Check 1 (requirement coverage) would flag as a BLOCKER.
+7. Fill **Risks and mitigations** and **Open questions**. Both sections are
+   part of the artifact, not decoration: a risk with no early signal is a
+   wish, and an open question with no named blocked tasks cannot be acted on.
+   A question marked `blocking` must be resolved before the user approves the
+   draft — or the tasks it blocks are marked blocked and kept out of dispatch.
+   Genuinely empty? Write `None` explicitly, so a reader can tell "nothing to
+   flag" apart from "nobody looked."
 
 The template uses four backticks for its outer fence specifically so the
 inner ` ```mermaid ` fence survives untouched when you copy it out.
@@ -51,6 +58,7 @@ inner ` ```mermaid ` fence survives untouched when you copy it out.
 **Goal:** <one or two sentences: what this epic delivers and for whom>
 **Story points (rollup):** <sum of every task's story_points below>
 **Waves:** <count of distinct wave values across every task below>
+**Open questions:** <count marked blocking> blocking / <total count> — see below
 
 ## Tasks
 
@@ -124,4 +132,22 @@ graph TD
      cell is an uncovered requirement (qa-checklist.md Check 1, BLOCKER).
      Two tasks may legitimately share a REQ (Check 7 — MECE) as long as the
      split is deliberate and stated in each task's context. -->
+
+## Risks and mitigations
+
+| Risk | Impact | Mitigation / early signal |
+|---|---|---|
+| <what could go wrong — a real failure mode, not "the estimate may slip"> | <what it costs when it does> | <what is done about it, and what would tell us early> |
+<!-- Risks that belong to one task live in that task's context; this table is
+     for epic-level risk — the ones no single task owns. `None` if there are
+     genuinely none. -->
+
+## Open questions
+
+- **[blocking]** <question> — blocks `<TASK-ID-2>`, `<TASK-ID-4>`
+- <question with no blocked tasks — decide before the epic ends, not before it starts>
+<!-- Every blocking question must be resolved before approval, or the tasks it
+     names are marked blocked and excluded from dispatch. A named assumption
+     (Phase 0 chose one of two consequence-equivalent answers) belongs here
+     too, written as an assumption rather than a question. `None` if empty. -->
 ````

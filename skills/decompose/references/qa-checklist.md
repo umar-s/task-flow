@@ -31,8 +31,8 @@ Known ways a check-run goes soft — refuse all of these:
 
 - Accepting a task list without tracing each `REQ-NN` back to a specific
   covering task by ID.
-- Letting six checks that pass anchor judgment on the seventh — a breakdown
-  can clear 6 of 7 checks and still be unfit to hand to `task-flow:task`.
+- Letting seven checks that pass anchor judgment on the eighth — a breakdown
+  can clear 7 of 8 checks and still be unfit to hand to `task-flow:task`.
 - Downgrading a BLOCKER to a WARNING to avoid friction with whichever phase
   produced the breakdown.
 - Treating a scope-reduction marker ("v1", "stub", "for now") as fine because
@@ -43,7 +43,7 @@ Every finding you report carries an explicit severity, **BLOCKER** or
 the epic will not actually be delivered if this ships as-is. WARNING means
 quality is degraded but the breakdown is still usable.
 
-## The 7 checks
+## The 8 checks
 
 ### Check 1 — Requirement coverage
 
@@ -192,11 +192,37 @@ requirements covered; **BLOCKER** if the overlap masks a requirement that,
 on closer reading, neither task actually finishes (looks double-covered,
 is actually zero-covered).
 
+### Check 8 — Wave parallelism safety
+
+`wave` is not just arithmetic over `depends_on` (Check 3 already verified the
+arithmetic) — it is a **claim that everything in that wave can be executed at
+the same time, by different implementers, without them colliding**. Check the
+claim itself.
+
+For each wave, compare its tasks pairwise on what they *write*, reading each
+task's `dod` and `context` for the files, modules, tables, schemas, configs
+and shared contracts it creates or modifies. Two tasks in the same wave that
+write the same artifact cannot actually run in parallel: whoever merges second
+either loses work or resolves a conflict nobody planned for. The defect is a
+**missing dependency**, not a scheduling inconvenience — the fix is to hoist
+the shared artifact into its own earlier task both depend on, or to declare the
+edge directly so the later task drops a wave.
+
+Two tasks that *read* the same artifact are fine. So is one task writing what
+another only reads — provided the reader declares the writer in its
+`depends_on`; if it doesn't, that is a Check 3 finding as well.
+
+**Severity: BLOCKER** when two tasks in the same wave write the same file or
+the same shared contract/schema — the breakdown promises parallelism it cannot
+deliver. **WARNING** when the overlap is in the same module or subsystem
+without a provable same-artifact collision: worth a second look at the
+boundaries, not a reason to reject the graph.
+
 ## Output contract
 
 Report exactly one of two outcomes:
 
-- **`PASSED`** — all 7 checks ran and found nothing to report.
+- **`PASSED`** — all 8 checks ran and found nothing to report.
 - **`ISSUES FOUND`** followed by a YAML list, one entry per finding:
 
 ```yaml
@@ -215,14 +241,14 @@ issues:
 
 `task` is the task ID the finding belongs to (or `null` for an epic-level
 finding, e.g. an uncovered `REQ-NN` with no claiming task at all). `check`
-is one of the seven names above. `severity` is `BLOCKER` or `WARNING`,
+is one of the eight names above. `severity` is `BLOCKER` or `WARNING`,
 never anything else. `description` states the defect found; `fix_hint`
 states what would resolve it — concrete enough that the next revision pass
 doesn't have to re-derive what you meant.
 
 ## Revision loop
 
-The loop alternates two distinct steps: a **check-run** (this full 7-check
+The loop alternates two distinct steps: a **check-run** (this full 8-check
 pass, which applies no fixes) and a **fix-round** (the breakdown goes back
 and its BLOCKERs are addressed). It runs:
 

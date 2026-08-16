@@ -50,7 +50,13 @@ judging style.
 ```bash
 git diff --stat [BASE_SHA]..[HEAD_SHA]
 git diff [BASE_SHA]..[HEAD_SHA]
+git status --short
 ```
+
+`git status --short` is part of the scope, not a formality: an untracked file
+that belongs to this change — a module the diff imports, a fixture the tests
+load, a migration — is in scope, and its absence from the commits is itself a
+finding. Never silently review around it.
 
 ## Read-only review
 
@@ -61,13 +67,22 @@ existing test suite is allowed if it does not modify files. Need another
 revision checked out? Use a temporary worktree
 (`git worktree add /tmp/review-[SHA] [SHA]`) — never move HEAD here.
 
+Do not dispatch subagents: this review is one independent pair of eyes on the
+diff, and a relayed opinion is not one. Do not open `.env` files or other
+secret stores unless the dispatch explicitly authorized it — a secret in the
+diff is a finding you can raise from the diff alone.
+
 ## Process
 
 1. Read the requirements first, then the tests — they reveal intent and
    coverage — then the implementation.
 2. Walk the diff; read enough surrounding code (including the helpers the new
    code calls) to judge fit. Never review a hunk in isolation.
-3. Check, in order:
+3. Treat the change's claimed evidence as unverified until you see it. Never
+   state that a test, build, or manual check passed unless you observed it in
+   this review or the dispatch handed you the output. "Tests pass" in a
+   description is a claim, not evidence.
+4. Check, in order:
    - **DoD / spec compliance** — every DoD field actually parsed/exposed;
      deviations from the design-spec flagged explicitly (justified
      improvement or departure?). Issues with the spec itself — say so.
@@ -123,6 +138,11 @@ delete pass-through wrappers. Prefer the remedy that removes moving pieces.
 - **FYI:** к сведению, действий не требует
 
 Для каждой Critical/Required: file:line, что не так, почему важно, как чинить.
+
+### Verification assessment
+Какие доказательства реально есть (что ты видел своими глазами), что осталось
+**непроверенным**, и какие дыры в покрытии это оставляет. Пустой раздел здесь —
+такой же дефект, как пустой Findings: «не проверял» — это тоже результат.
 
 ### Assessment
 **Ready to merge?** [Yes | No | With fixes]

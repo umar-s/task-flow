@@ -37,7 +37,11 @@ Read the ticket **and every comment** in the tracker — the real DoD and the
 "важное уточнение" often live in a late comment, not the title. Assign the task
 to the user if it is not already. Restate the DoD and constraints back in one
 short paragraph so scope is explicit. If scope genuinely forks, ask **now**
-(AskUserQuestion) — not after implementing.
+(AskUserQuestion) — not after implementing. Ask from the **frontier**: the
+decision whose prerequisites are already closed and that unblocks the most of
+what follows; questions that depend on its answer wait for it. Two options with
+the same consequences are not a decision — pick one, state it as an assumption,
+move on.
 
 ## 1. Design-spec
 Write a short design doc: data model / schema, endpoints or interfaces, the
@@ -69,15 +73,31 @@ attacks execution mechanics, not the design.
 Turn the corrected design into ordered, concrete steps: files to touch, tests to
 write, migrations, grants, docs, deploy + cache-flush steps.
 
+Before fixing the order, map **blast radius and risk**: the contracts and data
+other consumers depend on, the callers and flows the change touches, and the
+unknown that costs the most if it turns out wrong. Then order so that the
+riskiest assumption is proven **earliest**. An unknown that cannot be proven
+inside the first slice becomes a bounded spike step with a named exit decision —
+not a hope deferred to the end.
+
+Choose the **test seam** here, not while writing tests: the highest practical
+level that still proves user-observable behaviour, preferring an existing seam
+over a new one and a real boundary (route, DB, queue) over a deep mock. A
+mock-shaped seam that stays green while the real path is broken is exactly the
+failure this step prevents. Record the chosen seam in the plan; escalate the
+choice to the user only when it changes a contract, the cost of the work, or how
+much the result can be trusted.
+
 ## 4. Premortem #2 — on the plan
 Attack the plan the same way: wrong ordering, a mutation that commits before a
 guard, a missing grant/migration, an un-flushed cache, an untested edge. Fix.
 
 ## 5. TDD implement
 Branch off the integration branch (`fix/…` or `feature/…`, one branch per task).
-Implement to the DoD. Write feature/unit tests that encode the DoD and the
-premortem edge cases. Run the project's **test + static-analysis + lint** to
-green. Keep spec-adjacent docs (API reference, OpenAPI) in the same change.
+Implement to the DoD. Write tests **at the seam chosen in phase 3** that encode
+the DoD and the premortem edge cases. Run the project's **test +
+static-analysis + lint** to green. Keep spec-adjacent docs (API reference,
+OpenAPI) in the same change.
 
 ## 6. Code-review (adversarial)
 Run an independent, adversarial review of the diff — the `code-review` Workflow
@@ -92,8 +112,16 @@ checks the five things you already worry about and skips the sixth you missed.
 The review is read-only on the checkout (rules in the template). Treat findings
 as suspects: fix the **real** correctness/security/grant/transaction ones and
 add a test that would have caught each; dismiss noise with a one-line reason.
-Fixes to Critical/Required findings go back through a fresh review of the delta
-(same clean dispatch) until none remain — a fix is a new change, not an
+If `superpowers:receiving-code-review` is installed, process the findings
+through it — it is the disciplined version of "treat findings as suspects", and
+it is what keeps agreement from becoming performative.
+
+**Severity maps to action.** Critical and Required block the merge. A Required
+finding may also be closed by the risk owner *explicitly accepting* it with the
+reason recorded on the MR — never by quietly downgrading it. Optional/Nit never
+become mandatory work: batch them or drop them, don't let a nit list grow the
+task. Fixes to Critical/Required findings go back through a fresh review of the
+delta (same clean dispatch) until none remain — a fix is a new change, not an
 epilogue.
 
 ## 6b. Security-review (conditional)
@@ -144,6 +172,9 @@ check). Clean up any test fixtures you seeded.
   ticket and note it.
 
 ## Fixed discipline (non-negotiable)
+- Where this flow and the project's `CLAUDE.md` genuinely conflict, the project
+  wins — apply its rule and say in one line which step you deviated from and
+  why. A silently skipped step is the failure; a declared one is a decision.
 - One task = one feature branch off the integration branch → one MR/PR.
 - CI pipeline **green before merge**; if a prior merge was blind, that is the bug.
 - Never commit `Co-Authored-By` trailers unless the project asks for them.
