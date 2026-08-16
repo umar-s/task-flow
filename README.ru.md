@@ -1,8 +1,14 @@
 # task-flow
 
+[![version](https://img.shields.io/github/v/release/umar-s/task-flow?label=version&color=0b7285)](https://github.com/umar-s/task-flow/releases/latest)
+[![changelog](https://img.shields.io/badge/changelog-keep--a--changelog-0b7285)](CHANGELOG.md)
+[![license](https://img.shields.io/badge/license-MIT-0b7285)](LICENSE)
+
 Плагин Claude Code: дисциплинированный **пофазовый flow ведения задачи** плюс
 **детерминированный CI-гейт**, на который он опирается, — и скилл `decompose`,
 который питает оба. Три скилла, один продукт.
+
+> История релизов — [CHANGELOG.md](CHANGELOG.md).
 
 ## Пайплайн
 

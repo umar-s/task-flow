@@ -1,10 +1,15 @@
 # task-flow
 
+[![version](https://img.shields.io/github/v/release/umar-s/task-flow?label=version&color=0b7285)](https://github.com/umar-s/task-flow/releases/latest)
+[![changelog](https://img.shields.io/badge/changelog-keep--a--changelog-0b7285)](CHANGELOG.md)
+[![license](https://img.shields.io/badge/license-MIT-0b7285)](LICENSE)
+
 A Claude Code plugin: a disciplined **per-task quality flow** plus the
 **deterministic CI gate** it leans on — and a `decompose` skill that feeds
 both. Three skills, one product.
 
 > Русская версия — [README.ru.md](README.ru.md).
+> Release history — [CHANGELOG.md](CHANGELOG.md).
 
 ## Pipeline
 
