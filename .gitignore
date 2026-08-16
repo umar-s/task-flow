@@ -2,6 +2,7 @@
 *.log
 __pycache__/
 .venv/
+CLAUDE.md
 
 # SDD dev scratch (not part of the plugin)
 .superpowers/
