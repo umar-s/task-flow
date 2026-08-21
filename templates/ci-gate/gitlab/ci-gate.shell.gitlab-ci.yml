@@ -35,7 +35,7 @@ secret-scan:
       # Range handling, three landmines this shape avoids:
       #  * gitleaks exits 0 when the git command inside it fails ("0 commits
       #    scanned, no leaks found") — so the range is validated with
-      #    `git rev-list` first;
+      #    the same `git log …` invocation first;
       #  * an empty word inside --log-opts (a stray space) silently scans
       #    nothing — hence ${RANGE:+ $RANGE};
       #  * without --text a `-diff` attribute hides a file from the scan, and

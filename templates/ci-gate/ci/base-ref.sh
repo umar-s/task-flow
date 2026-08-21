@@ -29,4 +29,13 @@ if ! git rev-parse --verify --quiet "${BASE}^{commit}" >/dev/null; then
   log "base '$BASE' not in clone — need full history (GIT_DEPTH=0 / fetch-depth: 0). Failing closed."
   exit 2
 fi
+# A base that resolves to HEAD makes every range empty, and every range layer
+# then reports OK on a change it never looked at — one CI variable
+# (GATE_BASE_REF=HEAD) would switch off migration-guard, unicode-guard and
+# diff-coverage at once. An empty range from a real base is fine; a base that
+# IS the tip is a configuration error.
+if [ "$(git rev-parse "${BASE}^{commit}")" = "$(git rev-parse 'HEAD^{commit}')" ]; then
+  log "base '$BASE' is the same commit as HEAD — that is not a base, it is an off switch for every range layer. Failing closed."
+  exit 2
+fi
 printf '%s\n' "$BASE"

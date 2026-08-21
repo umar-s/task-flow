@@ -59,6 +59,10 @@ lcov app.py 3 1; GATE_COVERAGE_MIN=eighty check bad-threshold 2 'not an integer'
 lcov app.py 3 1
 out=$( cd "$R" && bash ci/diff-coverage.sh 2>&1 ) && rc=0 || rc=$?
 [ "$rc" = 2 ] && pass=$((pass+1)) || { fail=$((fail+1)); printf 'FAIL no-base-ref: rc=%s\n%s\n' "$rc" "$out" >&2; }
+# i2) a base that is the tip would make the layer measure nothing and pass
+out=$( cd "$R" && GATE_BASE_REF=HEAD bash ci/diff-coverage.sh 2>&1 ) && rc=0 || rc=$?
+if [ "$rc" = 2 ] && printf '%s' "$out" | grep -q 'off switch'; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL base-equals-head: rc=%s\n%s\n' "$rc" "$out" >&2; fi
+
 # j) an added line that looks like a diff header must not re-point the parser.
 #    "++ note" reaches the parser as "+++ note"; read as a header it re-points
 #    the current file, and every LATER hunk of that file silently drops out of

@@ -130,6 +130,14 @@ err=$(MIGRATION_DIRS="/" bash "$GUARD" --staged 2>&1 >/dev/null) && rc=0 || rc=$
 [ "$rc" = 2 ] && pass=$((pass+1)) || { fail=$((fail+1)); printf 'FAIL migration-dirs-slash-only: rc=%s expected=2\n%s\n' "$rc" "$err" >&2; }
 git rm -rq --cached . >/dev/null 2>&1 || true; rm -rf migrations
 
+# --- a base that is the tip is an off switch, not a base ---
+mkdir -p migrations; printf 'DROP TABLE t;\n' > migrations/0013_a.sql; git add -A
+git -c user.name=t -c user.email=t@t commit -qm "base-eq-head fixture" >/dev/null
+err=$(GATE_BASE_REF=HEAD bash "$GUARD" 2>&1 >/dev/null) && rc=0 || rc=$?
+if [ "$rc" = 2 ] && printf '%s' "$err" | grep -q 'off switch'; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL base-equals-head: rc=%s expected=2\n%s\n' "$rc" "$err" >&2; fi
+rm -rf migrations; git rm -rq --cached migrations >/dev/null 2>&1 || true
+git -c user.name=t -c user.email=t@t commit -qm "drop fixture" >/dev/null 2>&1 || true
+
 # --- an empty MIGRATION_DIRS is a config error, not "no migrations" ---
 mkdir -p migrations; printf 'DROP TABLE t;\n' > migrations/0009_a.sql; git add -A
 err=$(MIGRATION_DIRS=" " bash "$GUARD" --staged 2>&1 >/dev/null) && rc=0 || rc=$?

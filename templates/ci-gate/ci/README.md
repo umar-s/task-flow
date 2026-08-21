@@ -1,6 +1,6 @@
 # ci-gate (vendored)
 
-<!-- ci-gate payload version: 1.8.0 — `/ci-gate` re-run upgrades it; see "Upgrading" -->
+<!-- ci-gate payload version: 1.8.1 — `/ci-gate` re-run upgrades it; see "Upgrading" -->
 
 Deterministic merge gate for this repository — the non-gameable floor under
 secrets, destructive migrations, and force-push. It complements (does not
@@ -74,8 +74,9 @@ saw: `git commit --no-verify`, an amend, a rebase, history made elsewhere. Range
 per ref: `remote..local` when the remote sha is known here; otherwise
 `<local> --not --remotes=<remote>` — everything this remote does not have yet,
 which also covers commits sitting unpushed on another local branch. The range
-is validated with `git rev-list` first (gitleaks exits 0 when the git command
-inside it fails), and a git failure **blocks** the push. Bypass only with
+is validated first with the very command gitleaks runs
+(`git log --text --diff-merges=first-parent --max-count=1 …`), because gitleaks
+exits 0 when the git command inside it fails, and a git failure **blocks** the push. Bypass only with
 `GATE_PREPUSH_SKIP="<sha>: <reason>"`, where `<sha>` (≥7 hex) is the local sha
 this push sends — a value left in a shell profile does not bypass the next
 push — and the bypass is appended to `.git/gate-bypass.log` (local, readable in
@@ -353,8 +354,10 @@ grow a regex into a parser:
 - **`--log-opts` is space-split by gitleaks**: an empty word in it makes the
   scan cover nothing and still exit 0. Build it as the templates do.
 - **A broken git range exits 0** inside gitleaks ("0 commits scanned, no leaks
-  found"), which is why the templates validate the range with `git rev-list`
-  before scanning.
+  found"), which is why the templates validate the range **with the same
+  `git log --text --diff-merges=first-parent` invocation** before scanning —
+  `git rev-list` accepts diff options it never applies, so it cannot tell you
+  whether `git log` (what gitleaks runs) understands them.
 - **Homoglyphs / mixed-script identifiers** (`раssword` with a Cyrillic `а`)
   are not detected by unicode-guard — the bytes are ordinary letters. That is
   the security review's job.

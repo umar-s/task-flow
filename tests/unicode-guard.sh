@@ -107,6 +107,15 @@ out=$(bash "$GUARD" 2>&1) && rc=0 || rc=$?
 [ "$rc" = 2 ] && pass=$((pass+1)) || { fail=$((fail+1)); printf 'FAIL range-mode-no-base: rc=%s\n%s\n' "$rc" "$out" >&2; }
 out=$(GATE_BASE_REF=nope bash "$GUARD" 2>&1) && rc=0 || rc=$?
 [ "$rc" = 2 ] && pass=$((pass+1)) || { fail=$((fail+1)); printf 'FAIL range-mode-bad-base: rc=%s\n%s\n' "$rc" "$out" >&2; }
+# a base that IS the tip empties every range: one CI variable would switch the
+# layer off and still report OK
+out=$(GATE_BASE_REF=HEAD bash "$GUARD" 2>&1) && rc=0 || rc=$?
+if [ "$rc" = 2 ] && printf '%s' "$out" | grep -q 'off switch'; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL base-equals-head: rc=%s\n%s\n' "$rc" "$out" >&2; fi
+# the run says how much of the change it actually looked at
+out=$(GATE_BASE_REF=main bash "$GUARD" 2>&1) && rc=0 || rc=$?
+printf '%s' "$out" | grep -qE '[0-9]+ of [0-9]+ changed paths scanned' && pass=$((pass+1)) || { fail=$((fail+1)); printf 'FAIL scanned-counter missing:\n%s\n' "$out" >&2; }
+out=$(UNICODE_GUARD_EXCLUDE='^src/' GATE_BASE_REF=main bash "$GUARD" 2>&1) && rc=0 || rc=$?
+if [ "$rc" = 0 ] && printf '%s' "$out" | grep -q 'every changed path was excluded'; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL all-excluded warning: rc=%s\n%s\n' "$rc" "$out" >&2; fi
 git checkout -q main; git branch -q -D feature
 
 # --- tool failures fail closed (rc 2), never pass ---

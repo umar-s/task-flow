@@ -9,6 +9,33 @@ below is tagged `vX.Y.Z` in git. Installs track the default branch (the
 marketplace entry pins no ref), so a release tag marks history rather than a
 download.
 
+## [1.8.1] — 2026-08-22
+
+Three findings from the completeness critic of the 1.8.0 review, all in the
+shipped payload.
+
+### Fixed
+- **`GATE_BASE_REF` pointing at the tip switched off three layers at once.**
+  A base that resolves to the same commit as `HEAD` makes every range empty, so
+  `migration-guard`, `unicode-guard` and `diff-coverage` all reported OK on a
+  change they never looked at — one CI variable, three green jobs.
+  `ci/base-ref.sh` now fails closed on it ("that is not a base, it is an off
+  switch"); an empty range from a *real* base still passes, as it should.
+- **The shipped documentation still told consumers to validate a range with
+  `git rev-list`** — the command 1.8.0 proved insufficient (it accepts diff
+  options it never applies, so it cannot tell whether `git log`, which is what
+  gitleaks runs, understands them). `ci/README.md`, both GitLab templates and
+  the changelog entry now name the `git log --text --diff-merges=first-parent
+  --max-count=1` form the code actually uses.
+
+### Changed
+- **`unicode-guard` reports how much of the change it scanned** — `N of M
+  changed paths scanned (K excluded)` — and says outright when
+  `UNICODE_GUARD_EXCLUDE` covered every changed path ("this run proves
+  nothing"). The 1.8.0 probe only rejects catch-all patterns (`.`, `.*`); an
+  anchored exclude listing a repo's own directories passes it, and the counters
+  are what make that visible instead of silent.
+
 ## [1.8.0] — 2026-08-22
 
 `ci-gate` hardening — the second item of the donor-audit plan
@@ -55,7 +82,8 @@ without having looked — each is fixed here, with a fixture that fails on 1.7.1
   sends: `remote..local` when the remote sha is known here, otherwise
   `local --not --remotes=<remote>` (which also covers commits sitting unpushed
   on another local branch — a merge-base against the default branch missed
-  those). The range is validated with `git rev-list` before the scan, because
+  those). The range is validated before the scan with the same `git log`
+  invocation the scan runs, because
   gitleaks exits 0 when the git command inside it fails. Runs through
   pre-commit or as the native hook. Bypass only with
   `GATE_PREPUSH_SKIP="<sha>: <reason>"` naming the sha being pushed — a value
@@ -132,7 +160,8 @@ without having looked — each is fixed here, with a fixture that fails on 1.7.1
 - **Every git-range secret-scan** (three CI templates, `pre-push.sh`,
   `gate.sh`, this repo's own `check.yml`) now passes
   `--text --diff-merges=first-parent` and validates the range with
-  `git rev-list` first. Without them a `-diff` line in `.gitattributes` hid a
+  the same `git log` invocation first. Without them a `-diff` line in
+  `.gitattributes` hid a
   file from the scan, a secret added in a merge commit was invisible, and a
   range git could not resolve was reported as "no leaks found".
 - **`unicode-guard` is active, not opt-in**, and belongs in the required status
@@ -408,6 +437,7 @@ Donor audit of the `hybrid-plan` / `hybrid-review` skill set —
   tool-agnostic migration-guard and protected-branch rules into any repo —
   GitLab and GitHub CI, pre-commit hooks, failing closed.
 
+[1.8.1]: https://github.com/umar-s/task-flow/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/umar-s/task-flow/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/umar-s/task-flow/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/umar-s/task-flow/compare/v1.6.0...v1.7.0

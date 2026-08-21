@@ -136,6 +136,7 @@ tr -d '\000' < "$tmp" | LC_ALL=C awk '
   !inhunk && /^\+\+\+ /     { file = substr($0, 5); if (file ~ /^b\//) file = substr(file, 3)
                    first = 1
                    skip = (ENVIRON["UNICODE_GUARD_EXCLUDE"] != "" && file ~ ENVIRON["UNICODE_GUARD_EXCLUDE"])
+                   if (file != "/dev/null") { changed++; if (skip) excluded++ }
                    next }
   !inhunk && /^@@ /         { if ($0 !~ /^@@ -[0-9]+(,[0-9]+)? \+[0-9]+(,[0-9]+)? @@/) {
                      printf "unicode-guard: unparseable hunk header for %s: %s\n", file, $0 > "/dev/stderr"; broken = 1; exit 2 }
@@ -169,7 +170,15 @@ tr -d '\000' < "$tmp" | LC_ALL=C awk '
     ln++; first = 0; next
   }
   { printf "unicode-guard: unexpected line inside a hunk of %s: %s\n", file, substr($0, 1, 40) > "/dev/stderr"; broken = 1; exit 2 }
-  END { if (broken) exit 2; exit found ? 1 : 0 }
+  END {
+    if (broken) exit 2
+    # An exclude that happens to cover every changed path leaves a green job
+    # that inspected nothing. The counts make that visible instead of silent.
+    printf "unicode-guard: %d of %d changed paths scanned (%d excluded)\n", changed - excluded, changed, excluded > "/dev/stderr"
+    if (changed > 0 && changed == excluded)
+      printf "unicode-guard: WARNING — every changed path was excluded by UNICODE_GUARD_EXCLUDE; this run proves nothing\n" > "/dev/stderr"
+    exit found ? 1 : 0
+  }
 '
 # PIPESTATUS must be copied by the very next command — any assignment resets it.
 # Both halves decide the verdict: a missing or failing `tr` would leave awk with
