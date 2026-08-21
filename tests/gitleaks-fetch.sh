@@ -37,7 +37,7 @@ out=$(bash "$TMP/fetch-bad.sh" 2>"$TMP/err") && rc=0 || rc=$?
 # Both need permission bits to bite — as root they don't, so the branch would never be entered.
 if [ "$(id -u)" = 0 ]; then
   echo "tests/gitleaks-fetch: running as root — (f)/(g) permission fixtures skipped" >&2
-  B4=$(bash "$FETCH" 2>/dev/null); B5=$B4
+  B4=$(bash "$FETCH" 2>"$TMP/err") && ok || bad "fetch as root: $(cat "$TMP/err")"; B5=$B4
 else
   bash "$FETCH" >/dev/null 2>&1; chmod 000 "$GITLEAKS_CACHE_DIR/$TARBALL"
   B4=$(bash "$FETCH" 2>"$TMP/err") && "$B4" version >/dev/null && grep -q 'unreadable' "$TMP/err" && ok || bad "unreadable cache: $(cat "$TMP/err")"

@@ -80,6 +80,16 @@ t big-file-drop-first-line migrations/0008_a.sql 1 "DROP TABLE t;\n$big"
 t big-file-drop-with-marker migrations/0008_b.sql 0 "-- destructive: approved (T-9)\nDROP TABLE t;\n$big"
 t big-file-clean migrations/0008_c.sql 0 "CREATE TABLE t (id int);\n$big"
 
+
+# --- helpers AFTER the down block are forward code and must be scanned ---
+t rails-private-helper-after-down db/migrate/008_a.rb 1 'def up\n  cleanup\nend\ndef down\n  raise ActiveRecord::IrreversibleMigration\nend\nprivate\ndef cleanup\n  drop_table :legacy\nend'
+t alembic-helper-after-downgrade migrations/versions/a4_a.py 1 'def upgrade():\n    _drop_legacy()\n\ndef downgrade():\n    pass\n\ndef _drop_legacy():\n    op.drop_table("legacy")'
+t knex-hoisted-helper migrations/20240105_a.js 1 'exports.up = async k => { await dropLegacy(k); };\nexports.down = async () => {};\nasync function dropLegacy(k) { await k.schema.dropTable("legacy"); }'
+t typeorm-private-helper migrations/1700_c.ts 1 'export class M {\n  public async up(q) {\n    await this.cleanup(q);\n  }\n  public async down(q) {}\n  private async cleanup(q) {\n    await q.query("DROP TABLE legacy");\n  }\n}'
+t laravel-allman-helper migrations/2024_d.php 1 'public function up(): void\n{\n    $this->cleanup();\n}\npublic function down(): void\n{\n    Schema::dropIfExists("t");\n}\nprivate function cleanup(): void\n{\n    Schema::dropIfExists("legacy");\n}'
+t rails-drop-in-down-clean-helper db/migrate/008_b.rb 0 'def up\n  create_table :t\nend\ndef down\n  drop_table :t\nend\nprivate\ndef helper\n  add_column :t, :c, :string\nend'
+t sequelize-multiline-down migrations/20240105_b.js 0 'module.exports = {\n  up: async (q) => {\n    await q.createTable("t", {});\n  },\n  down: async (q) => {\n    await q.dropTable("t");\n  },\n};'
+
 # --- marker ---
 t marker-sql        migrations/0006_a.sql 0 '-- destructive: approved (T-1, archived)\nDROP VIEW v;'
 t marker-rails      db/migrate/006_a.rb 0 '# destructive: approved (T-2)\ndef change\n  drop_table :legacy\nend'

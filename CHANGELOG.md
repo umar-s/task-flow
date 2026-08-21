@@ -24,38 +24,39 @@ existing promise actually hold.
   image digest in every path, no tag-pinned actions, no personal paths in
   tracked files); `scripts/release-check.sh` checks the four-step release
   ritual and classifies the tree as unreleased / released / drifted;
-  `scripts/readme-parity.sh` keeps `README.md` and `README.ru.md` structurally
-  in lockstep; `tests/` holds the payload's negative controls — 46
-  migration-guard fixtures plus 3 under busybox where available (default
+  `scripts/readme-parity.sh` keeps `README.md` and `README.ru.md`
+  structurally in lockstep; `tests/` holds the payload's negative controls —
+  53 migration-guard fixtures plus 3 under busybox where available (default
   reversible templates of Laravel, Knex, Sequelize, TypeORM, Rails, Alembic
-  must pass; drops in the forward part, bypass layouts, nested `down`
-  look-alikes, files over 64 KB, a broken `awk` or `grep` must not) and the
-  failure paths of `gitleaks-fetch.sh`. `.github/workflows/check.yml` runs them, actionlint
-  and yamllint (both pinned), and the product's own secret-scan over this
-  repository.
+  must pass; drops in the forward part, helpers after `down`, bypass layouts,
+  nested `down` look-alikes, files over 64 KB, a broken `awk` or `grep` must
+  not) and the failure paths of `gitleaks-fetch.sh`. `.github/workflows/
+  check.yml` runs them, actionlint and yamllint (both pinned), and the
+  product's own secret-scan over this repository.
 - **`ci-gate` — `gate.sh`** accepts `GATE_PINNED_ONLY=1` to ignore a `gitleaks`
   on `PATH` and use the pinned one (the verdict CI will give).
 
 ### Changed
 - **`ci-gate` — `migration-guard.sh` judges the forward part of a migration,
-  and detects more there — MRs in flight may start to need the marker.** Both
-  families are matched only before a `down` / `downgrade` definition that
-  follows an `up` / `upgrade` / `change` one in the same file, at the same
-  indentation, and is not followed by another `up`: a conventional reversible
-  migration in one file (Rails, Alembic, Laravel, Knex, Sequelize, TypeORM —
-  in DSL or in SQL) no longer needs the marker; every other layout, including
-  split `*.down.sql` files and `-- +goose Down`-style sections, is scanned in
-  full as before. SQL: `DROP` of a view,
-  type, sequence, trigger, function, procedure or materialized view and
+  and detects more there — MRs in flight may start to need the marker.** The
+  body of a `down` / `downgrade` block that follows an `up` / `upgrade` /
+  `change` definition at the same indentation is skipped; everything else —
+  helpers after it, a redefined `up`, files without an `up` (plain SQL,
+  `*.down.sql`, `-- +goose Down` sections, Django) — is scanned. A conventional
+  reversible migration in one file (Rails, Alembic, Laravel, Knex, Sequelize,
+  TypeORM — in DSL or in SQL) no longer needs the marker. SQL: `DROP` of a
+  view, type, sequence, trigger, function, procedure or materialized view and
   `ALTER TABLE … DROP <anything>` (the `COLUMN` keyword is optional in
   PostgreSQL/MySQL) now count as destructive. ORM: the table/column-dropping
   DSL tokens of the frameworks whose directories are scanned by default
   (Rails/Alembic, Django, Laravel, Knex/Sequelize/TypeORM) are matched
-  case-sensitively, as whole words. A failing `awk`/`grep` is `exit 2`, never a
-  pass. The residue — multi-line statements, SQL assembled from strings,
-  `DELETE` without `FROM`, lossy type changes, constraint-dropping DSL calls,
-  unlisted DSLs — is documented as "Known limits" in `ci/README.md` and handed
-  to the phase-6b security review explicitly.
+  case-sensitively, as whole words. A failing `awk`/`grep` is `exit 2`, never
+  a pass, and files larger than a pipe buffer are judged, not skipped. The
+  residue — multi-line statements, SQL assembled from strings, `DELETE`
+  without `FROM`, lossy type changes, constraint-dropping DSL calls, unlisted
+  DSLs, deliberate evasion through indentation — is documented as "Known
+  limits" in `ci/README.md` and handed to the phase-6b security review
+  explicitly.
 
 ### Fixed
 - **`task`** — reference files are now loaded through a resolved `$ROOT`

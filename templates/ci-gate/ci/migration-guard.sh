@@ -38,12 +38,15 @@ STAGED="${STAGED:-0}"
 #         (DeleteModel, RemoveField), Laravel (Schema::drop, Schema::dropIfExists,
 #         dropTimestamps, dropSoftDeletes), Knex/Sequelize/TypeORM
 #         (dropTable(IfExists), dropColumn(s), removeColumn).
-# Forward part: when an up/upgrade/change definition precedes a down/downgrade
-# definition and no up is (re)defined after that down, everything from the
-# down on is ignored — a conventional down() drops exactly what up() created,
-# and flagging every reversible migration would make the marker worthless.
-# Any other layout (down first, up redefined after down, no up, no down — plain
-# SQL files included) is scanned in full.
+# Forward part: everything except the BODY of a down/downgrade definition that
+# follows an up/upgrade/change one at the same indentation — the body is
+# recognised by indentation (deeper lines, a lone opening brace, the closing
+# `end`/`}`), so helpers and anything else after the down block ARE scanned.
+# A conventional down() drops exactly what up() created, and flagging every
+# reversible migration would make the marker worthless. Files without an up
+# definition (plain SQL, Django, down-only files) are scanned in full. This is
+# a convenience for conventional layouts, not a security boundary: deliberate
+# evasion through indentation is the LLM security pass's job.
 # Known limits (documented in ci/README.md): a statement split across lines,
 # SQL assembled from several strings, DELETE without FROM (MSSQL), a type
 # change that truncates data, RunSQL/RunPython with non-literal SQL, and DSLs
@@ -55,38 +58,42 @@ ORM_RE='(^|[^A-Za-z0-9_])(drop_table|drop_column|remove_columns?|remove_referenc
 # Alembic, Laravel, Knex/Sequelize/TypeORM incl. `exports.`, `module.exports.`,
 # `export const`, bare `const`/`let`). A bare assignment (`down = 2`) does NOT
 # count — only a prefixed one. A down definition counts only at the SAME
-# indentation as the up definition it closes (a `down:` key or a `down(q)` call
-# nested inside up() is neither). Exported for awk via ENVIRON: `-v` would
-# re-process backslash escapes.
+# indentation as the up definition (a `down:` key or a `down(q)` call nested
+# inside up() is neither). Exported for awk via ENVIRON: `-v` would re-process
+# backslash escapes.
 _PFX_OPT='(public[[:space:]]+)?(async[[:space:]]+)?(def[[:space:]]+(self\.)?|function[[:space:]]+)?'
 _PFX_REQ='((module\.)?exports\.|export[[:space:]]+(async[[:space:]]+)?(function[[:space:]]+|const[[:space:]]+)|const[[:space:]]+|let[[:space:]]+|var[[:space:]]+)'
 export UP_RE="^[[:space:]]*(${_PFX_OPT}(up|upgrade|change)[[:space:]]*([(:{]|\$)|${_PFX_REQ}(up|upgrade|change)[[:space:]]*[=:(])"
 export DOWN_RE="^[[:space:]]*(${_PFX_OPT}(down|downgrade)[[:space:]]*([(:{]|\$)|${_PFX_REQ}(down|downgrade)[[:space:]]*[=:(])"
 APPROVAL_RE='destructive:[[:space:]]*approved'
 
-forward_part() {     # stdin: file content → the part that is scanned; rc = awk's
+forward_part() {     # stdin: file content → the same lines with down-block bodies blanked; rc = awk's
   awk '
     function indent(s) { match(s, /^[[:space:]]*/); return RLENGTH }
     { lines[NR] = $0 }
     # A one-line Rails `dir.down { … }` inside `reversible` is the reverse of the
-    # surrounding change: that line is not scanned, and it never cuts the file.
+    # surrounding change: that whole line is not scanned.
     /^[[:space:]]*dir\.down[[:space:]]*\{.*\}[[:space:]]*$/ { lines[NR] = ""; next }
-    !u && $0 ~ ENVIRON["UP_RE"]                         { u = NR; ui = indent($0); next }
-    !d && $0 ~ ENVIRON["DOWN_RE"] && (!u || indent($0) == ui) { d = NR; di = indent($0); next }
-     d && $0 ~ ENVIRON["UP_RE"] && indent($0) == (u ? ui : di) { again = NR }
-    END {
-      cut = (u && d && u < d && !again) ? d : NR + 1
-      for (i = 1; i < cut; i++) print lines[i]
-    }'
+    !u && $0 ~ ENVIRON["UP_RE"] { u = NR; ui = indent($0); next }
+    u && !skip && $0 ~ ENVIRON["DOWN_RE"] && indent($0) == ui { skip = 1; lines[NR] = ""; next }
+    skip {
+      # body: deeper lines, blank lines, a lone opening brace (Allman style)
+      if ($0 ~ /^[[:space:]]*$/ || indent($0) > ui || $0 ~ /^[[:space:]]*[{(][[:space:]]*$/) { lines[NR] = ""; next }
+      # a bare closer at the definition level ends the block and is not scanned
+      if ($0 ~ /^[[:space:]]*(end|[})\]]+[;,]?)[[:space:]]*$/) { lines[NR] = ""; skip = 0; next }
+      skip = 0   # any other dedented line: the block ended above — this line IS scanned
+    }
+    END { for (i = 1; i <= NR; i++) print lines[i] }'
 }
 is_destructive() {   # stdin: file content → 0 destructive · 1 clean · 2 cannot evaluate
   local content fwd
   content=$(cat)
   fwd=$(printf '%s\n' "$content" | forward_part) || return 2
-  # here-strings, not pipes: `grep -q` exits on the first match and a pipe
-  # writer would die of SIGPIPE (141) — a large file would read as "cannot evaluate".
-  if grep -Eiq "$SQL_RE" <<< "$fwd"; then return 0; else [ $? -le 1 ] || return 2; fi
-  if grep -Eq  "$ORM_RE" <<< "$fwd"; then return 0; else [ $? -le 1 ] || return 2; fi
+  # grep without -q reads its whole input: `-q` exits on the first match and the
+  # pipe writer dies of SIGPIPE (141) on a large file; a here-string would need a
+  # temp file whose failure reads as "clean". Exit codes stay 0/1/2.
+  if printf '%s\n' "$fwd" | grep -Ei "$SQL_RE" >/dev/null; then return 0; else [ $? -le 1 ] || return 2; fi
+  if printf '%s\n' "$fwd" | grep -E  "$ORM_RE" >/dev/null; then return 0; else [ $? -le 1 ] || return 2; fi
   return 1
 }
 
@@ -148,7 +155,7 @@ while IFS=$'\t' read -r status path _rest; do
         exit 2
       fi
       if [ "$drc" -eq 0 ]; then
-        if grep -Eiq "$APPROVAL_RE" <<< "$content"; then
+        if printf '%s\n' "$content" | grep -Ei "$APPROVAL_RE" >/dev/null; then
           echo "warn [destructive]  $path : destructive DDL present but approved" >&2
         else
           echo "FAIL [destructive]  $path : destructive DDL without '-- destructive: approved' marker" >&2

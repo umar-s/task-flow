@@ -81,21 +81,24 @@ On any changed file under a migrations dir:
   `remove_belongs_to`/`remove_timestamps`/`drop_join_table`, Django
   `DeleteModel`/`RemoveField`, Laravel `Schema::drop`/`Schema::dropIfExists`/
   `dropTimestamps`/`dropSoftDeletes`, Knex/Sequelize/TypeORM
-  `dropTable(IfExists)`/`dropColumn(s)`/`removeColumn`. "Forward part" = when
-  an `up` / `upgrade` / `change` definition precedes a `down` / `downgrade` one
-  and no `up` is redefined after it, everything before that `down`: a
+  `dropTable(IfExists)`/`dropColumn(s)`/`removeColumn`. "Forward part" =
+  everything except the **body of the `down` / `downgrade` block** that follows
+  an `up` / `upgrade` / `change` definition at the same indentation: a
   conventional `down()` drops exactly what `up()` created — in DSL or in SQL
   (`queryRunner.query("DROP TABLE …")`, `op.execute("DROP …")`) — and flagging
-  every reversible migration would make the marker worthless. A `down`
-  definition counts only at the same indentation as the `up` it closes — a
-  `down:` key or a `down(q)` call nested inside `up()` is neither — and a
-  one-line Rails `dir.down { … }` inside `reversible` is simply not scanned
-  (a multi-line `dir.down do … end` is, and needs the marker). Any other
-  layout (`down` first, `up` redefined after `down`, bare `down = …`
-  assignments, no `up`, no `down`, plain `.sql` files with
-  `-- +goose Down`-style sections, `*.down.sql` files) is scanned in full. The
-  verdict fails closed (`exit 2`) when `awk`/`grep` themselves fail — a missing
-  tool is not a clean migration.
+  every reversible migration would make the marker worthless. The body is
+  recognised by indentation (deeper lines, a lone `{`, the closing `end`/`}`),
+  so helpers after the block, a redefined `up`, and anything else in the file
+  are scanned. A `down:` key or a `down(q)` call nested inside `up()` is not a
+  definition, and a one-line Rails `dir.down { … }` inside `reversible` is not
+  scanned as a whole line. Files without an `up` definition (plain `.sql`
+  incl. `-- +goose Down`-style sections, `*.down.sql`, Django, down-only
+  files) are scanned in full. Layouts that still need the marker when their
+  `down` drops something (fail-strict, not a bug): a multi-line
+  `dir.down do … end`, `reversible do |direction|`, a one-line
+  `def down; drop_table :t; end`, tabs in `up` vs spaces in `down`. The verdict
+  fails closed (`exit 2`) when `awk`/`grep` themselves fail — a missing tool is
+  not a clean migration.
 
 Env: `MIGRATION_DIRS` (default `migrations db/migrate db/migration prisma/migrations`),
 `GATE_BASE_REF` (override the diff base), `STAGED=1` (check the index).
@@ -113,13 +116,16 @@ coverage): the match is per line, so a statement split across lines
 (MSSQL), a type change that truncates data (`ALTER COLUMN … TYPE`),
 `RunSQL`/`RunPython` with non-literal SQL, constraint-dropping DSL calls
 (`dropForeign`, `remove_index`), a migration DSL not listed above, and
-data-destroying `UPDATE`s are **not** detected. That residue is the LLM
-security review's job (it reads the migration, not a regex); widening this
-regex into a parser is not. Nor does the guard re-read migrations that are
-already committed — it judges what an MR adds. And the guard lives in the
-repository it judges: without required review on `ci/`, `.gitleaks.toml` and
-the CI files (CODEOWNERS), the party under check can edit it in the same MR —
-that protection is the next layer, not this script.
+data-destroying `UPDATE`s are **not** detected. The forward-part rule is a
+convenience for conventional layouts, not a security boundary: a destructive
+statement deliberately indented into a `down` block, or hidden behind an
+`up: realUp` alias, passes. That residue is the LLM security review's job (it
+reads the migration, not a regex); widening this regex into a parser is not.
+Nor does the guard re-read migrations that are already committed — it judges
+what an MR adds. And the guard lives in the repository it judges: without
+required review on `ci/`, `.gitleaks.toml` and the CI files (CODEOWNERS), the
+party under check can edit it in the same MR — that protection is the next
+layer, not this script.
 
 ## diff-coverage policy
 
