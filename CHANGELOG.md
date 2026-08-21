@@ -26,13 +26,14 @@ existing promise actually hold.
   ritual and classifies the tree as unreleased / released / drifted;
   `scripts/readme-parity.sh` keeps `README.md` and `README.ru.md`
   structurally in lockstep; `tests/` holds the payload's negative controls —
-  53 migration-guard fixtures plus 3 under busybox where available (default
-  reversible templates of Laravel, Knex, Sequelize, TypeORM, Rails, Alembic
-  must pass; drops in the forward part, helpers after `down`, bypass layouts,
-  nested `down` look-alikes, files over 64 KB, a broken `awk` or `grep` must
-  not) and the failure paths of `gitleaks-fetch.sh`. `.github/workflows/
-  check.yml` runs them, actionlint and yamllint (both pinned), and the
-  product's own secret-scan over this repository.
+  51 migration-guard fixtures, run again under busybox awk/grep where
+  available (default reversible templates of Laravel, Knex, Sequelize,
+  TypeORM, Rails, Alembic must pass; drops in the forward part, helpers after
+  `down`, bypass layouts, nested `down` look-alikes, files over 64 KB must
+  not), two tool-failure controls (a broken `awk` or `grep` is `exit 2`), and
+  the failure paths of `gitleaks-fetch.sh`. `.github/workflows/check.yml` runs
+  them, actionlint and yamllint (both pinned), and the product's own
+  secret-scan over this repository.
 - **`ci-gate` — `gate.sh`** accepts `GATE_PINNED_ONLY=1` to ignore a `gitleaks`
   on `PATH` and use the pinned one (the verdict CI will give).
 
