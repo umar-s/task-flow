@@ -24,53 +24,62 @@ MIGRATION_DIRS="${MIGRATION_DIRS:-migrations db/migrate db/migration prisma/migr
 STAGED="${STAGED:-0}"
 [ "${1:-}" = "--staged" ] && STAGED=1
 
-# Destructive patterns (POSIX-extended). Two families:
-#   SQL — case-insensitive, anywhere in the file: DROP <object> (table, column,
-#         schema, database, index, constraint, view, type, sequence, trigger,
-#         function, procedure, materialized view), TRUNCATE, DELETE FROM, and
-#         ALTER TABLE … DROP <anything> (the COLUMN keyword is optional in
-#         PostgreSQL and MySQL; dropping a constraint deserves the marker too).
-#   ORM — the table/column-dropping DSL tokens of the frameworks whose dirs are
-#         scanned by default: Rails/Alembic (drop_table, drop_column,
-#         remove_column, remove_reference, remove_belongs_to, remove_timestamps,
-#         drop_join_table), Django (DeleteModel, RemoveField), Laravel
-#         (Schema::drop, Schema::dropIfExists), Knex/Sequelize/TypeORM
-#         (dropTable, dropColumn, removeColumn). Matched case-sensitively, as
-#         whole words, and ONLY in the forward part of the file: when an
-#         up/upgrade/change definition precedes a down/downgrade definition,
-#         everything from that down on is not scanned for the ORM family,
-#         because a conventional down() drops exactly what up() created and
-#         flagging every reversible migration would make the marker worthless.
-#         Any other layout (down first, no up, no down) is scanned in full.
+# Destructive patterns (POSIX-extended). Two families, both matched only in
+# the FORWARD PART of a migration (see forward_part below):
+#   SQL — case-insensitive: DROP <object> (table, column, schema, database,
+#         index, constraint, view, type, sequence, trigger, function, procedure,
+#         materialized view), TRUNCATE, DELETE FROM, and ALTER TABLE … DROP
+#         <anything> (the COLUMN keyword is optional in PostgreSQL and MySQL;
+#         dropping a constraint deserves the marker too).
+#   ORM — case-sensitive, whole words: the table/column-dropping DSL tokens of
+#         the frameworks whose dirs are scanned by default: Rails/Alembic
+#         (drop_table, drop_column, remove_column(s), remove_reference,
+#         remove_belongs_to, remove_timestamps, drop_join_table), Django
+#         (DeleteModel, RemoveField), Laravel (Schema::drop, Schema::dropIfExists,
+#         dropTimestamps, dropSoftDeletes), Knex/Sequelize/TypeORM
+#         (dropTable(IfExists), dropColumn(s), removeColumn).
+# Forward part: when an up/upgrade/change definition precedes a down/downgrade
+# definition and no up is (re)defined after that down, everything from the
+# down on is ignored — a conventional down() drops exactly what up() created,
+# and flagging every reversible migration would make the marker worthless.
+# Any other layout (down first, up redefined after down, no up, no down — plain
+# SQL files included) is scanned in full.
 # Known limits (documented in ci/README.md): a statement split across lines,
 # SQL assembled from several strings, DELETE without FROM (MSSQL), a type
 # change that truncates data, RunSQL/RunPython with non-literal SQL, and DSLs
 # not listed here are NOT detected — that residue is the LLM security pass's
 # job, never a reason to widen this regex into a parser.
 SQL_RE='(DROP[[:space:]]+(TABLE|COLUMN|SCHEMA|DATABASE|INDEX|CONSTRAINT|VIEW|TYPE|SEQUENCE|TRIGGER|FUNCTION|PROCEDURE|MATERIALIZED)|TRUNCATE|DELETE[[:space:]]+FROM|ALTER[[:space:]]+TABLE[[:space:]].*[[:space:]]DROP[[:space:]])'
-ORM_RE='(^|[^A-Za-z0-9_])(drop_table|drop_column|remove_column|remove_reference|remove_belongs_to|remove_timestamps|drop_join_table|dropTable|dropColumn|removeColumn|DeleteModel|RemoveField|Schema::drop|Schema::dropIfExists)([^A-Za-z0-9_]|$)'
-# Start of an up/upgrade/change and a down/downgrade definition (Rails, Alembic,
-# Laravel, Knex, Sequelize, TypeORM). Exported for awk via ENVIRON — `-v` would
-# re-process backslash escapes.
-_DEF='^[[:space:]]*(public[[:space:]]+)?(async[[:space:]]+)?(def[[:space:]]+|function[[:space:]]+|exports\.|export[[:space:]]+(async[[:space:]]+)?(function[[:space:]]+|const[[:space:]]+))?'
-export UP_RE="${_DEF}(up|upgrade|change)[[:space:]]*([(:=]|$)"
-export DOWN_RE="${_DEF}(down|downgrade)[[:space:]]*([(:=]|$)"
+ORM_RE='(^|[^A-Za-z0-9_])(drop_table|drop_column|remove_columns?|remove_reference|remove_belongs_to|remove_timestamps|drop_join_table|dropTable(IfExists)?|dropColumns?|removeColumn|dropTimestamps|dropSoftDeletes|DeleteModel|RemoveField|Schema::drop|Schema::dropIfExists)([^A-Za-z0-9_]|$)'
+# up/upgrade/change and down/downgrade definitions (Rails incl. `def self.` and
+# `dir.down {`, Alembic, Laravel, Knex/Sequelize/TypeORM incl. `exports.`,
+# `module.exports.`, `export const`, bare `const`/`let`). A bare assignment
+# (`down = 2`) does NOT count — only a prefixed one. Exported for awk via
+# ENVIRON: `-v` would re-process backslash escapes.
+_PFX_OPT='(public[[:space:]]+)?(async[[:space:]]+)?(def[[:space:]]+(self\.)?|function[[:space:]]+|dir\.)?'
+_PFX_REQ='((module\.)?exports\.|export[[:space:]]+(async[[:space:]]+)?(function[[:space:]]+|const[[:space:]]+)|const[[:space:]]+|let[[:space:]]+|var[[:space:]]+)'
+export UP_RE="^[[:space:]]*(${_PFX_OPT}(up|upgrade|change)[[:space:]]*([(:{]|\$)|${_PFX_REQ}(up|upgrade|change)[[:space:]]*[=:(])"
+export DOWN_RE="^[[:space:]]*(${_PFX_OPT}(down|downgrade)[[:space:]]*([(:{]|\$)|${_PFX_REQ}(down|downgrade)[[:space:]]*[=:(])"
 APPROVAL_RE='destructive:[[:space:]]*approved'
 
-forward_part() {     # stdin: file content → the part scanned for ORM tokens
+forward_part() {     # stdin: file content → the part that is scanned; rc = awk's
   awk '
     { lines[NR] = $0 }
     !u && $0 ~ ENVIRON["UP_RE"]   { u = NR }
+     d && $0 ~ ENVIRON["UP_RE"]   { again = NR }
     !d && $0 ~ ENVIRON["DOWN_RE"] { d = NR }
     END {
-      cut = (u && d && u < d) ? d : NR + 1
+      cut = (u && d && u < d && !again) ? d : NR + 1
       for (i = 1; i < cut; i++) print lines[i]
     }'
 }
-is_destructive() {   # stdin: file content → rc 0 if a destructive statement is found
-  local content; content=$(cat)
-  if printf '%s\n' "$content" | grep -Eiq "$SQL_RE"; then return 0; fi
-  printf '%s\n' "$content" | forward_part | grep -Eq "$ORM_RE"
+is_destructive() {   # stdin: file content → 0 destructive · 1 clean · 2 cannot evaluate
+  local content fwd
+  content=$(cat)
+  fwd=$(printf '%s\n' "$content" | forward_part) || return 2
+  if printf '%s\n' "$fwd" | grep -Eiq "$SQL_RE"; then return 0; else [ $? -le 1 ] || return 2; fi
+  if printf '%s\n' "$fwd" | grep -Eq  "$ORM_RE"; then return 0; else [ $? -le 1 ] || return 2; fi
+  return 1
 }
 
 # Build a regex matching any path under a configured migrations dir.
@@ -122,7 +131,14 @@ while IFS=$'\t' read -r status path _rest; do
         echo "migration-guard: cannot read '$path' at the evaluated tip; refusing to pass a migration it could not inspect. Failing closed." >&2
         exit 2
       fi
-      if printf '%s' "$content" | is_destructive; then
+      # Three outcomes, and only the clean one may pass: a broken awk/grep is a
+      # verdict nobody established, not a pass.
+      printf '%s' "$content" | is_destructive && drc=0 || drc=$?
+      if [ "$drc" -ge 2 ]; then
+        echo "migration-guard: cannot evaluate '$path' (awk/grep failed); refusing to pass a migration it could not inspect. Failing closed." >&2
+        exit 2
+      fi
+      if [ "$drc" -eq 0 ]; then
         if printf '%s' "$content" | grep -Eiq "$APPROVAL_RE"; then
           echo "warn [destructive]  $path : destructive DDL present but approved" >&2
         else

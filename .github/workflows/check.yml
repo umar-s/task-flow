@@ -30,6 +30,8 @@ jobs:
         run: bash scripts/lint.sh
       - name: release state
         run: bash scripts/release-check.sh
+      - name: payload negative controls (migration-guard fixtures, gitleaks-fetch failure paths)
+        run: bash tests/run.sh
       - name: workflow lint (actionlint — the shipped GitHub template and this file)
         run: |
           docker run --rm -v "$PWD:/repo:ro" -w /repo "$ACTIONLINT_IMAGE" -color \

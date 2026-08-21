@@ -5,17 +5,17 @@ title = "ci-gate gitleaks config"
 [extend]
 useDefault = true
 
-# Keep the allowlists TIGHT. Every entry here is a hole in the gate — prefer
+# Keep the allowlist TIGHT. Every entry here is a hole in the gate — prefer
 # fixing/rotating a real secret over allowlisting it. Fixture dirs and
-# *.example / *.sample files are the only broadly-safe defaults.
+# *.example / *.sample files are the only broadly-safe defaults, and they are a
+# by-design hole: a real secret in `.env.example` is not scanned.
 #
-# Two separate blocks on purpose: a path rule and a value rule must not share a
-# target. Value rules use regexTarget = "match" — the regex must match the
-# flagged span itself, never merely the line it sits on (with "line", a
-# placeholder anywhere on the line excused a real secret beside it). The
-# canonical AWS example pair (AKIAIOSFODNN7EXAMPLE / wJalr…) is already excluded
-# by the default ruleset — do not re-add it here; an unanchored literal matched
-# against a generic-api-key span suppresses whatever follows it.
+# If you ever add a value-based entry, use `regexTarget = "match"` (or
+# "secret") and ANCHOR the regex: with "line", a placeholder anywhere on the
+# line excused a real secret beside it, and an unanchored literal matched
+# against a generic-api-key span suppresses whatever follows it. The canonical
+# AWS example pair (AKIAIOSFODNN7EXAMPLE / wJalr…) is already excluded by the
+# default ruleset — do not re-add it.
 [[allowlists]]
 description = "fixture dirs and example files"
 paths = [
@@ -23,13 +23,6 @@ paths = [
   '''(^|/)testdata/''',
   '''.*\.example$''',
   '''.*\.sample$''',
-]
-
-[[allowlists]]
-description = "basic-auth PLACEHOLDERS in docs — literal user:pass, not real"
-regexTarget = "match"
-regexes = [
-  '''https?://(user|username|USER):(pass|password|PASSWORD|token|TOKEN|xxx+|<[^>]+>|\$\{?[A-Z_]+\}?)@''',
 ]
 
 # For a ONE-OFF example in code/docs prefer an inline comment on that line —

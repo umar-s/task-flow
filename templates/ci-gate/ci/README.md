@@ -57,8 +57,9 @@ the caller removes it — `gate.sh` does, and the shell CI variant points it at
 the job workspace and cleans it in `after_script`.
 
 Local `gate.sh` uses a `gitleaks` already on `PATH` if there is one (yours,
-whatever version); `GATE_PINNED_ONLY=1` makes it fetch the pinned one instead,
-for the same verdict CI will give.
+whatever version — an old one silently ignores the `[[allowlists]]` syntax of
+`.gitleaks.toml`, which errs on the strict side); `GATE_PINNED_ONLY=1` makes it
+fetch the pinned one instead, for the same verdict CI will give.
 
 A frozen scanner goes stale — bump all four together: `PIN_VERSION` + both
 SHA256s (from the release `checksums.txt`, checked once by a human), the image
@@ -68,23 +69,28 @@ pre-commit `rev`. Never `pre-commit autoupdate` this repo.
 ## migration-guard policy
 On any changed file under a migrations dir:
 - an **already-committed** migration modified / deleted / renamed → **FAIL** (forward-only);
-- a **new** migration with a destructive statement → **FAIL** unless the same
-  file carries a marker comment `-- destructive: approved`. Detected, anywhere
-  in the file, case-insensitively: SQL `DROP <table | column | schema | database
-  | index | constraint | view | type | sequence | trigger | function | procedure
-  | materialized view>`, `TRUNCATE`, `DELETE FROM`, `ALTER TABLE … DROP <anything>`
-  (the `COLUMN` keyword is optional in PostgreSQL/MySQL). Detected **in the
-  forward part of the file only**, case-sensitively, as whole words: the
-  table/column-dropping DSL tokens of the frameworks whose dirs are scanned by
-  default — Rails/Alembic `drop_table`/`drop_column`/`remove_column`/
-  `remove_reference`/`remove_belongs_to`/`remove_timestamps`/`drop_join_table`,
-  Django `DeleteModel`/`RemoveField`, Laravel `Schema::drop`/`Schema::dropIfExists`,
-  Knex/Sequelize/TypeORM `dropTable`/`dropColumn`/`removeColumn`. "Forward part"
-  = when an `up` / `upgrade` / `change` definition precedes a `down` /
-  `downgrade` one, everything before that `down`: a conventional `down()` drops
-  exactly what `up()` created, and flagging every reversible migration would
-  make the marker worthless. Any other layout (`down` first, no `up`, no
-  `down`) is scanned in full.
+- a **new** migration with a destructive statement in its **forward part** →
+  **FAIL** unless the same file carries a marker comment
+  `-- destructive: approved`. Two pattern families: SQL, case-insensitive —
+  `DROP <table | column | schema | database | index | constraint | view | type |
+  sequence | trigger | function | procedure | materialized view>`, `TRUNCATE`,
+  `DELETE FROM`, `ALTER TABLE … DROP <anything>` (the `COLUMN` keyword is
+  optional in PostgreSQL/MySQL); and the DSL tokens of the frameworks whose dirs
+  are scanned by default, case-sensitive, whole words — Rails/Alembic
+  `drop_table`/`drop_column`/`remove_column(s)`/`remove_reference`/
+  `remove_belongs_to`/`remove_timestamps`/`drop_join_table`, Django
+  `DeleteModel`/`RemoveField`, Laravel `Schema::drop`/`Schema::dropIfExists`/
+  `dropTimestamps`/`dropSoftDeletes`, Knex/Sequelize/TypeORM
+  `dropTable(IfExists)`/`dropColumn(s)`/`removeColumn`. "Forward part" = when
+  an `up` / `upgrade` / `change` definition precedes a `down` / `downgrade` one
+  and no `up` is redefined after it, everything before that `down`: a
+  conventional `down()` drops exactly what `up()` created — in DSL or in SQL
+  (`queryRunner.query("DROP TABLE …")`, `op.execute("DROP …")`) — and flagging
+  every reversible migration would make the marker worthless. Any other layout
+  (`down` first, `up` redefined after `down`, bare `down = …` assignments, no
+  `up`, no `down`, plain `.sql` files with `-- +goose Down`-style sections) is
+  scanned in full. The verdict fails closed (`exit 2`) when `awk`/`grep`
+  themselves fail — a missing tool is not a clean migration.
 
 Env: `MIGRATION_DIRS` (default `migrations db/migrate db/migration prisma/migrations`),
 `GATE_BASE_REF` (override the diff base), `STAGED=1` (check the index).

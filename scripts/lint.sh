@@ -80,7 +80,7 @@ for f in $IMAGE_FILES; do
 done
 # shellcheck disable=SC2086
 DIGESTS=$(grep -ohE "gitleaks:v$V_RE@sha256:[0-9a-f]{64}" $IMAGE_FILES | sort -u | wc -l)
-[ "$DIGESTS" = 1 ] || err "gitleaks image digest differs between CI files ($DIGESTS distinct values)"
+[ "$((DIGESTS))" -eq 1 ] || err "gitleaks image digest differs between CI files ($DIGESTS distinct values)"
 if grep -nE 'image:.*:latest|gitleaks:latest' templates/ci-gate/gitlab/*.yml templates/ci-gate/github/*.yml >/dev/null; then
   err "':latest' image tag in a CI template:"
   grep -nE 'image:.*:latest|gitleaks:latest' templates/ci-gate/gitlab/*.yml templates/ci-gate/github/*.yml >&2

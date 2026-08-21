@@ -12,8 +12,46 @@ download.
 ## [1.7.1] — 2026-08-21
 
 Defects in our own files, surfaced by the donor audit of a colleague's toolkit
-(`docs/audits/2026-08-21-dmitriy-toolkit-v3-audit.md`, §2). No new behaviour —
-every item makes an existing promise actually hold.
+(`docs/audits/2026-08-21-dmitriy-toolkit-v3-audit.md`, §2), then by two
+clean-context reviews of the fix. No new plugin behaviour — every item makes an
+existing promise actually hold.
+
+### Added
+- **Repository scripts and tests** (not part of the plugin): `scripts/lint.sh`
+  turns the written rules of this repo into greps (reference links resolve,
+  `$ROOT` block present, no fail-open idioms in the payload, decompose
+  vocabulary consistent across its five files, one scanner version and one
+  image digest in every path, no tag-pinned actions, no personal paths in
+  tracked files); `scripts/release-check.sh` checks the four-step release
+  ritual and classifies the tree as unreleased / released / drifted;
+  `scripts/readme-parity.sh` keeps `README.md` and `README.ru.md` structurally
+  in lockstep; `tests/` holds the payload's negative controls — 40
+  migration-guard fixtures (default reversible templates of Laravel, Knex,
+  Sequelize, TypeORM, Rails, Alembic must pass; drops in the forward part,
+  bypass layouts and a broken `awk` must not) and the failure paths of
+  `gitleaks-fetch.sh`. `.github/workflows/check.yml` runs them, actionlint
+  and yamllint (both pinned), and the product's own secret-scan over this
+  repository.
+- **`ci-gate` — `gate.sh`** accepts `GATE_PINNED_ONLY=1` to ignore a `gitleaks`
+  on `PATH` and use the pinned one (the verdict CI will give).
+
+### Changed
+- **`ci-gate` — `migration-guard.sh` judges the forward part of a migration,
+  and detects more there — MRs in flight may start to need the marker.** Both
+  families are matched only before a `down` / `downgrade` definition that
+  follows an `up` / `upgrade` / `change` one (and is not followed by another
+  `up`): a conventional reversible migration, in DSL or in SQL, no longer needs
+  the marker; every other layout is scanned in full. SQL: `DROP` of a view,
+  type, sequence, trigger, function, procedure or materialized view and
+  `ALTER TABLE … DROP <anything>` (the `COLUMN` keyword is optional in
+  PostgreSQL/MySQL) now count as destructive. ORM: the table/column-dropping
+  DSL tokens of the frameworks whose directories are scanned by default
+  (Rails/Alembic, Django, Laravel, Knex/Sequelize/TypeORM) are matched
+  case-sensitively, as whole words. A failing `awk`/`grep` is `exit 2`, never a
+  pass. The residue — multi-line statements, SQL assembled from strings,
+  `DELETE` without `FROM`, lossy type changes, constraint-dropping DSL calls,
+  unlisted DSLs — is documented as "Known limits" in `ci/README.md` and handed
+  to the phase-6b security review explicitly.
 
 ### Fixed
 - **`task`** — reference files are now loaded through a resolved `$ROOT`
@@ -34,49 +72,20 @@ every item makes an existing promise actually hold.
 - **`ci-gate` — `gitleaks-fetch.sh`** verifies a private copy of the cached
   tarball against the committed SHA256 on every call and extracts that copy
   into a per-call dir; a cached binary in a shared runner cache was previously
-  executed unverified after the first download. The per-call dir is removed
-  by the caller (`gate.sh` traps it; the shell CI variant sets
+  executed unverified after the first download. The cache is an optimisation
+  (unreadable or read-only → re-download, never a failed job); the per-call
+  dir is removed by the caller (`gate.sh` traps it; the shell CI variant sets
   `GITLEAKS_RUN_DIR` to the job workspace and cleans it in `after_script`).
-- **`ci-gate` — `.gitleaks.toml`** allowlist split into a path block and a
-  value block with `regexTarget = "match"`: with `"line"`, a placeholder
-  anywhere on a line excused a real secret beside it. The canonical AWS
-  example pair is no longer listed — the default ruleset already excludes it,
-  and an unanchored literal matched against a generic-api-key span suppressed
-  whatever followed it.
+- **`ci-gate` — `.gitleaks.toml`** allowlist reduced to the path block, in the
+  `[[allowlists]]` form. With `regexTarget = "line"` a placeholder anywhere on
+  a line excused a real secret beside it, and the unanchored AWS example
+  literals — already excluded by the default ruleset — suppressed any
+  generic-api-key span that merely contained them.
 - **GitHub template** — event data reaches `run:` steps through `env:` rather
   than inlined `${{ }}`; a branch name can carry shell metacharacters, so
   `github.base_ref` inlined into `run:` was a real vector for anyone able to
   create a branch. The repository is mounted read-only into the scanner
   container.
-
-### Changed
-- **`ci-gate` — `migration-guard.sh` detects more, so MRs in flight may start
-  to need the marker.** SQL: `DROP` of a view, type, sequence, trigger,
-  function, procedure or materialized view, and `ALTER TABLE … DROP <anything>`
-  (the `COLUMN` keyword is optional in PostgreSQL/MySQL) now count as
-  destructive. ORM: the table/column-dropping DSL tokens of the frameworks
-  whose directories are scanned by default (Rails/Alembic, Django, Laravel,
-  Knex/Sequelize/TypeORM) are matched — case-sensitively, as whole words, and
-  only in the forward part of the file (before a `down` / `downgrade`
-  definition that follows an `up` / `upgrade` / `change` one), so a
-  conventional reversible migration does not need the marker. The residue —
-  multi-line statements, SQL assembled from strings,
-  `DELETE` without `FROM`, lossy type changes, constraint-dropping DSL calls,
-  unlisted DSLs — is documented as "Known limits" in `ci/README.md` and handed
-  to the phase-6b security review explicitly.
-- **`ci-gate` — `gate.sh`** accepts `GATE_PINNED_ONLY=1` to ignore a `gitleaks`
-  on `PATH` and use the pinned one (the verdict CI will give).
-
-### Added
-- **Repository scripts** (not part of the plugin): `scripts/lint.sh` turns the
-  written rules of this repo into greps (reference links resolve, `$ROOT`
-  block present, no fail-open idioms in the payload, decompose vocabulary
-  consistent across its five files, one scanner version in every path, no
-  personal paths in tracked files); `scripts/release-check.sh` checks the
-  four-step release ritual and classifies the tree as unreleased / released /
-  drifted; `scripts/readme-parity.sh` keeps `README.md` and `README.ru.md`
-  structurally in lockstep. `.github/workflows/check.yml` runs them and the
-  product's own secret-scan over this repository.
 
 ## [1.7.0] — 2026-08-17
 

@@ -156,7 +156,8 @@ under it.
   release tag). A frozen scanner goes stale (misses new secret formats): bump
   `PIN_VERSION`, both SHA256s, the image digest and the `rev` together; never
   `pre-commit autoupdate` the file.
-- **migration-guard reads SQL and the common ORM DSL tokens, per line.** A
+- **migration-guard reads SQL and the common ORM DSL tokens, per line, in the
+  forward part of a migration** (a conventional `down()` is not judged). A
   statement split across lines, SQL built inside a string or a DSL it does not
   list is its documented residue (`ci/README.md` → Known limits) and belongs
   to the phase-6b security review — do not grow the regex into a parser.

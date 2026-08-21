@@ -10,7 +10,7 @@
 # Setup:
 #   include: [ { local: 'ci/ci-gate.shell.gitlab-ci.yml' } ]
 #   Set a project CI/CD variable  GATE_RUNNER_TAG = <your shell runner's tag>.
-#   Host needs: git, bash, grep, curl (or wget), tar, sha256sum (or shasum).
+#   Host needs: git, bash, grep, awk, curl (or wget), tar, sha256sum (or shasum).
 
 .gate_base_shell:
   stage: .pre
@@ -40,7 +40,11 @@ secret-scan:
       fi
       "$GL" detect --redact --no-banner -v $RANGE
   after_script:
-    - rm -rf "$CI_PROJECT_DIR/.gitleaks-run"            # ~22 MB per run otherwise left on the host
+    # ~22 MB per run otherwise left on the host. Inside the workspace on purpose:
+    # a noexec /tmp cannot run the binary, and if after_script is skipped (job
+    # timeout/cancel on older GitLab) the next checkout's `git clean -ffdx`
+    # removes it anyway — unless GIT_CLEAN_FLAGS is overridden.
+    - rm -rf "$CI_PROJECT_DIR/.gitleaks-run"
 
 migration-guard:
   extends: .gate_base_shell

@@ -59,14 +59,15 @@ trap 'rm -rf "$RUN"' ERR
 
 # 1. Take a private copy of the cached tarball and verify THAT copy. The shared
 #    file is never read twice — a neighbour swapping it between check and use
-#    can only make this call re-download, never run an unverified binary.
+#    can only make this call re-download, never run an unverified binary. The
+#    cache is an optimisation: a copy that fails (removed, unreadable, truncated
+#    under us) means "not cached", never "job failed".
 if [ -f "$CACHED" ]; then
-  cp "$CACHED" "$RUN/$TARBALL"
-  if [ "$(sha256_of "$RUN/$TARBALL")" = "$WANT" ]; then
+  if cp "$CACHED" "$RUN/$TARBALL" 2>/dev/null && [ "$(sha256_of "$RUN/$TARBALL")" = "$WANT" ]; then   # lint: allow
     log "cached tarball verified (v${PIN_VERSION}, ${ARCH})"
   else
-    log "cached tarball no longer matches the committed SHA256 — discarding it"
-    rm -f "$CACHED" "$RUN/$TARBALL"
+    log "cached tarball unreadable or no longer matches the committed SHA256 — discarding it"
+    rm -f "$CACHED" "$RUN/$TARBALL" 2>/dev/null || true   # lint: allow — best effort on a shared file
   fi
 fi
 
@@ -86,11 +87,15 @@ if [ ! -f "$RUN/$TARBALL" ]; then
     rm -rf "$RUN"
     exit 1
   fi
-  STAGE=$(mktemp -d "$CACHE/.dl.XXXXXX")
-  cp "$RUN/$TARBALL" "$STAGE/$TARBALL"
-  mv -f "$STAGE/$TARBALL" "$CACHED"
-  rmdir "$STAGE"
-  log "verified + cached $CACHED"
+  # Caching is best effort: a read-only or full cache dir must not fail a job
+  # whose binary is already verified.
+  if STAGE=$(mktemp -d "$CACHE/.dl.XXXXXX" 2>/dev/null) && cp "$RUN/$TARBALL" "$STAGE/$TARBALL" 2>/dev/null && mv -f "$STAGE/$TARBALL" "$CACHED" 2>/dev/null; then   # lint: allow
+    rmdir "$STAGE" 2>/dev/null || true   # lint: allow
+    log "verified + cached $CACHED"
+  else
+    rm -rf "${STAGE:-}" 2>/dev/null || true   # lint: allow
+    log "verified; cache dir $CACHE not writable — not cached"
+  fi
 fi
 
 # 3. Extract the verified private copy.
