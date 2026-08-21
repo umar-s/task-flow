@@ -168,13 +168,16 @@ What phase 7 and phase 8 report must be:
   into the state file if a session hand-over is possible), then:
   ```bash
   git merge-base --is-ancestor <review-sha> HEAD || echo "re-reviewed: required"
-  git diff --quiet <review-sha>..HEAD && echo "re-reviewed: n/a (no code since)"
-  git rev-list --count --no-merges <review-sha>..HEAD    # code commits since
+  # your own commits since the review — the integration merge is not yours
+  git rev-list --count --no-merges <review-sha>..HEAD --not origin/<integration>
   ```
-  A merge of the integration branch (phase 8's "run on the merged state") adds
-  commits that are not yours: report `merge only` when
-  `git diff <review-sha>..HEAD` is empty, and `re-reviewed: yes|no` — never a
-  bare count that reads as if someone had judged it.
+  Phase 8 merges the integration branch in before the final run, so
+  `git diff <review-sha>..HEAD` is never empty afterwards — counting that way
+  would make `merge only` unreachable. Count 0 → `re-reviewed: n/a (merge
+  only)`; count > 0 → the delta goes back through a review and you report
+  `re-reviewed: yes`. If the merge had conflicts, the resolution is your code:
+  `git show --remerge-diff <merge-sha>` shows what you actually decided, and it
+  counts. Never a bare number that reads as if someone had judged it.
 - **Led by the terminal status.** The close comment and the skill's answer both
   start with one of `DONE | DONE_WITH_CONCERNS | BLOCKED | MERGED_NOT_LIVE |
   ABANDONED` plus a one-line reason, followed by the `DoD-n → PASS | FAIL |
@@ -184,16 +187,22 @@ What phase 7 and phase 8 report must be:
 
   | Condition | Status |
   |---|---|
-  | merged, deployed, every `DoD-n` PASS (an `external` item may be `UNVERIFIABLE` with its manual check named), no check skipped | `DONE` |
+  | merged, deployed, every `DoD-n` PASS (an `external` item may be `UNVERIFIABLE` with its manual check and owner named), no check skipped | `DONE` |
+  | nothing to deploy (docs, a library with no runtime surface) — say so in the evidence block | `DONE` (the deploy condition is met by there being none) |
+  | an `UNVERIFIABLE` item with **no** named manual check | `DONE_WITH_CONCERNS` |
+  | merged, then taken back out through a revert MR | `MERGED_NOT_LIVE` + `landing: reverted` |
   | merged and live, but a Required accepted by the risk owner (recorded on the MR), a check skipped with a reason, or a `DoD-n` not PASS | `DONE_WITH_CONCERNS` |
   | merged, not running (deploy failed, never triggered, health check failed) | `MERGED_NOT_LIVE` |
   | not merged; the blocker is named and not yours to clear | `BLOCKED` |
   | work stopped on purpose; say what happens to the branch | `ABANDONED` |
 
-  `DONE_WITH_CONCERNS` is not a self-issued pass: the concern it names is
-  something the risk owner accepted or the ticket now carries as a follow-up —
-  an unresolved Required or a mandatory check you simply did not run is not a
-  concern, it is unfinished work.
+  `DONE_WITH_CONCERNS` is not a self-issued pass. The **risk owner is a person
+  outside this flow** — the user driving the task, the service owner, the
+  reviewer with the authority to accept — never the agent and never "the
+  ticket". The acceptance is recorded on the MR by them, and a follow-up ticket
+  counts only when it exists and is linked. An unresolved Required, or a
+  mandatory check you simply did not run, is not a concern — it is unfinished
+  work, and the honest status is `BLOCKED`.
   The landing detail (`landing: deployed | deployed-with-concerns | not-live |
   reverted`) is a separate field, so a grep for one vocabulary can never pass
   for the other.

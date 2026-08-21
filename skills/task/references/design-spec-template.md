@@ -77,8 +77,13 @@ never as done "because the code handles it".
 
 ## 7. Premortem edges (filled in by phases 2 and 4)
 The failure modes the premortems found, one line each:
-`mode | test? | handled? | user sees it?`. Three "no" in a row is a design fix,
-not a note. This section is what the phase-6 dispatch reads for
+
+| failure mode | test? | handled? | clear error (not silent corruption)? |
+|---|---|---|---|
+
+Two triggers, both from phase 2: a **"no" under `test?`** for any mode that
+reaches user data or state is a design fix now; **three "no"** in one row is a
+design fix in every case. Anything else is a recorded note. This section is what the phase-6 dispatch reads for
 `[PREMORTEM_EDGES]`, so it has to live here, on disk, not in the session.
 
 ## 8. Failure signal

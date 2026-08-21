@@ -221,6 +221,25 @@ tr '\n' ' ' < skills/task/references/security-review-prompt.md | grep -q 'withou
 for w in PASS FAIL PARTIAL UNVERIFIABLE; do
   grep -q "$w" skills/task/references/implementation-integrity.md || err "implementation-integrity.md lost the DoD grade '$w'"
 done
+# The close comment's contract: a status line, a landing line, and an evidence
+# example that obeys the rules it points at.
+grep -q 'landing:' skills/task/SKILL.md || err "task/SKILL.md does not require the 'landing:' line in the close comment"
+grep -q 're-reviewed:' skills/task/SKILL.md || err "task/SKILL.md evidence example lost 're-reviewed:' (a bare commit count reads as a judgement)"
+grep -q 'pin 20.11.1 · actual' skills/task/SKILL.md || err "task/SKILL.md evidence example must show the toolchain as pin·actual, not a bare version"
+grep -q 'gate: absent (' skills/task/SKILL.md || err "task/SKILL.md: 'gate: absent' must carry the command that established it"
+# Shipped skills are written in English; Russian belongs only to the output
+# templates (the reviewer answers in Russian) and to quoted examples. This
+# catches an instruction sentence that slipped in — Cyrillic on a line with no
+# quotes, no backticks and no code fence around it.
+for f in skills/*/references/*.md; do
+  awk -v file="$f" '
+    /^```/ { fence = !fence; next }
+    fence { next }
+    /respond in Russian|Output format|на русском/ { ru = 1 }
+    ru { next }
+    /[а-яА-Я]/ && $0 !~ /[`"«»]/ { print file ":" NR; found = 1 }
+    END { exit found ? 1 : 0 }' "$f" >&2 || err "$f: Russian instruction prose in a shipped English reference (line above)"
+done
 # Reverse of check 1: a reference nobody loads is a reference nobody reads.
 for s in skills/*/; do
   s="${s%/}"; [ -d "$s/references" ] || continue

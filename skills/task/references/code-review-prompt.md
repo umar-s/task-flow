@@ -12,7 +12,9 @@ project prefers an in-repo reviewer).
   doubts inherits the author's blind spots — it checks the five things you
   already worry about and skips the sixth you missed.
 - **Slots are filled from flow artifacts, not from memory:** `[DOD]` from the
-  phase-0 restatement, `[DESIGN_SPEC]` from phase 1, `[PREMORTEM_EDGES]` from
+  spec's *DoD → check table* when the spec has one (phase 1 may refine the
+  wording — then the phase-0 checklist is rewritten to match, so there is only
+  ever one copy), else from the phase-0 restatement; `[DESIGN_SPEC]` from phase 1, `[PREMORTEM_EDGES]` from
   phases 2/4, `[BASE_SHA]`/`[HEAD_SHA]` from git.
 - **`[WHAT_CHANGED]` is factual** — "added X, changed Y" — three sentences
   max, zero justifications. An author doubt belongs in a test or in the spec
@@ -205,6 +207,12 @@ delete pass-through wrappers. Prefer the remedy that removes moving pieces.
   что этого нет нигде ещё (`git grep -n …`).
 Без того или другого находка понижается до FYI «unverified». Числовой
 confidence не вводи.
+
+*(Оркестратору: это требование к ревьюеру — не выставлять Critical/Required без
+доказательства. Оно **не** даёт автору понижать полученную находку-отсутствие
+за отсутствие команды поиска: такую находку возвращают ревьюеру за
+доказательством или проверяют сами; молча понижать — значит закрыть самый
+дорогой класс дефектов формальностью.)*
 
 ### Verification assessment
 Какие доказательства реально есть (что ты видел своими глазами), что осталось

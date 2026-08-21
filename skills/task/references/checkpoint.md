@@ -59,9 +59,16 @@ OrderService.total_for_order — src/services/order.py:88
   when the task closes.
 - **On resume, validate before you trust.** Compare the recorded branch and
   base with `git rev-parse --abbrev-ref HEAD` and `git rev-parse HEAD`:
-  - branch and HEAD match → continue from the recorded phase;
+  - branch and HEAD match **and** `git status --porcelain` is empty → continue
+    from the phase named in `next:` (`phase:` is what is already closed);
+  - the working tree is dirty → the state was written mid-edit: the sha-bearing
+    verdicts are void exactly as if HEAD had moved, and the baseline numbers
+    are re-taken;
   - HEAD moved → every sha-bearing verdict in the file (`review @ …`) is void:
     phases 6/6b are re-run on the delta, and the baseline numbers are re-taken;
   - branch differs, or the file names another task → the file is a note, not a
     checkpoint. Say so and start from phase 0.
-  Say in one line which facts you re-verified and which you dropped as stale.
+  Re-read the ticket's comments newer than this file's timestamp before
+  trusting its DoD — a hand-over gap is when the "важное уточнение" arrives —
+  and say in one line which facts you re-verified and which you dropped as
+  stale.

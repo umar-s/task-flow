@@ -122,7 +122,9 @@ in the MR body, a deploy log line that predates this deploy window.
 ## 6. Cleanup
 
 Delete only what this session created: a fixture directory, a review worktree,
-a temp file whose path you wrote down when you created it. Before removing a
+a temp file whose path you wrote down when you created it. The task's own
+`<TASK-ID>.state.md` is this flow's artifact, not a path from outside: delete it
+when the task closes (the spec stays). Before removing a
 path: resolve it (`realpath`), check it is inside the workspace you created,
 check there is no `.git` inside it, and check the path did not come from
 outside (an argument, a checkpoint file, a ticket). Any of those failing means
