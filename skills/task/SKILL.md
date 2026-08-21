@@ -55,8 +55,10 @@ the task "looks simple"; that is exactly when gaps hide.
 ## Reference loading (resolve once, read lazily per phase)
 
 Phases 1, 3, 5, 6, 6b and 7 each load exactly one reference file under this
-skill's `references/` dir (`land.md` covers phases 7 **and** 8, so phase 8 adds
-no load). Resolve the base path **once**, at the start, with a bash
+skill's `references/` dir; `land.md` covers phases 7 **and** 8. A session that
+**starts** at a later phase (a resume, per `checkpoint.md`) loads what those
+phases need before doing anything: entering at 7 or 8 means `land.md` and
+`implementation-integrity.md` first. Resolve the base path **once**, at the start, with a bash
 step:
 
 ```bash
@@ -73,7 +75,8 @@ literal pass reads nothing.
 Load lazily, one phase at a time: phase 1 `design-spec-template.md`, phase 3
 `blast-radius.md`, phase 5 `implementation-integrity.md`, phase 6
 `code-review-prompt.md`, 6b `security-review-prompt.md`, phase 7 `land.md`
-(it carries phase 8 as well); `checkpoint.md` only on a session hand-over.
+(it carries phase 8 as well, and a session resuming at 8 loads it there);
+`checkpoint.md` only on a session hand-over.
 
 **A Read that fails stops the phase.** Never continue from memory of what the
 reference "probably says" — a reference that did not load is exactly how a
