@@ -70,10 +70,11 @@ literal pass reads nothing.
 Load lazily, one phase at a time: phase 1 `design-spec-template.md`, phase 3
 `blast-radius.md`, phase 5 `implementation-integrity.md`, phase 6
 `code-review-prompt.md`, 6b `security-review-prompt.md`, phase 8 `land.md`;
-`checkpoint.md` only when a phase boundary meets a context boundary. **A Read that fails stops the phase.** Never
-continue from memory of what the reference "probably says" — a reference that
-did not load is exactly how a phase degrades into plausible invention that
-reads like a pass.
+`checkpoint.md` only when a phase boundary meets a context boundary.
+
+**A Read that fails stops the phase.** Never continue from memory of what the
+reference "probably says" — a reference that did not load is exactly how a
+phase degrades into plausible invention that reads like a pass.
 
 ## 0. Ingest
 Read the ticket **and every comment** — the real DoD and the "важное
@@ -99,10 +100,12 @@ commit that introduced it: `git log -S'<symbol>'`, blame; refactor →
 characterisation tests, mutation check mandatory; feature → as written).
 `one-way` — migration, persistent data, a public API or event contract, a
 security boundary, a coordinated rollout — pulls in T3 artifacts and the spec's
-Reversibility section whatever the tier says. **A tier only moves up**, and moving it up **replays what it changes**: go back
-to phase 1 (a T1 that becomes T2/T3 gets its spec file created now), re-run the
-premortem against the new failure model, and say in one line what triggered it.
-Never down, never quietly. A `risk tier:` note from `decompose` is a **floor,
+Reversibility section whatever the tier says.
+
+**A tier only moves up**, and moving it up **replays what it changes**: back to
+phase 1 (a T1 that becomes T2/T3 gets its spec file now), re-run the premortem
+against the new failure model, and say in one line what triggered it. Never
+down, never quietly. A `risk tier:` note from `decompose` is a **floor,
 not a ceiling** — the tier is `max(your declaration, that hint)`, and a
 disagreement is worth one sentence.
 - **T1 trivial** — copy, config value, comment, one surface; no data, auth,
@@ -160,10 +163,10 @@ Before fixing the order, map **blast radius and risk** with
 contracts and data other consumers depend on, the callers and flows the change
 touches, and the unknown that costs the most if it turns out wrong. An empty
 result there is a claim, not a finding — it needs a second, differently-shaped
-search, the command that produced it, and the blind spots it cannot see. Then order so that the
-riskiest assumption is proven **earliest**. An unknown that cannot be proven
-inside the first slice becomes a bounded spike step with a named exit decision —
-not a hope deferred to the end.
+search, the command that produced it, and the blind spots it cannot see. Then
+order so that the riskiest assumption is proven **earliest**. An unknown that
+cannot be proven inside the first slice becomes a bounded spike step with a
+named exit decision — not a hope deferred to the end.
 
 Choose the **test seam** here, not while writing tests, and record it in the
 plan — the rules are in `blast-radius.md` (§ *Choosing the test seam*).
@@ -230,9 +233,9 @@ produce one → downgrade), and a finding this pass and phase 6 surface
 network calls, secrets, data/PII, migrations, grants, **CI/CD or IaC files,
 container images, dependency manifests, or the repo's own agent/skill/hook
 files**; otherwise skip with a one-line reason (as you would dismiss
-code-review noise). This is the *LLM* layer — gameable and correlated with the implementer — so it
-does **not** replace the deterministic gate of phase 8, and that gate does not
-replace this. Both, or neither means anything.
+code-review noise). This is the *LLM* layer — gameable and correlated with the
+implementer — so it does **not** replace the deterministic gate of phase 8, and
+that gate does not replace this. Both, or neither means anything.
 
 ## 7. Verify live
 Prove it on the actual dev/staging environment, not just in unit tests:
