@@ -25,6 +25,15 @@ them into this task's diff, where they hide the change under review.
 
 ## 2. RED means you watched it fail
 
+**The type of ticket decides what the first red test is:**
+- **bug** — the first red test *reproduces the ticket's Actual*, and its
+  assertion is the ticket's Expected. A bug fixed without a test that failed on
+  the reported symptom is a fix for a bug you inferred, not the one reported.
+- **refactor** — characterisation tests first (they pin today's behaviour,
+  including the parts nobody likes), and the mutation check of §4 is mandatory:
+  behaviour preservation is the whole DoD, and only a killed mutant shows it.
+- **feature** — as below.
+
 - Run each new test and **watch it fail** before writing the implementation. A
   test you never saw fail proves nothing — it may be asserting nothing at all.
 - If the module doesn't exist yet, stub it so the test fails on the assertion,
@@ -123,6 +132,16 @@ actually real.
 
 What phase 7 and phase 8 report must be:
 
+- **Produced on the project's own toolchain.** Before the baseline, resolve the
+  version the repo pins (`.nvmrc`, `.node-version`, `.python-version`,
+  `.tool-versions`, `composer.json` platform) and activate it; numbers from a
+  different runtime are not evidence for this repo, and a `node_modules` higher
+  up the tree can make them worse than useless (`require.resolve` must point
+  inside the clone). Report it as a **comparison**, not a printout —
+  `node: pin 20.11.1 · actual 20.11.1 (match)`. A mismatch is not evidence:
+  activate the pinned version and rerun, or, if you cannot after a named
+  attempt, the run is `BLOCKED` on the toolchain rather than green on the
+  wrong one.
 - **From one final fresh run, executed after the last code edit.** Mid-task
   numbers are stale the moment you touch a file again. Rerun, then report.
 - **Actual values, pasted.** "47 passed, 0 failed; 31/31 changed lines covered;
@@ -138,6 +157,45 @@ What phase 7 and phase 8 report must be:
   behind it is evidence. If the mutation pass was manual, the script that
   applied the mutants belongs in the repo as well — a mutant list that lived in
   `/tmp` makes the score unauditable the moment the session ends.
+
+- **Free of secrets and PII.** Never open `.env` or a secret store to make an
+  authed call — use the mechanism that does not reveal the value — and keep
+  tokens, keys and personal data out of the evidence line and the close comment
+  (test users by role, not by name). The gate's `ci/scan-text.sh` scans the text
+  you are about to post; use it when the repo has it.
+- **Anchored to the reviewed commit, by command, not by memory.** Take the sha
+  from the reviewer's `Reviewed:` line the moment the report arrives (write it
+  into the state file if a session hand-over is possible), then:
+  ```bash
+  git merge-base --is-ancestor <review-sha> HEAD || echo "re-reviewed: required"
+  git diff --quiet <review-sha>..HEAD && echo "re-reviewed: n/a (no code since)"
+  git rev-list --count --no-merges <review-sha>..HEAD    # code commits since
+  ```
+  A merge of the integration branch (phase 8's "run on the merged state") adds
+  commits that are not yours: report `merge only` when
+  `git diff <review-sha>..HEAD` is empty, and `re-reviewed: yes|no` — never a
+  bare count that reads as if someone had judged it.
+- **Led by the terminal status.** The close comment and the skill's answer both
+  start with one of `DONE | DONE_WITH_CONCERNS | BLOCKED | MERGED_NOT_LIVE |
+  ABANDONED` plus a one-line reason, followed by the `DoD-n → PASS | FAIL |
+  PARTIAL` grading with a `file:line` or command per item. A human skims the
+  first line; a runner parses it. The status is **derived, not chosen**:
+
+  | Condition | Status |
+  |---|---|
+  | merged, deployed, every `DoD-n` PASS, no check skipped | `DONE` |
+  | merged and live, but a Required accepted by the risk owner (recorded on the MR), a check skipped with a reason, or a `DoD-n` not PASS | `DONE_WITH_CONCERNS` |
+  | merged, not running (deploy failed, never triggered, health check failed) | `MERGED_NOT_LIVE` |
+  | not merged; the blocker is named and not yours to clear | `BLOCKED` |
+  | work stopped on purpose; say what happens to the branch | `ABANDONED` |
+
+  `DONE_WITH_CONCERNS` is not a self-issued pass: the concern it names is
+  something the risk owner accepted or the ticket now carries as a follow-up —
+  an unresolved Required or a mandatory check you simply did not run is not a
+  concern, it is unfinished work.
+  The landing detail (`landing: deployed | deployed-with-concerns | not-live |
+  reverted`) is a separate field, so a grep for one vocabulary can never pass
+  for the other.
 
 A step you got wrong and then fixed is a normal part of a task and costs
 nothing to admit. A step you quietly weakened is the only unrecoverable one.

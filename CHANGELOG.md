@@ -9,6 +9,92 @@ below is tagged `vX.Y.Z` in git. Installs track the default branch (the
 marketplace entry pins no ref), so a release tag marks history rather than a
 download.
 
+## [1.9.0] — 2026-08-22
+
+`task` — the third item of the donor-audit plan
+(`docs/audits/2026-08-21-dmitriy-toolkit-v3-audit.md` §3.1 T1–T26, §4 O1/O2/O3/O5;
+design in `docs/superpowers/specs/2026-08-22-task-flow-1-9-0-design.md`,
+premortem panel over it in `docs/premortem/2026-08-22-task-1-9-0-premortem.md`).
+Three classes of hole, all about **provability**: a verdict attached to nothing
+checkable, irreversibility never named, and a phase 8 that stopped at "merged".
+
+### Added
+- **Four lazy references**, one per phase that needs it:
+  `design-spec-template.md` (phase 1 — Problem / Scope / Context pack /
+  Decisions / **Reversibility** / DoD→check table / Premortem edges / Failure
+  signal, scaled by tier, with the rejection criteria that stop a rollback plan
+  from being fiction); `blast-radius.md` (phase 3 — "an empty result is a
+  claim", two searches in **different namespaces**, named blind spots, and the
+  test-seam rules that used to sit in the skill); `land.md` (phases 7–8 — a
+  merge command that exits non-zero is never retried, merge queues, the
+  pipeline that already deploys, verification depth by scope, the `landing:`
+  field, reverting **through this same flow**, and deleting only what you
+  created); `checkpoint.md` (session hand-over — `<TASK-ID>.state.md` beside
+  the spec, volatile facts carrying `⚠ VERIFY`/`⏱ TTL`, kept out of the task's
+  diff, and validated against branch/HEAD before it is trusted).
+- **Tier · type · reversibility** on one line in phase 0. The type shapes the
+  first red test (bug → it reproduces the ticket's Actual and you locate the
+  commit that introduced it; refactor → characterisation tests + mandatory
+  mutation check); `one-way` (migration, persistent data, a public contract, a
+  security boundary, a coordinated rollout) pulls in T3 artifacts whatever the
+  tier says. **A tier only moves up**, and moving it up replays phase 1 and the
+  premortem instead of relabelling the ticket.
+- **DoD as a graded checklist:** `DoD-1..n` with a verifiability class
+  (`diff | live | external`) proposed in phase 0 and settled in phase 8 by what
+  was produced; the reviewer grades each item `PASS | FAIL | PARTIAL` with a
+  `file:line` or command, and a PASS with nothing to point at is not a PASS.
+- **A terminal status as the first line** of the close comment and of the
+  skill's answer — `DONE | DONE_WITH_CONCERNS | BLOCKED | MERGED_NOT_LIVE |
+  ABANDONED` — **derived from a table**, not chosen: `DONE_WITH_CONCERNS`
+  names something the risk owner accepted, never an unfinished check. The
+  tracker state follows it (Done only for the first two), and the landing
+  detail is a separate `landing:` field so the two vocabularies share no token.
+- **`Reviewed: <sha>` from the reviewer**, carried into the evidence block with
+  `re-reviewed: yes|no` and the commands that compute "what changed since" —
+  a merge of the integration branch reports `merge only` instead of a bare
+  count that reads like a judgement.
+- **Deploy / merge policy binding** (merge method, whether merging needs
+  someone else's approval — asked once, never inferred from commit statistics —
+  the authoritative MR-state command, the deploy trigger and its status check),
+  and an optional Architecture-docs binding.
+
+### Changed
+- **The project ceiling is stated as what may be rebound** — commands, paths,
+  branch names, environments, tools — and everything else (which phases run,
+  their order, the clean-context review, "green includes the gate", the
+  blocking force of Critical/Required, secrets out of the context) stands. A
+  repo with no gate installed is a *state* (`gate: absent` in the evidence
+  block plus an offer to scaffold), not a deviation.
+- **A finding needs evidence, not a quote alone.** For "this line is wrong" it
+  is `file:line` + the text; for an **absence** (no authz check, no test for a
+  premortem edge, a missing grant, a consumer left on the old shape) it is the
+  place it should have been plus the search proving it is nowhere else. This
+  keeps the strongest class of finding from being downgraded by a rule meant to
+  stop hand-waving.
+- **The reviewer builds its own consumer list** at the reviewed sha, across two
+  namespaces, and reports "no consumers" as a claim with its commands and blind
+  spots. Scope is checked **both ways**: everything the DoD asks for, and
+  nothing it did not.
+- **Phase 6b triggers widened** to CI/CD and IaC files, container images,
+  dependency manifests and the repo's own agent/skill/hook files, with the
+  build-surface checklist (SHA-pinned actions, `pull_request_target`,
+  `${{ github.event.* }}` in `run:`, secrets in job env).
+- **Evidence is produced on the project's toolchain**, reported as a comparison
+  (`node: pin 20.11.1 · actual 20.11.1 (match)`); a mismatch is not evidence.
+- Orchestrator-facing review mechanics (severity → action, the
+  behavioural/description split, one commit per fix, the verdict's sha) moved
+  from the skill into the dispatch template that phase 6 already loads — the
+  skill keeps the decision, the template keeps the method. `task`'s prompt
+  weight grew 24 % (2678 → 3327 words) against the audit's 22 % estimate.
+- `decompose` may end a task's `context` with an advisory
+  `risk tier: T1|T2|T3 — <why>`; it is a **floor, not a ceiling** for the
+  tier `task` declares, and not a seventh field — the 6-field contract stands.
+- `scripts/lint.sh` gained the new contracts as invariants (the status and
+  landing vocabularies kept disjoint, `Reviewed:`, DoD grading, the tier
+  ratchet, no `git add -A` in a skill, and the reverse of the reference check:
+  a reference no phase loads is a defect), and the axiom greps are now
+  whitespace-tolerant so a rewrap cannot drop one silently.
+
 ## [1.8.1] — 2026-08-22
 
 Three findings from the completeness critic of the 1.8.0 review, all in the
@@ -437,6 +523,7 @@ Donor audit of the `hybrid-plan` / `hybrid-review` skill set —
   tool-agnostic migration-guard and protected-branch rules into any repo —
   GitLab and GitHub CI, pre-commit hooks, failing closed.
 
+[1.9.0]: https://github.com/umar-s/task-flow/compare/v1.8.1...v1.9.0
 [1.8.1]: https://github.com/umar-s/task-flow/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/umar-s/task-flow/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/umar-s/task-flow/compare/v1.7.0...v1.7.1

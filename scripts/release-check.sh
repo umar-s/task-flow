@@ -54,6 +54,15 @@ else
   fi
 fi
 
+# The vendored payload carries its own version marker so a consumer can tell
+# which copy they have: when templates/ci-gate changed since the last tag, the
+# marker must be this release (a plugin-only release leaves it alone).
+LAST=$(git tag -l 'v*' --sort=-v:refname | head -1)
+if [ -n "$LAST" ] && ! git diff --quiet "$LAST" -- templates/ci-gate; then
+  PAYLOAD_V=$(sed -nE 's/.*ci-gate payload version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' templates/ci-gate/ci/README.md | head -1)
+  [ "$PAYLOAD_V" = "$V" ] || err "templates/ci-gate changed since $LAST but its version marker says ${PAYLOAD_V:-none}, not $V"
+fi
+
 bash scripts/lint.sh || fail=1
 
 if [ "$fail" = 0 ]; then

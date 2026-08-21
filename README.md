@@ -60,6 +60,12 @@ gameable and correlated with the implementer — so it never replaces the
 deterministic gate below, and vice versa. One task = one branch → one MR/PR,
 CI green (including the gate) before merge.
 
+Each task declares **tier · type · reversibility** (a tier only moves up), each
+DoD item is graded `PASS | FAIL | PARTIAL` against a `file:line` or a command,
+and the close comment opens with a terminal status — `DONE |
+DONE_WITH_CONCERNS | BLOCKED | MERGED_NOT_LIVE | ABANDONED` — so a human, or a
+runner, reads the outcome without parsing prose.
+
 Invoke with `/task DEV-475` (or "прогони через наш flow"). The discipline is
 fixed; concrete tracker/VCS/build commands are resolved from the project's
 `CLAUDE.md`.

@@ -35,7 +35,7 @@ wrongly promotes `truths` and `wave` to author-field status).
 | Field | Contains | Origin |
 |---|---|---|
 | **name** | Action-oriented task name: verb + object, not a bare noun phrase (e.g. "Implement POST /login endpoint", not "Login"). | GSD `<name>` |
-| **context** | Why the task exists, `@`-references to the code/decisions/conventions it must follow, and pointers to related tasks. | GSD `<context>` / `<read_first>` |
+| **context** | Why the task exists, `@`-references to the code/decisions/conventions it must follow, and pointers to related tasks. May end with one advisory line — `risk tier: T1\|T2\|T3 — <one sentence why>` — a second opinion for whoever runs `task` on it; it is **not** a seventh field and never a gate: `task` still declares its own tier and may only move it up. | GSD `<context>` / `<read_first>` |
 | **requirements** | The `REQ-NN` identifier(s) this task covers. Must be non-empty — every task traces back to at least one requirement. | GSD `requirements` |
 | **dod** | Definition of Done — a 4-member block: `done`, `acceptance_criteria`, `verify`, `truths`. See below. | GSD `<done>` / `<acceptance_criteria>` / `<verify>` + `must_haves.truths` |
 | **story_points** | Fibonacci estimate — `1`, `2`, `3`, `5`, `8`, or `13`. **Optional annotation, not a gate.** `story_points` > 8 is a WARNING to reconsider the task's boundaries, never an automatic re-split trigger — splitting is driven by SPIDR / vertical slices / dependencies, not by this number. | Added in this plugin — GSD's estimation model has no equivalent. |

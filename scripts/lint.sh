@@ -44,9 +44,11 @@ done
 jq -e . .claude-plugin/plugin.json >/dev/null || err ".claude-plugin/plugin.json is not valid JSON"
 
 # 5. Axioms as text invariants (CLAUDE.md → "The central axiom", "Clean-context dispatch").
-grep -q 'deterministic gate' skills/task/SKILL.md || err "task phase 8 lost the 'deterministic gate' clause"
-grep -q 'never the session transcript' skills/task/SKILL.md || err "task phase 6 lost the clean-context clause"
-grep -q 'fresh context' skills/decompose/SKILL.md || err "decompose phase 5 lost the fresh-context clause"
+# Whitespace-tolerant: a rewrap must not be able to drop an axiom silently.
+flat() { tr '\n' ' ' < "$1" | tr -s ' '; }
+flat skills/task/SKILL.md | grep -q 'deterministic gate' || err "task phase 8 lost the 'deterministic gate' clause"
+flat skills/task/SKILL.md | grep -q 'never the session transcript' || err "task phase 6 lost the clean-context clause"
+flat skills/decompose/SKILL.md | grep -q 'fresh context' || err "decompose phase 5 lost the fresh-context clause"
 grep -q 'factual' skills/task/references/code-review-prompt.md || err "code-review-prompt lost the 'WHAT_CHANGED is factual' rule"
 
 # 6. decompose vocabulary is a cross-file contract: 6 author fields, 4 dod members, 8 checks.
@@ -157,8 +159,10 @@ if git grep -nE '\b(A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16}\b' -- . ':!CHAN
 fi
 # The payload version marker in ci/README.md tracks the plugin version, so a
 # consumer can tell which payload they vendored.
-PV=$(jq -r .version .claude-plugin/plugin.json)
-grep -q "ci-gate payload version: $PV" templates/ci-gate/ci/README.md || err "templates/ci-gate/ci/README.md: payload version marker is not $PV"
+PAYLOAD_V=$(sed -nE 's/.*ci-gate payload version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' templates/ci-gate/ci/README.md | head -1)
+[ -n "$PAYLOAD_V" ] || err "templates/ci-gate/ci/README.md has no 'ci-gate payload version: X.Y.Z' marker"
+[ -z "$PAYLOAD_V" ] || grep -q "^## \[$PAYLOAD_V\]" CHANGELOG.md || err "payload version marker $PAYLOAD_V is not a released version in CHANGELOG.md"
+# (release-check.sh is what requires the marker to move when the payload does.)
 # The marker form documented everywhere must be the one the guard accepts.
 MARKER_DOCS="README.md README.ru.md templates/ci-gate/ci/README.md skills/ci-gate/SKILL.md skills/task/SKILL.md"
 # shellcheck disable=SC2086
@@ -184,7 +188,45 @@ for f in templates/ci-gate/ci/migration-guard.sh templates/ci-gate/ci/unicode-gu
   grep -q '^export LC_ALL=C' "$f" || err "$f must pin LC_ALL=C — grep -i and awk case folding are locale-dependent"
 done
 
-# 11. README.md and README.ru.md move in lockstep (structure only; text is a translation).
+# 11. task's contracts are cross-file: the vocabulary a runner or a human parses
+#     (terminal status, landing verdicts, DoD grading, the reviewed sha) must
+#     exist in every place that produces or consumes it.
+for w in DONE_WITH_CONCERNS MERGED_NOT_LIVE ABANDONED BLOCKED; do
+  grep -q "$w" skills/task/SKILL.md || err "task/SKILL.md lost the terminal status '$w'"
+  grep -q "$w" skills/task/references/implementation-integrity.md || err "implementation-integrity.md lost the terminal status '$w'"
+done
+# The landing field and the terminal status are deliberately disjoint
+# vocabularies — a grep for one must never be satisfied by the other.
+for w in 'deployed-with-concerns' 'not-live' 'reverted'; do
+  grep -q "landing:.*$w\|\`$w\`" skills/task/references/land.md || err "land.md lost the landing value '$w'"
+done
+for w in DONE_WITH_CONCERNS MERGED_NOT_LIVE BLOCKED ABANDONED; do
+  grep -q "$w" skills/task/references/land.md || err "land.md must name the terminal status '$w' it feeds"
+done
+grep -q 'landing: deployed' skills/task/references/land.md || err "land.md lost the 'landing:' field"
+if grep -qE '^\| `?DEPLOYED' skills/task/references/land.md; then
+  err "land.md still uses an uppercase landing verdict — it must not share tokens with the terminal status"
+fi
+grep -q 'Reviewed:' skills/task/references/code-review-prompt.md || err "code-review-prompt.md: the verdict must carry 'Reviewed: <sha>'"
+grep -q 'review @' skills/task/SKILL.md || err "task/SKILL.md evidence block lost the 'review @ <sha>' field"
+grep -q 'DoD-n' skills/task/SKILL.md || err "task/SKILL.md lost the DoD-n grading rule"
+grep -qE 'DoD-n .*PASS' skills/task/references/code-review-prompt.md || err "code-review-prompt.md lost the DoD-n grading"
+grep -q 'only moves up' skills/task/SKILL.md || err "task/SKILL.md lost the 'a tier only moves up' rule"
+# Reverse of check 1: a reference nobody loads is a reference nobody reads.
+for s in skills/*/; do
+  s="${s%/}"; [ -d "$s/references" ] || continue
+  for f in "$s"/references/*.md; do
+    b=$(basename "$f")
+    grep -q "$b" "$s/SKILL.md" || err "$b exists in $s/references but no phase in $s/SKILL.md loads it"
+  done
+done
+grep -q 'one-way' skills/task/SKILL.md || err "task/SKILL.md lost the reversibility classification"
+if grep -rn 'git add -A' skills/ | grep -v 'never' >/dev/null; then
+  err "a skill tells the agent to 'git add -A' (stage by path):"
+  grep -rn 'git add -A' skills/ | grep -v 'never' >&2
+fi
+
+# 12. README.md and README.ru.md move in lockstep (structure only; text is a translation).
 bash scripts/readme-parity.sh >/dev/null || err "README.md / README.ru.md structure differs (run scripts/readme-parity.sh)"
 
 if [ "$fail" = 0 ]; then echo "lint: OK"; fi
