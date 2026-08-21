@@ -31,21 +31,41 @@ every item makes an existing promise actually hold.
   the same version as `PIN_VERSION`. `.pre-commit-config.yaml` pins `rev` to
   the release commit (a tag is re-pointable) and no longer recommends
   `pre-commit autoupdate`. GitHub actions are pinned by commit SHA.
-- **`ci-gate` — `gitleaks-fetch.sh`** re-verifies the cached tarball against
-  the committed SHA256 on every call and extracts into a fresh private dir; a
-  cached binary in a shared runner cache was previously executed unverified
-  after the first download.
-- **`ci-gate` — `.gitleaks.toml`** allowlist uses `regexTarget = "match"`: with
-  `"line"`, a placeholder anywhere on a line excused a real secret beside it.
-- **`ci-gate` — `migration-guard.sh`** detects the destructive DSL tokens of
-  the frameworks whose directories it scans by default (Rails/Alembic, Django,
-  Laravel, Knex/Sequelize/TypeORM) in addition to SQL; its residue — multi-line
-  statements, SQL inside strings, unlisted DSLs — is documented as "Known
-  limits" in `ci/README.md` and handed to the phase-6b security review
-  explicitly.
+- **`ci-gate` — `gitleaks-fetch.sh`** verifies a private copy of the cached
+  tarball against the committed SHA256 on every call and extracts that copy
+  into a per-call dir; a cached binary in a shared runner cache was previously
+  executed unverified after the first download. The per-call dir is removed
+  by the caller (`gate.sh` traps it; the shell CI variant sets
+  `GITLEAKS_RUN_DIR` to the job workspace and cleans it in `after_script`).
+- **`ci-gate` — `.gitleaks.toml`** allowlist split into a path block and a
+  value block with `regexTarget = "match"`: with `"line"`, a placeholder
+  anywhere on a line excused a real secret beside it. The canonical AWS
+  example pair is no longer listed — the default ruleset already excludes it,
+  and an unanchored literal matched against a generic-api-key span suppressed
+  whatever followed it.
 - **GitHub template** — event data reaches `run:` steps through `env:` rather
-  than inlined `${{ }}` (no injection was possible with the fields used; the
-  template no longer teaches the pattern).
+  than inlined `${{ }}`; a branch name can carry shell metacharacters, so
+  `github.base_ref` inlined into `run:` was a real vector for anyone able to
+  create a branch. The repository is mounted read-only into the scanner
+  container.
+
+### Changed
+- **`ci-gate` — `migration-guard.sh` detects more, so MRs in flight may start
+  to need the marker.** SQL: `DROP` of a view, type, sequence, trigger,
+  function, procedure or materialized view, and `ALTER TABLE … DROP <anything>`
+  (the `COLUMN` keyword is optional in PostgreSQL/MySQL) now count as
+  destructive. ORM: the table/column-dropping DSL tokens of the frameworks
+  whose directories are scanned by default (Rails/Alembic, Django, Laravel,
+  Knex/Sequelize/TypeORM) are matched — case-sensitively, as whole words, and
+  only in the forward part of the file (before a `down` / `downgrade`
+  definition that follows an `up` / `upgrade` / `change` one), so a
+  conventional reversible migration does not need the marker. The residue —
+  multi-line statements, SQL assembled from strings,
+  `DELETE` without `FROM`, lossy type changes, constraint-dropping DSL calls,
+  unlisted DSLs — is documented as "Known limits" in `ci/README.md` and handed
+  to the phase-6b security review explicitly.
+- **`ci-gate` — `gate.sh`** accepts `GATE_PINNED_ONLY=1` to ignore a `gitleaks`
+  on `PATH` and use the pinned one (the verdict CI will give).
 
 ### Added
 - **Repository scripts** (not part of the plugin): `scripts/lint.sh` turns the

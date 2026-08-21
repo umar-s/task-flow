@@ -6,6 +6,8 @@
 #
 # secret-scan uses a local `gitleaks` if present, else fetches a pinned,
 # checksum-verified binary (ci/gitleaks-fetch.sh) — no docker required.
+# GATE_PINNED_ONLY=1 ignores a gitleaks on PATH and always uses the pinned one
+# (same version, same verdict as CI).
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -14,10 +16,13 @@ cd "$repo"
 mode="${1:-}"
 
 echo "== secret-scan (gitleaks) =="
-if command -v gitleaks >/dev/null 2>&1; then
+if [ "${GATE_PINNED_ONLY:-0}" != "1" ] && command -v gitleaks >/dev/null 2>&1; then
   GL=gitleaks
 else
-  echo "gitleaks not on PATH; fetching pinned binary"
+  echo "fetching pinned gitleaks (ci/gitleaks-fetch.sh)"
+  export GITLEAKS_RUN_DIR
+  GITLEAKS_RUN_DIR=$(mktemp -d)
+  trap 'rm -rf "$GITLEAKS_RUN_DIR"' EXIT        # the per-call extraction dir
   GL="$(bash "$here/gitleaks-fetch.sh")"
 fi
 if [ "$mode" = "--staged" ]; then

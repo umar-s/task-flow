@@ -3,7 +3,8 @@
 #
 # This repo ships Markdown and a bash payload, so its "tests" are the written
 # rules in CLAUDE.md turned into greps. Each check names the rule it guards.
-# Exit 1 on any violation; `# lint: allow` on a line exempts it from check 3.
+# Exit 1 on any violation. Check 3 (fail-closed payload) covers only
+# templates/ci-gate/ci/*.sh; `# lint: allow` on a payload line exempts it.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 fail=0
@@ -24,9 +25,9 @@ for s in skills/*/; do
   s="${s%/}"; [ -d "$s/references" ] || continue
   grep -q 'CLAUDE_PLUGIN_ROOT' "$s/SKILL.md" || err "$s/SKILL.md has references/ but no CLAUDE_PLUGIN_ROOT resolution block"
 done
-if grep -rn '~/\.claude' skills/ | grep -viE 'never|not ' >/dev/null; then
+if grep -rn '~/\.claude' skills/ | grep -v 'never' >/dev/null; then
   err "hardcoded ~/.claude path in skills/ (only a 'never …' mention is allowed)"
-  grep -rn '~/\.claude' skills/ | grep -viE 'never|not ' >&2
+  grep -rn '~/\.claude' skills/ | grep -v 'never' >&2
 fi
 
 # 3. Payload fails closed: no '|| true' / '2>/dev/null' on a verdict-bearing line.
@@ -65,23 +66,33 @@ if git grep -nE '/home/[a-z]+/' -- . ':!CLAUDE.md' >/dev/null; then
   git grep -nE '/home/[a-z]+/' -- . ':!CLAUDE.md' >&2
 fi
 
-# 8. One scanner version in every path: fetch pin == pre-commit rev comment == CI image tag.
+# 8. One scanner version in every path: fetch pin == pre-commit rev comment ==
+#    CI image tag, and ONE digest everywhere it appears (a consistent wrong
+#    digest still passes — correctness is the human's job at bump time).
 V=$(sed -nE 's/^PIN_VERSION="([0-9.]+)"/\1/p' templates/ci-gate/ci/gitleaks-fetch.sh)
 [ -n "$V" ] || err "cannot read PIN_VERSION from gitleaks-fetch.sh"
-grep -qE "^\s+rev: [0-9a-f]{40}\s+# v$V\$" templates/ci-gate/.pre-commit-config.yaml \
+V_RE=${V//./\\.}
+grep -qE "^\s+rev: [0-9a-f]{40}\s+# v$V_RE\$" templates/ci-gate/.pre-commit-config.yaml \
   || err ".pre-commit-config.yaml: gitleaks rev must be a commit SHA tagged '# v$V'"
-for f in templates/ci-gate/gitlab/ci-gate.gitlab-ci.yml templates/ci-gate/github/gate.yml; do
-  grep -qE "gitleaks:v$V@sha256:[0-9a-f]{64}" "$f" || err "$f: gitleaks image not pinned to v$V by digest"
+IMAGE_FILES="templates/ci-gate/gitlab/ci-gate.gitlab-ci.yml templates/ci-gate/gitlab/ci-gate.shell.gitlab-ci.yml templates/ci-gate/github/gate.yml .github/workflows/check.yml"
+for f in $IMAGE_FILES; do
+  grep -qE "gitleaks:v$V_RE@sha256:[0-9a-f]{64}" "$f" || err "$f: gitleaks image not pinned to v$V by digest"
 done
+# shellcheck disable=SC2086
+DIGESTS=$(grep -ohE "gitleaks:v$V_RE@sha256:[0-9a-f]{64}" $IMAGE_FILES | sort -u | wc -l)
+[ "$DIGESTS" = 1 ] || err "gitleaks image digest differs between CI files ($DIGESTS distinct values)"
 if grep -nE 'image:.*:latest|gitleaks:latest' templates/ci-gate/gitlab/*.yml templates/ci-gate/github/*.yml >/dev/null; then
   err "':latest' image tag in a CI template:"
   grep -nE 'image:.*:latest|gitleaks:latest' templates/ci-gate/gitlab/*.yml templates/ci-gate/github/*.yml >&2
 fi
-if grep -nE 'uses: [^@]+@v[0-9]' templates/ci-gate/github/gate.yml >/dev/null; then
-  err "github/gate.yml: an action is pinned by tag, not commit SHA"
+if grep -nE 'uses: [^@]+@v[0-9]' templates/ci-gate/github/gate.yml .github/workflows/check.yml >/dev/null; then
+  err "an action is pinned by tag, not commit SHA:"
+  grep -nE 'uses: [^@]+@v[0-9]' templates/ci-gate/github/gate.yml .github/workflows/check.yml >&2
 fi
-grep -q 'autoupdate' templates/ci-gate/.pre-commit-config.yaml && ! grep -q 'Never `pre-commit autoupdate`' templates/ci-gate/.pre-commit-config.yaml \
-  && err ".pre-commit-config.yaml recommends autoupdate" || true  # lint: allow
+if grep -q 'autoupdate' templates/ci-gate/.pre-commit-config.yaml && ! grep -q 'Never `pre-commit autoupdate`' templates/ci-gate/.pre-commit-config.yaml; then
+  err ".pre-commit-config.yaml recommends autoupdate"
+fi
+grep -q 'regexTarget = "line"' templates/ci-gate/.gitleaks.toml && err '.gitleaks.toml: regexTarget = "line" lets a placeholder excuse a real secret on the same line'
 
 # 9. README.md and README.ru.md move in lockstep (structure only; text is a translation).
 bash scripts/readme-parity.sh >/dev/null || err "README.md / README.ru.md structure differs (run scripts/readme-parity.sh)"

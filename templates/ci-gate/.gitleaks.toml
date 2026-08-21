@@ -5,30 +5,33 @@ title = "ci-gate gitleaks config"
 [extend]
 useDefault = true
 
-# Keep the allowlist TIGHT. Every entry here is a hole in the gate — prefer
-# fixing/rotating a real secret over allowlisting it. Fixtures and *.example
-# files are the only broadly-safe defaults.
-[allowlist]
-description = "project false-positives"
-# "match", not "line": an allowlist regex suppresses only the matched span.
-# With "line", a placeholder anywhere on the line excuses a real secret next
-# to it — a one-word bypass of the whole gate.
-regexTarget = "match"
+# Keep the allowlists TIGHT. Every entry here is a hole in the gate — prefer
+# fixing/rotating a real secret over allowlisting it. Fixture dirs and
+# *.example / *.sample files are the only broadly-safe defaults.
+#
+# Two separate blocks on purpose: a path rule and a value rule must not share a
+# target. Value rules use regexTarget = "match" — the regex must match the
+# flagged span itself, never merely the line it sits on (with "line", a
+# placeholder anywhere on the line excused a real secret beside it). The
+# canonical AWS example pair (AKIAIOSFODNN7EXAMPLE / wJalr…) is already excluded
+# by the default ruleset — do not re-add it here; an unanchored literal matched
+# against a generic-api-key span suppresses whatever follows it.
+[[allowlists]]
+description = "fixture dirs and example files"
 paths = [
   '''(^|/)tests?/.*fixtures?/''',
   '''(^|/)testdata/''',
   '''.*\.example$''',
   '''.*\.sample$''',
 ]
-# Confirmed false-positives, allowlisted by SPECIFIC string — not broad pattern.
-# Each line is a hole: add only values you have seen fire, keep them exact.
+
+[[allowlists]]
+description = "basic-auth PLACEHOLDERS in docs — literal user:pass, not real"
+regexTarget = "match"
 regexes = [
-  # AWS canonical documentation example credentials (not a real key/secret).
-  '''AKIAIOSFODNN7EXAMPLE''',
-  '''wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY''',
-  # curl / URL basic-auth PLACEHOLDERS in docs — literal user:pass, not real.
   '''https?://(user|username|USER):(pass|password|PASSWORD|token|TOKEN|xxx+|<[^>]+>|\$\{?[A-Z_]+\}?)@''',
 ]
+
 # For a ONE-OFF example in code/docs prefer an inline comment on that line —
 # more surgical than a global regex and visible in review:
 #   my_token = "sk_live_deadbeef..."   # gitleaks:allow

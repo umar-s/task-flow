@@ -48,8 +48,8 @@ else
   state=UNRELEASED
   PREV=$(git tag -l 'v*' --sort=-v:refname | head -1)
   if [ -n "$PREV" ]; then
-    # shellcheck disable=SC2086
-    git diff --quiet "$PREV" -- $BEHAVIOUR && err "version bumped to $V but skills/templates equal $PREV — a release needs a behaviour change"
+    # Compare skills/templates ONLY — .claude-plugin differs by definition (the bump itself).
+    git diff --quiet "$PREV" -- skills templates && err "version bumped to $V but skills/templates equal $PREV — a release needs a behaviour change"
     [ "$(printf '%s\n%s\n' "${PREV#v}" "$V" | sort -V | tail -1)" = "$V" ] || err "version $V is not above the latest tag $PREV"
   fi
 fi

@@ -46,10 +46,19 @@ the shell runner and the docker/GitHub jobs give the same verdict on the same di
 | GitLab docker/k8s, GitHub Actions | image **digest** (`ghcr.io/gitleaks/gitleaks:vX@sha256:…`) | `ci/ci-gate.gitlab-ci.yml`, `.github/workflows/gate.yml` |
 | pre-commit | **commit** SHA of the release tag (`rev: <sha>  # vX`) | `.pre-commit-config.yaml` |
 
-`gitleaks-fetch.sh` re-verifies the cached tarball against the committed SHA256
-on **every** call and extracts into a fresh private dir — a shared runner cache
-can never feed it a binary it did not just verify. A tag or a `:latest` is
-re-pointable upstream; a digest, a commit and a checksum are not.
+`gitleaks-fetch.sh` takes a **private copy** of the cached tarball, verifies
+that copy against the committed SHA256 on **every** call, and extracts that
+copy — nothing read from the shared runner cache runs without passing the
+committed sum first (isolation between concurrent jobs of the *same* runner
+user is the runner's property, not the script's). A tag or a `:latest` is
+re-pointable upstream; a digest, a commit and a checksum are not. The extracted
+binary lives in a per-call dir under `GITLEAKS_RUN_DIR` (default `$TMPDIR`);
+the caller removes it — `gate.sh` does, and the shell CI variant points it at
+the job workspace and cleans it in `after_script`.
+
+Local `gate.sh` uses a `gitleaks` already on `PATH` if there is one (yours,
+whatever version); `GATE_PINNED_ONLY=1` makes it fetch the pinned one instead,
+for the same verdict CI will give.
 
 A frozen scanner goes stale — bump all four together: `PIN_VERSION` + both
 SHA256s (from the release `checksums.txt`, checked once by a human), the image
@@ -60,12 +69,22 @@ pre-commit `rev`. Never `pre-commit autoupdate` this repo.
 On any changed file under a migrations dir:
 - an **already-committed** migration modified / deleted / renamed → **FAIL** (forward-only);
 - a **new** migration with a destructive statement → **FAIL** unless the same
-  file carries a marker comment `-- destructive: approved`. Detected: SQL
-  (`DROP TABLE/COLUMN/SCHEMA/DATABASE/INDEX/CONSTRAINT`, `TRUNCATE`, `DELETE FROM`,
-  `ALTER TABLE … DROP COLUMN`) and the DSL tokens of the frameworks whose dirs
-  are scanned by default — Rails/Alembic `drop_table`/`drop_column`/`remove_column`,
-  Django `DeleteModel`/`RemoveField`/`RemoveModel`, Laravel `Schema::drop`/
-  `dropIfExists`, Knex/Sequelize/TypeORM `dropTable`/`dropColumn`/`removeColumn`.
+  file carries a marker comment `-- destructive: approved`. Detected, anywhere
+  in the file, case-insensitively: SQL `DROP <table | column | schema | database
+  | index | constraint | view | type | sequence | trigger | function | procedure
+  | materialized view>`, `TRUNCATE`, `DELETE FROM`, `ALTER TABLE … DROP <anything>`
+  (the `COLUMN` keyword is optional in PostgreSQL/MySQL). Detected **in the
+  forward part of the file only**, case-sensitively, as whole words: the
+  table/column-dropping DSL tokens of the frameworks whose dirs are scanned by
+  default — Rails/Alembic `drop_table`/`drop_column`/`remove_column`/
+  `remove_reference`/`remove_belongs_to`/`remove_timestamps`/`drop_join_table`,
+  Django `DeleteModel`/`RemoveField`, Laravel `Schema::drop`/`Schema::dropIfExists`,
+  Knex/Sequelize/TypeORM `dropTable`/`dropColumn`/`removeColumn`. "Forward part"
+  = when an `up` / `upgrade` / `change` definition precedes a `down` /
+  `downgrade` one, everything before that `down`: a conventional `down()` drops
+  exactly what `up()` created, and flagging every reversible migration would
+  make the marker worthless. Any other layout (`down` first, no `up`, no
+  `down`) is scanned in full.
 
 Env: `MIGRATION_DIRS` (default `migrations db/migrate db/migration prisma/migrations`),
 `GATE_BASE_REF` (override the diff base), `STAGED=1` (check the index).
@@ -79,11 +98,17 @@ DROP TABLE legacy_sessions;
 
 **Known limits / bypasses** (so nobody mistakes the guard's perimeter for
 coverage): the match is per line, so a statement split across lines
-(`DROP\nTABLE`), SQL assembled inside a string, a migration DSL not listed
-above, and data-destroying `UPDATE`s are **not** detected. That residue is the
-LLM security review's job (it reads the migration, not a regex); widening this
+(`DROP\nTABLE`), SQL assembled from several strings, `DELETE` without `FROM`
+(MSSQL), a type change that truncates data (`ALTER COLUMN … TYPE`),
+`RunSQL`/`RunPython` with non-literal SQL, constraint-dropping DSL calls
+(`dropForeign`, `remove_index`), a migration DSL not listed above, and
+data-destroying `UPDATE`s are **not** detected. That residue is the LLM
+security review's job (it reads the migration, not a regex); widening this
 regex into a parser is not. Nor does the guard re-read migrations that are
-already committed — it judges what an MR adds.
+already committed — it judges what an MR adds. And the guard lives in the
+repository it judges: without required review on `ci/`, `.gitleaks.toml` and
+the CI files (CODEOWNERS), the party under check can edit it in the same MR —
+that protection is the next layer, not this script.
 
 ## diff-coverage policy
 

@@ -57,6 +57,8 @@ under it.
 
 3. **Local layer:** tell the user to run `pip install pre-commit && pre-commit
    install` so secrets are caught before push. Do not run global installs yourself.
+   `bash ci/gate.sh --staged` runs the whole gate locally; `GATE_PINNED_ONLY=1`
+   makes it use the pinned scanner instead of whatever `gitleaks` is on `PATH`.
 
 4. **Configure the two project-specific knobs.**
    - **Migration dirs** — if the repo's migrations are not under a default

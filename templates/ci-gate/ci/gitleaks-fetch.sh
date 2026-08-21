@@ -5,10 +5,17 @@
 # verified binary path on stdout; all logs go to stderr.
 #
 # Trust model: the committed SHA256 is checked on EVERY call, not only on the
-# first download. The cache (shared between jobs and projects on a shell runner)
-# holds only the tarball; each call re-verifies it against the committed sum and
-# extracts into a fresh private directory. A cached artifact that no longer
-# matches is discarded and re-fetched — never executed.
+# first download, and always on a PRIVATE copy — the shared cache (one per user
+# on a shell runner, reachable by every job of that user) only ever holds the
+# tarball; each call copies it into a fresh private directory, verifies that
+# copy, and extracts that copy. Nothing read from the shared cache is executed
+# without passing the committed sum first. A cached tarball that no longer
+# matches is discarded and re-fetched.
+#
+# Cleanup: the extracted binary lives in a per-call directory under
+# GITLEAKS_RUN_DIR (default: $TMPDIR or /tmp) and is NOT removed by this script
+# — the caller needs it after this process exits. Callers remove it (gate.sh
+# traps it; the CI templates point GITLEAKS_RUN_DIR at the job workspace).
 #
 # Maintenance: a pinned scanner goes stale. Bump PIN_VERSION and BOTH SHA256s
 # together — plus the image digest in the CI files and the `rev` in
@@ -41,46 +48,57 @@ CACHE="${GITLEAKS_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/gitleaks-pinned}"
 TARBALL="gitleaks_${PIN_VERSION}_linux_${ARCH}.tar.gz"
 URL="https://github.com/gitleaks/gitleaks/releases/download/v${PIN_VERSION}/${TARBALL}"
 CACHED="$CACHE/$TARBALL"
-mkdir -p "$CACHE"
+RUN_BASE="${GITLEAKS_RUN_DIR:-${TMPDIR:-/tmp}}"
+mkdir -p "$CACHE" "$RUN_BASE"
 
-# 1. A cached tarball is reused only if it STILL matches the committed sum.
+# Private per-call directory: everything verified or executed lives here.
+RUN=$(mktemp -d "$RUN_BASE/gitleaks-run.XXXXXX")
+chmod 0700 "$RUN"
+# On any failure nothing half-verified is left behind; on success RUN stays.
+trap 'rm -rf "$RUN"' ERR
+
+# 1. Take a private copy of the cached tarball and verify THAT copy. The shared
+#    file is never read twice — a neighbour swapping it between check and use
+#    can only make this call re-download, never run an unverified binary.
 if [ -f "$CACHED" ]; then
-  if [ "$(sha256_of "$CACHED")" = "$WANT" ]; then
+  cp "$CACHED" "$RUN/$TARBALL"
+  if [ "$(sha256_of "$RUN/$TARBALL")" = "$WANT" ]; then
     log "cached tarball verified (v${PIN_VERSION}, ${ARCH})"
   else
     log "cached tarball no longer matches the committed SHA256 — discarding it"
-    rm -f "$CACHED"
+    rm -f "$CACHED" "$RUN/$TARBALL"
   fi
 fi
 
-# 2. Download into a private temp file, verify, then move into the cache.
-if [ ! -f "$CACHED" ]; then
-  DL=$(mktemp -d)
-  trap 'rm -rf "$DL"' EXIT
+# 2. Download into the private dir, verify, then publish to the cache with a
+#    same-filesystem rename (staging dir inside the cache) so a concurrent
+#    reader never sees a half-written tarball.
+if [ ! -f "$RUN/$TARBALL" ]; then
   log "downloading pinned v${PIN_VERSION} (${ARCH})"
-  if   command -v curl >/dev/null 2>&1; then curl -sSfL "$URL" -o "$DL/$TARBALL"
-  elif command -v wget >/dev/null 2>&1; then wget -qO "$DL/$TARBALL" "$URL"
-  else log "no curl/wget available"; exit 2; fi
-  GOT=$(sha256_of "$DL/$TARBALL")
+  if   command -v curl >/dev/null 2>&1; then curl -sSfL "$URL" -o "$RUN/$TARBALL"
+  elif command -v wget >/dev/null 2>&1; then wget -qO "$RUN/$TARBALL" "$URL"
+  else log "no curl/wget available"; rm -rf "$RUN"; exit 2; fi
+  GOT=$(sha256_of "$RUN/$TARBALL")
   if [ "$GOT" != "$WANT" ]; then
     log "CHECKSUM MISMATCH for $TARBALL — refusing to run (fail closed)"
     log "  expected (committed): $WANT"
     log "  got      (download):  $GOT"
+    rm -rf "$RUN"
     exit 1
   fi
-  mv "$DL/$TARBALL" "$CACHED"
+  STAGE=$(mktemp -d "$CACHE/.dl.XXXXXX")
+  cp "$RUN/$TARBALL" "$STAGE/$TARBALL"
+  mv -f "$STAGE/$TARBALL" "$CACHED"
+  rmdir "$STAGE"
   log "verified + cached $CACHED"
 fi
 
-# 3. Extract the verified tarball into a fresh private dir for THIS call. The
-#    extracted binary is never reused across calls, so a shared cache can only
-#    ever serve the tarball that was just re-verified.
-RUN=$(mktemp -d "${TMPDIR:-/tmp}/gitleaks-run.XXXXXX")
-chmod 0700 "$RUN"
-tar -xzf "$CACHED" -C "$RUN"
+# 3. Extract the verified private copy.
+tar -xzf "$RUN/$TARBALL" -C "$RUN"
 SRC="$RUN/gitleaks"
 [ -x "$SRC" ] || SRC=$(find "$RUN" -type f -name gitleaks | head -1)
-[ -n "${SRC:-}" ] && [ -f "$SRC" ] || { log "gitleaks binary not found in tarball"; exit 2; }
+[ -n "${SRC:-}" ] && [ -f "$SRC" ] || { log "gitleaks binary not found in tarball"; rm -rf "$RUN"; exit 2; }
 chmod 0755 "$SRC"
+rm -f "$RUN/$TARBALL"
 log "ready: $SRC"
 printf '%s\n' "$SRC"

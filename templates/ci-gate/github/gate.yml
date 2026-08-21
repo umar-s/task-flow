@@ -45,7 +45,7 @@ jobs:
               RANGE="--log-opts=${BEFORE_SHA}..${HEAD_SHA}"             # push: only new commits
             fi                                                           # first push / zero-sha → full scan
           fi                                                             # schedule (RANGE="") → full-history audit
-          docker run --rm -v "$PWD:/repo" -w /repo "$GITLEAKS_IMAGE" \
+          docker run --rm -v "$PWD:/repo:ro" -w /repo "$GITLEAKS_IMAGE" \
             detect --source /repo --redact --no-banner -v $RANGE
 
   migration-guard:
