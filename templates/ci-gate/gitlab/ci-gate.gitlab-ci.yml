@@ -47,8 +47,13 @@ secret-scan:
       else
         RANGE=""                                                        # first push / zero-sha: full scan
       fi
-      if [ -n "$RANGE" ] && ! git rev-list "$RANGE" >/dev/null; then
-        echo "secret-scan: git cannot resolve '$RANGE' (shallow clone? force-pushed base?) — failing closed" >&2
+      # One validation with the very command gitleaks runs: it covers both an
+      # unresolvable range (shallow clone, force-pushed base) and a git too old
+      # for --diff-merges (< 2.31). Inside gitleaks either one prints
+      # "no leaks found" and exits 0.
+      PROBE="${RANGE:---all}"      # single token either way; quoted below
+      if ! git log --text --diff-merges=first-parent --max-count=1 --format=%H "$PROBE" >/dev/null; then
+        echo "secret-scan: git cannot run 'log --text --diff-merges=first-parent ${RANGE:-(full history)}' — failing closed" >&2
         exit 2
       fi
       gitleaks detect --redact --no-banner -v --log-opts="--text --diff-merges=first-parent${RANGE:+ $RANGE}"

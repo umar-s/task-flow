@@ -228,8 +228,9 @@ check). Clean up any test fixtures you seeded.
 
 ## 8. Close
 - Open the MR/PR; **verify the CI pipeline is GREEN before merging** — never
-  blind-merge. "Green" must include the **deterministic gate** (secret-scan,
-  migration-guard, dep/SCA), not only unit tests — that gate is what covers the
+  blind-merge. "Green" must include the **deterministic gate** — every job the
+  repo's own gate CI file defines (secret-scan, migration-guard, unicode-guard,
+  dep/SCA, …), not only unit tests — that gate is what covers the
   blast-radius categories both the tests and the LLM security-review miss.
   Include means **present and passed**: list this pipeline's jobs (VCS/CI
   binding) and confirm the gate jobs actually ran on this MR. A pipeline that

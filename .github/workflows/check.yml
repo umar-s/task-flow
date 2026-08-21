@@ -85,8 +85,12 @@ jobs:
           # resolve exits 0 inside gitleaks, an empty word in --log-opts scans
           # nothing, and without --text/--diff-merges the scan is blind to
           # `-diff` attributes and merge commits.
-          if [ -n "$RANGE" ] && ! git rev-list "$RANGE" >/dev/null; then
-            echo "secret-scan: git cannot resolve '$RANGE' — failing closed" >&2
+          # One validation with the command gitleaks runs: an unresolvable range
+          # and a git older than 2.31 both fail here; inside gitleaks both would
+          # read as "no leaks found" and exit 0.
+          PROBE=("--all"); [ -n "$RANGE" ] && PROBE=("$RANGE")
+          if ! git log --text --diff-merges=first-parent --max-count=1 --format=%H "${PROBE[@]}" >/dev/null; then
+            echo "secret-scan: git cannot run 'log --text --diff-merges=first-parent ${RANGE:-(full history)}' — failing closed" >&2
             exit 2
           fi
           docker run --rm -v "$PWD:/repo:ro" -w /repo "$GITLEAKS_IMAGE" \

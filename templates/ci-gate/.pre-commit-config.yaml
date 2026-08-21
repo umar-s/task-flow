@@ -13,7 +13,11 @@
 #
 # Already have a .pre-commit-config.yaml? Merge these entries into your
 # `repos:` — do not replace the file.
-minimum_pre_commit_version: '2.18.0'      # default_install_hook_types
+# 3.2.0 is where the stage names below (pre-commit / pre-push) exist: on
+# 2.18-3.1.x this file fails validation on every run ("Expected one of commit,
+# ... push but got: 'pre-push'"). Declaring the minimum turns that into one
+# clear message instead of a schema dump.
+minimum_pre_commit_version: '3.2.0'
 default_install_hook_types: [pre-commit, pre-push]
 default_stages: [pre-commit]
 repos:
@@ -26,6 +30,9 @@ repos:
     hooks:
       - id: migration-guard
         name: migration-guard (forward-only + destructive DDL)
+        # Migrations elsewhere? pre-commit runs `entry` without a shell, so an
+        # env var needs `env`:
+        #   entry: env MIGRATION_DIRS=database/migrations bash ci/migration-guard.sh --staged
         entry: bash ci/migration-guard.sh --staged
         language: system
         pass_filenames: false

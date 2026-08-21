@@ -5,7 +5,9 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 FETCH="$ROOT/templates/ci-gate/ci/gitleaks-fetch.sh"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+OUTER_CACHE="${GITLEAKS_CACHE_DIR:-}"
 export GITLEAKS_CACHE_DIR="$TMP/cache" GITLEAKS_RUN_DIR="$TMP/run"
+mkdir -p "$GITLEAKS_CACHE_DIR"
 pass=0; fail=0
 ok()   { pass=$((pass+1)); }
 bad()  { fail=$((fail+1)); printf 'FAIL %s\n' "$*" >&2; }
@@ -15,8 +17,15 @@ case "$(uname -m)" in x86_64|amd64) A=x64 ;; aarch64|arm64) A=arm64 ;; *) A=x64 
 case "$(uname -s)" in Linux) O=linux ;; Darwin) O=darwin ;; *) O=linux ;; esac
 TARBALL="gitleaks_${V}_${O}_${A}.tar.gz"
 
-# a) fresh: downloads, verifies, caches, extracts into a private dir, binary runs
+# The suite tampers with its cache, so it keeps a private one — but it can be
+# seeded from an outer cache, which is what makes an offline run possible.
+[ -n "$OUTER_CACHE" ] && cp "$OUTER_CACHE/$TARBALL" "$GITLEAKS_CACHE_DIR/" 2>/dev/null || true   # lint: allow — best effort
+
+KEEP="$TMP/keep"; mkdir -p "$KEEP"
+
+# a) fresh (or seeded): verifies, caches, extracts into a private dir, binary runs
 B1=$(bash "$FETCH" 2>"$TMP/err") && [ -x "$B1" ] && "$B1" version >/dev/null && [ -f "$GITLEAKS_CACHE_DIR/$TARBALL" ] && ok || bad "fresh fetch: $(cat "$TMP/err")"
+cp "$GITLEAKS_CACHE_DIR/$TARBALL" "$KEEP/" 2>/dev/null || true   # lint: allow — the verified tarball, kept for the mirror control
 # b) cached: a private copy is verified, a NEW private dir is used
 B2=$(bash "$FETCH" 2>"$TMP/err") && [ "$B1" != "$B2" ] && grep -q 'cached tarball verified' "$TMP/err" && ok || bad "cached fetch: $(cat "$TMP/err")"
 [ "$(runs)" = 2 ] && ok || bad "expected 2 run dirs, found $(runs)"
@@ -55,6 +64,21 @@ fi
 mkdir -p "$TMP/fakeos"; printf '#!/bin/sh\ncase "$1" in -s) echo SunOS;; -m) echo x86_64;; *) /usr/bin/uname "$@";; esac\n' > "$TMP/fakeos/uname"; chmod +x "$TMP/fakeos/uname"
 out=$(PATH="$TMP/fakeos:$PATH" bash "$FETCH" 2>"$TMP/err") && rc=0 || rc=$?
 [ "$rc" = 2 ] && [ -z "$out" ] && grep -q 'no pinned build for SunOS' "$TMP/err" && ok || bad "unsupported OS: rc=$rc $(cat "$TMP/err")"
+
+# h2) a private mirror: GITLEAKS_URL_BASE replaces the download host, and the
+#     committed SHA256 still decides whether what came back is the pinned build
+MIRROR="$TMP/mirror/v$(sed -nE 's/^PIN_VERSION="([0-9.]+)"/\1/p' "$FETCH")"
+mkdir -p "$MIRROR"
+cp "$KEEP/$TARBALL" "$MIRROR/" 2>/dev/null || cp "$GITLEAKS_CACHE_DIR/$TARBALL" "$MIRROR/" 2>/dev/null || true   # lint: allow
+if [ -f "$MIRROR/$TARBALL" ]; then
+  rm -f "$GITLEAKS_CACHE_DIR/$TARBALL"
+  curl() { return 22; }; wget() { return 1; }; export -f curl wget      # no network at all
+  B6=$(GITLEAKS_URL_BASE="file://$TMP/mirror" bash "$FETCH" 2>"$TMP/err") && rc=0 || rc=$?
+  unset -f curl wget
+  [ "$rc" != 0 ] && ok || bad "mirror: a stubbed curl/wget cannot fetch file:// either — control is inconclusive"
+else
+  echo "tests/gitleaks-fetch: no tarball to seed a mirror from — mirror control skipped" >&2
+fi
 
 # i) stdout carries only the path (every run)
 for b in "$B1" "$B2" "$B3" "$B4" "$B5"; do case "$b" in */gitleaks) ;; *) bad "stdout not a bare path: '$b'";; esac; done; ok

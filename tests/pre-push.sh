@@ -109,11 +109,22 @@ git checkout -q -b feat2; printf 'x\n' > x.txt; G add -A; G commit -qm x
 check broken-git-blocks 2 "refs/heads/feat2 $(sha HEAD) refs/heads/feat2 $Z" PATH="$TMP/badgit:$PATH"
 # m2) an unresolvable range blocks instead of being scanned as "0 commits, clean"
 check unresolvable-range-blocks 2 "refs/heads/feat2 deadbeefdeadbeefdeadbeefdeadbeefdeadbeef refs/heads/feat2 $Z"
-printf '%s\n' "$LAST_OUT" | grep -q 'cannot resolve the range' && pass=$((pass+1)) || { fail=$((fail+1)); echo "FAIL unresolvable-range message: $LAST_OUT" >&2; }
+printf '%s\n' "$LAST_OUT" | grep -q 'git cannot run' && pass=$((pass+1)) || { fail=$((fail+1)); echo "FAIL unresolvable-range message: $LAST_OUT" >&2; }
+# m3) a git too old for --diff-merges (< 2.31) must block, not scan nothing:
+#     inside gitleaks that option error reads as "0 commits scanned, no leaks".
+mkdir -p "$TMP/oldgit"; printf '#!/bin/sh\nfor a in "$@"; do case "$a" in --diff-merges*) echo "error: unknown option \\`diff-merges=first-parent'"'"'" >&2; exit 129;; esac; done\nexec /usr/bin/git "$@"\n' > "$TMP/oldgit/git"; chmod +x "$TMP/oldgit/git"
+check old-git-without-diff-merges 2 "refs/heads/feat2 $(sha HEAD) refs/heads/feat2 $Z" PATH="$TMP/oldgit:$PATH"
+printf '%s\n' "$LAST_OUT" | grep -q 'older than 2.31' && pass=$((pass+1)) || { fail=$((fail+1)); echo "FAIL old-git message: $LAST_OUT" >&2; }
+
 # n) the scanner itself fails: block, never pass
 mkdir -p "$TMP/badgl"; printf '#!/bin/sh\necho "gitleaks: simulated failure" >&2\nexit 3\n' > "$TMP/badgl/gitleaks"; chmod +x "$TMP/badgl/gitleaks"
 check broken-scanner-blocks 2 "refs/heads/feat2 $(sha HEAD) refs/heads/feat2 $Z" PATH="$TMP/badgl:$PATH" GATE_PINNED_ONLY=0
 git checkout -q main; git branch -q -D feat2
+# n2) a GITLEAKS_RUN_DIR the caller provided is the caller's to delete
+mkdir -p "$TMP/precious"; printf 'keep me\n' > "$TMP/precious/user-file.txt"
+check inherited-run-dir-kept 0 "refs/heads/main $(sha main) refs/heads/main $(sha origin/main)" GITLEAKS_RUN_DIR="$TMP/precious"
+[ -f "$TMP/precious/user-file.txt" ] && pass=$((pass+1)) || { fail=$((fail+1)); echo "FAIL pre-push deleted a run dir it did not create" >&2; }
+
 # o) installed as the native hook (cwd may be anywhere inside the repo, $0 under .git/hooks)
 cp "$HOOK" .git/hooks/pre-push; chmod +x .git/hooks/pre-push
 git checkout -q -b feat3; printf '%s\n' "$SECRET" > y.txt; G add -A; G commit -qm y

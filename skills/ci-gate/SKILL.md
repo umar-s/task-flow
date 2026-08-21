@@ -64,7 +64,10 @@ it judges (the gate files are under required code-owner review).
    - `chmod +x ci/*.sh`.
    **Merge, never overwrite, a file that already exists:** `.gitlab-ci.yml`
    (add the `include:`), `.pre-commit-config.yaml` (add the payload's `repos:`
-   entries and `default_stages`), `.gitleaks.toml` (add the `[[allowlists]]`
+   entries **and** its three top-level keys — `default_install_hook_types`
+   merged into theirs, `minimum_pre_commit_version` raised to the higher value,
+   `default_stages`; without the first one `pre-commit install` leaves the
+   pre-push layer uninstalled), `.gitleaks.toml` (add the `[[allowlists]]`
    block, keep theirs), `CODEOWNERS` (append the gate lines).
 
 3. **Local layer:** tell the user to run `pip install pre-commit && pre-commit
@@ -72,30 +75,50 @@ it judges (the gate files are under required code-owner review).
    command wires both the pre-commit hooks and `ci/pre-push.sh` (the per-ref
    scan of commits about to leave the machine: amends, `commit --no-verify`,
    history from elsewhere). If the repo uses husky/lefthook (`git config
-   core.hooksPath`), pre-commit's hooks are ignored — call `ci/pre-push.sh`
-   from their pre-push hook instead and say so. Do not run global installs
-   yourself. `bash ci/gate.sh --staged` runs the whole gate locally
+   core.hooksPath` is set), `pre-commit install` refuses outright ("Cowardly
+   refusing to install hooks with `core.hooksPath` set") — wire the layers into
+   that manager instead: `.husky/pre-commit` → `bash ci/gate.sh --staged`,
+   `.husky/pre-push` → `bash ci/pre-push.sh` — and say which route you took.
+   Do not run global installs yourself. `bash ci/gate.sh --staged` runs the whole gate locally
    (`GATE_PINNED_ONLY=1` → the pinned scanner, not whatever is on `PATH`);
    `ci/scan-text.sh <file>` scans outgoing text (MR description, close
    comment) with the same rules — `task` phase 8 uses it.
 
 3b. **Upgrading an existing gate** (`ci/gate.sh` already present — its version
-   is the marker at the top of `ci/README.md`): replace `ci/` and its README,
-   **merge** everything else (by `repo:`/hook `id:` in `.pre-commit-config.yaml`,
-   by rule/allowlist name in `.gitleaks.toml`, by path in `CODEOWNERS`, keeping
-   `variables:`/`env:` such as `MIGRATION_DIRS` and the coverage wiring in the
-   CI file — show the diff before writing). Then redo step 5 (a payload that
-   adds a gate job needs it added to the required contexts) and step 6. Going
-   to 1.8.0, warn about the reason-bearing marker: `git grep -nE
-   'destructive:[[:space:]]*approved([^(]|$)' -- <migrations dirs>` finds the
-   markers that will start failing; committed migrations cannot be edited
-   (forward-only), so they are fixed with the gate owner on the integration
-   branch.
+   is the marker at the top of `ci/README.md`): replace `ci/*.sh` and
+   `ci/README.md`, and **merge** everything else — including the CI file, which
+   on GitLab lives inside `ci/` (`ci/ci-gate*.gitlab-ci.yml`) and carries the
+   project's own `variables:` (`MIGRATION_DIRS`, `GATE_COVERAGE_*`) and any
+   uncommented `diff-coverage` job; same for `.github/workflows/gate.yml`. Merge
+   by key: `repo:` / hook `id:` in `.pre-commit-config.yaml` (plus its top-level
+   keys, above), rule and allowlist name in `.gitleaks.toml`, path in
+   `CODEOWNERS`, job name in the CI file — show the diff before writing.
+   Inside a gate job the `script:` / `run:` block is **payload, not local
+   config**: take it verbatim from the new template and keep only the project's
+   `variables:` / `env:` / `rules:` / `tags:` / `needs:` and any job they added
+   — an upgrade that keeps the old block keeps the old fail-open scan, and the
+   selftest cannot see that (it never reads the CI file). Then redo step 3
+   (`pre-commit install` has to run again for the new hook type), step 5 (a new
+   gate job must enter the required contexts) and step 6.
+   Going to 1.8.0, warn about the reason-bearing marker. The guard judges only
+   migrations an MR **adds**, so markers already on the default branch are
+   never re-read — but a release MR (`develop → main`) presents every migration
+   merged since the last release as added, and a bare marker there fails. Find
+   them with `git grep -nE 'destructive:[[:space:]]*approved' -- <dirs>`
+   filtered through `grep -vE 'approved[[:space:]]*\([^)]*[[:alnum:]][^)]*\)'`;
+   a committed migration cannot be edited (forward-only), so if that list is
+   not empty, land the upgrade right after a release merge rather than in
+   front of one.
 
 4. **Configure the two project-specific knobs.**
    - **Migration dirs** — if the repo's migrations are not under a default
      (`migrations db/migrate db/migration prisma/migrations`), set
-     `MIGRATION_DIRS` in the CI job env and the pre-commit hook `entry`.
+     `MIGRATION_DIRS` in the CI job env and in the pre-commit hook `entry`.
+     pre-commit runs `entry` **without a shell**, so a bare assignment is read
+     as the program name: write `entry: env MIGRATION_DIRS=database/migrations
+     bash ci/migration-guard.sh --staged`. Give the step-6 selftest the same
+     value (`MIGRATION_DIRS=… bash ci/gate.sh --selftest`) or its "watching
+     empty dirs" warning fires on a correctly configured repo.
    - **Changed-line coverage** — `ci/diff-coverage.sh` *judges* a coverage
      report, it never produces one. Uncomment the `diff-coverage` job in the CI
      file, point `GATE_COVERAGE_REPORT` at whatever the project's test job

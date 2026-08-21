@@ -13,8 +13,8 @@ download.
 
 `ci-gate` hardening — the second item of the donor-audit plan
 (`docs/audits/2026-08-21-dmitriy-toolkit-v3-audit.md` §3.3 G5–G11, G13; design in
-`docs/superpowers/specs/2026-08-21-ci-gate-hardening-design.md`, premortem panel
-over that design in the same directory). Three holes closed: the gate could be
+`docs/superpowers/specs/2026-08-21-ci-gate-hardening-design.md`; the premortem
+panel over that design is `docs/premortem/2026-08-22-ci-gate-hardening-premortem.md`). Three holes closed: the gate could be
 edited by the MR it judges; text leaving the repo and commits leaving the
 machine were never scanned; invisible code points in a diff had no layer at all.
 Then the premortem found four ways the scans themselves reported "clean"
@@ -36,7 +36,8 @@ without having looked — each is fixed here, with a fixture that fails on 1.7.1
   unmarked drop, marker without a reason, marked drop, edited committed
   migration, broken `awk`, credential-shaped line, bidi override, ZWJ-emoji
   prose, plus a warning when none of `MIGRATION_DIRS` exists and when no
-  pre-push hook is installed. The repo's git config cannot break it
+  **executable** pre-push hook is installed (a hook file without `+x` is one
+  git ignores silently). The repo's git config cannot break it
   (`GIT_CONFIG_GLOBAL=/dev/null`, empty template, no gpg signing, no
   `core.hooksPath`). The skill's negative control (step 6) is now this command.
 - **`ci/unicode-guard.sh`** — added lines must not carry bidi
@@ -99,7 +100,35 @@ without having looked — each is fixed here, with a fixture that fails on 1.7.1
   "Upgrading the payload" has the `git grep` that finds them.
 - **`migration-guard`: an empty `MIGRATION_DIRS` is `exit 2`**, not "skipping".
   A blank CI variable used to switch the whole layer off from the settings UI
-  and leave a green job that inspected nothing.
+  and leave a green job that inspected nothing. `migrations/`, `./migrations`
+  and `/migrations` now all mean the same directory (a trailing slash used to
+  build a pattern that matches nothing), and an entry that normalises to
+  nothing is a config error.
+- **`migration-guard` reads the change set NUL-delimited** (`--raw -z`): a path
+  git prints in C-quotes (a quote, a backslash or a tab in the name) used to
+  fall outside the migrations pattern and skip both policies. The same raw
+  format carries the file mode, so a migration added as a **symlink** now fails
+  — its blob is the target path, and the file that actually runs is elsewhere.
+- **`unicode-guard` rejects an exclude that matches every path** (`.`, `.*`)
+  with exit 2, and its diff parser now treats `+++`/`@@`/`diff --git` as
+  headers only outside a hunk: an added line whose text begins with `++ `
+  arrives as `+++ …` and used to end the hunk, hiding every line after it.
+  `ci/diff-coverage.sh` had the same parser bug — later hunks of a file
+  silently left the coverage denominator — and now counts hunk lines too.
+- **Every payload layer pins `LC_ALL=C`.** Case folding is locale-dependent: in
+  a Turkish or Azerbaijani locale `grep -i` does not fold `i`/`I`, so a
+  lowercase `drop index`, `drop constraint` or `drop trigger` stopped matching
+  and the migration passed without a marker.
+- **`unicode-guard` strips NUL bytes before awk.** busybox awk — the awk in the
+  alpine image the CI templates use — splits a record at a NUL, and the tail
+  (exactly where bytes would be hidden) no longer looks like an added line, so
+  it was never scanned. Both halves of that pipeline are now checked: a failing
+  `tr` is `exit 2`, not an empty scan that reads as clean.
+- **Every range scan validates itself with the command gitleaks runs**
+  (`git log --text --diff-merges=first-parent --max-count=1 …`). `git rev-list`
+  accepts diff options it never applies, so it could not tell that a git older
+  than 2.31 would fail inside gitleaks — which reports "no leaks found" and
+  exits 0. The payload now needs git ≥ 2.31 and says so.
 - **Every git-range secret-scan** (three CI templates, `pre-push.sh`,
   `gate.sh`, this repo's own `check.yml`) now passes
   `--text --diff-merges=first-parent` and validates the range with
@@ -111,6 +140,24 @@ without having looked — each is fixed here, with a fixture that fails on 1.7.1
 - `.pre-commit-config.yaml` sets `default_install_hook_types: [pre-commit,
   pre-push]`, so the usual `pre-commit install` wires the pre-push layer too,
   and `default_stages: [pre-commit]` keeps the other hooks off that stage.
+  It declares `minimum_pre_commit_version: '3.2.0'` — the release where the
+  `pre-commit`/`pre-push` stage names exist; on 2.18–3.1.x the file fails
+  schema validation on every run.
+- **`ci/gitleaks-fetch.sh` takes `GITLEAKS_URL_BASE`** so a shop without egress
+  to github.com can mirror the pinned tarball internally; the committed SHA256
+  still decides whether what came back is the pinned build. `gate.sh` maps a
+  scanner it could not resolve to exit 2 (it used to surface curl's exit code,
+  which a wrapper reads as neither "violation" nor "infra").
+- **The skill's install and upgrade instructions match what the tools do**:
+  `pre-commit install` *refuses* to run when `core.hooksPath` is set (husky,
+  lefthook) — the recipe for those is spelled out; a pre-commit `entry` runs
+  without a shell, so `MIGRATION_DIRS=…` there needs `env`; an upgrade takes
+  the gate jobs' `script:` blocks from the payload verbatim (keeping only
+  `variables:`/`rules:`/`tags:`/`needs:`), because a merged CI file that keeps
+  the old block keeps the old fail-open scan — and it re-runs steps 3, 5 and 6.
+  The reason-bearing marker only bites migrations an MR *adds*: a release MR
+  presents everything merged since the last release as added, which is when a
+  bare marker fails and a committed migration can no longer be edited.
 - `ci-gate` skill: step 2 merges into existing `.pre-commit-config.yaml`,
   `.gitleaks.toml` and `CODEOWNERS` instead of overwriting and copies `ci/`
   wholesale; new step 3b covers upgrading a gate that is already installed;

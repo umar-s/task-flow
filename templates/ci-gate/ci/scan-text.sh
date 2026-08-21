@@ -19,6 +19,11 @@
 # the exit code alone.
 set -euo pipefail
 
+# Verdicts are byte comparisons, so the locale must not decide them: in tr_TR
+# and az_AZ, `i` and `I` are not a case pair, and `grep -i` there stops
+# matching lowercase `index`, `constraint`, `trigger`, `materialized`.
+export LC_ALL=C
+
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(git -C "$here" rev-parse --show-toplevel)
 cfg="$repo/.gitleaks.toml"

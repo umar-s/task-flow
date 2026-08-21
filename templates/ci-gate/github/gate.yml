@@ -49,8 +49,12 @@ jobs:
           # in --log-opts silently scans nothing, a `-diff` attribute hides a
           # file without --text, and a merge commit is invisible without
           # --diff-merges. All four are handled here, not hoped away.
-          if [ -n "$RANGE" ] && ! git rev-list "$RANGE" >/dev/null; then
-            echo "secret-scan: git cannot resolve '$RANGE' — failing closed" >&2
+          # One validation with the very command gitleaks runs: an unresolvable
+          # range and a git older than 2.31 (no --diff-merges) both fail here,
+          # and inside gitleaks both would read as "no leaks found", exit 0.
+          PROBE=("--all"); [ -n "$RANGE" ] && PROBE=("$RANGE")
+          if ! git log --text --diff-merges=first-parent --max-count=1 --format=%H "${PROBE[@]}" >/dev/null; then
+            echo "secret-scan: git cannot run 'log --text --diff-merges=first-parent ${RANGE:-(full history)}' — failing closed" >&2
             exit 2
           fi
           docker run --rm -v "$PWD:/repo:ro" -w /repo "$GITLEAKS_IMAGE" \

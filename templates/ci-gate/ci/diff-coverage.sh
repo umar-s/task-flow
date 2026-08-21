@@ -27,6 +27,11 @@
 # Exit codes: 0 ok · 1 below threshold · 2 config/infra (fails closed).
 set -euo pipefail
 
+# Verdicts are byte comparisons, so the locale must not decide them: in tr_TR
+# and az_AZ, `i` and `I` are not a case pair, and `grep -i` there stops
+# matching lowercase `index`, `constraint`, `trigger`, `materialized`.
+export LC_ALL=C
+
 here=$(cd "$(dirname "$0")" && pwd)
 
 REPORTS="${GATE_COVERAGE_REPORT:-}"
@@ -114,20 +119,28 @@ fi
 # --- 2. changed (added/modified) lines of the new revision -------------------
 git -c core.quotePath=false diff -U0 --no-color "${BASE}...HEAD" \
   | awk '
-      /^\+\+\+ / {
+      function cnt(spec,   n, a) { n = split(spec, a, ","); return (n > 1) ? a[2] + 0 : 1 }
+      # A header is only a header outside a hunk: an added line whose content
+      # starts with "++ " arrives as "+++ …" and would otherwise re-point the
+      # current file, dropping the rest of the diff out of the denominator.
+      !inhunk && /^\+\+\+ / {
         p = substr($0, 5)
         if (p == "/dev/null") { f = "" } else { sub(/^b\//, "", p); f = p }
         next
       }
-      /^@@ / {
+      !inhunk && /^@@ / {
+        minus = $2; sub(/^-/, "", minus)
+        plus = $3; sub(/^\+/, "", plus)      # "+c,d" (or "+c")
+        pending = cnt(minus) + cnt(plus); inhunk = (pending > 0)
         if (f == "") next
-        plus = $3                      # "+c,d" (or "+c")
-        sub(/^\+/, "", plus)
         n = split(plus, a, ",")
         start = a[1] + 0
         count = (n > 1) ? a[2] + 0 : 1
         for (i = 0; i < count; i++) print f "|" (start + i)
+        next
       }
+      inhunk && /^\\/ { next }                  # "\ No newline at end of file"
+      inhunk && /^[+-]/ { pending--; if (pending <= 0) inhunk = 0; next }
     ' > "$tmp/changed"
 
 if [ ! -s "$tmp/changed" ]; then

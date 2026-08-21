@@ -41,11 +41,27 @@
 # (fails closed).
 set -euo pipefail
 
+# Verdicts are byte comparisons, so the locale must not decide them: in tr_TR
+# and az_AZ, `i` and `I` are not a case pair, and `grep -i` there stops
+# matching lowercase `index`, `constraint`, `trigger`, `materialized`.
+export LC_ALL=C
+
 here=$(cd "$(dirname "$0")" && pwd)
 STAGED="${STAGED:-0}"
 [ "${1:-}" = "--staged" ] && STAGED=1
 export UNICODE_GUARD_EXCLUDE="${UNICODE_GUARD_EXCLUDE:-}"
 echo "unicode-guard: staged=$STAGED exclude=\"${UNICODE_GUARD_EXCLUDE}\"${GATE_BASE_REF:+ base=$GATE_BASE_REF}"
+# An unanchored `.` or `.*` in the exclude switches the whole layer off from a
+# CI settings page, with a green job as the only trace. Two synthetic paths no
+# real exclusion would ever name: a pattern matching BOTH is not an exclusion,
+# it is an off switch.
+if [ -n "$UNICODE_GUARD_EXCLUDE" ]; then
+  if printf 'aaa-unicode-guard-probe/one.txt\n' | LC_ALL=C awk '$0 ~ ENVIRON["UNICODE_GUARD_EXCLUDE"] { hit++ } END { exit hit ? 0 : 1 }' \
+     && printf 'zzz-другой-probe/two.bin\n' | LC_ALL=C awk '$0 ~ ENVIRON["UNICODE_GUARD_EXCLUDE"] { hit++ } END { exit hit ? 0 : 1 }'; then
+    echo "unicode-guard: UNICODE_GUARD_EXCLUDE='$UNICODE_GUARD_EXCLUDE' matches every path — that is an off switch, not an exclusion. Anchor it (^vendor/). Failing closed." >&2
+    exit 2
+  fi
+fi
 
 # Byte patterns for the code points above (UTF-8), matched by awk under
 # LC_ALL=C so every awk (gawk, mawk, busybox) sees bytes, not characters.
@@ -105,29 +121,40 @@ fi
 
 # Walk the unified diff: track the current file and the new-side line number,
 # test every added line. Findings → stdout as path:line: <what>; exit 1.
-LC_ALL=C awk '
+# `tr -d` first: busybox awk splits a record at a NUL byte and the tail — which
+# is where the bytes would be hidden — stops looking like an added line. With
+# NULs removed every awk sees the same bytes. (Line structure is untouched:
+# only NUL bytes go.)
+set +e                      # both statuses are needed, and both can be non-zero
+tr -d '\000' < "$tmp" | LC_ALL=C awk '
   function report(what) { printf "%s:%d: %s\n", file, ln, what; found = 1 }
-  /^diff --git / { file = ""; inhunk = 0; first = 0; next }
-  /^\+\+\+ /     { file = substr($0, 5); if (file ~ /^b\//) file = substr(file, 3)
-                   inhunk = 0; first = 1
+  function count(spec,   n, a) { n = split(spec, a, ","); return (n > 1) ? a[2] + 0 : 1 }
+  # OUTSIDE a hunk these are headers. INSIDE one, every line is content with a
+  # +/- prefix — an added line reading "++ x" arrives as "+++ x" and must not be
+  # mistaken for a file header, or the rest of the hunk goes unscanned.
+  !inhunk && /^diff --git / { file = ""; first = 0; next }
+  !inhunk && /^\+\+\+ /     { file = substr($0, 5); if (file ~ /^b\//) file = substr(file, 3)
+                   first = 1
                    skip = (ENVIRON["UNICODE_GUARD_EXCLUDE"] != "" && file ~ ENVIRON["UNICODE_GUARD_EXCLUDE"])
                    next }
-  /^@@ /         { if ($0 !~ /^@@ -[0-9]+(,[0-9]+)? \+[0-9]+(,[0-9]+)? @@/) {
+  !inhunk && /^@@ /         { if ($0 !~ /^@@ -[0-9]+(,[0-9]+)? \+[0-9]+(,[0-9]+)? @@/) {
                      printf "unicode-guard: unparseable hunk header for %s: %s\n", file, $0 > "/dev/stderr"; broken = 1; exit 2 }
-                   match($0, /\+[0-9]+/); ln = substr($0, RSTART + 1, RLENGTH - 1) + 0; inhunk = 1; next }
+                   match($0, /-[0-9]+(,[0-9]+)?/); minus = substr($0, RSTART + 1, RLENGTH - 1)
+                   match($0, /\+[0-9]+(,[0-9]+)?/); plus = substr($0, RSTART + 1, RLENGTH - 1)
+                   split(plus, pa, ","); ln = pa[1] + 0
+                   pending = count(minus) + count(plus); inhunk = (pending > 0); next }
   !inhunk        { next }
   /^\\/          { next }                       # "\ No newline at end of file"
-  /^-/           { next }
+  /^-/           { pending--; if (pending <= 0) inhunk = 0; next }
   /^\+/ {
+    pending--; if (pending <= 0) inhunk = 0
     line = substr($0, 2)
     if (skip) { ln++; next }
     # Binary-looking content is scanned like everything else: skipping it would
     # hand anyone a one-byte switch (a NUL or a form feed in the same file)
     # for turning this layer off. A real binary asset that trips the patterns
-    # is a false positive with a visible fix — exclude that path. (busybox awk
-    # truncates a record at the first NUL, so on that awk the bytes after a NUL
-    # are not scanned: less, never more.)
-    isbin = (line ~ ENVIRON["BIN_RE"] || index(line, sprintf("%c", 0)) > 0)
+    # is a false positive with a visible fix — exclude that path.
+    isbin = (line ~ ENVIRON["BIN_RE"])
     if (index(line, "unicode-guard:allow") > 0) {
       printf "unicode-guard: allowed inline: %s:%d\n", file, ln > "/dev/stderr"
       ln++; first = 0; next
@@ -141,8 +168,16 @@ LC_ALL=C awk '
     if (bom ~ ENVIRON["BOM_RE"])   report("zero-width no-break space (U+FEFF) inside a line" hint)
     ln++; first = 0; next
   }
+  { printf "unicode-guard: unexpected line inside a hunk of %s: %s\n", file, substr($0, 1, 40) > "/dev/stderr"; broken = 1; exit 2 }
   END { if (broken) exit 2; exit found ? 1 : 0 }
-' "$tmp" && rc=0 || rc=$?
+'
+# PIPESTATUS must be copied by the very next command — any assignment resets it.
+# Both halves decide the verdict: a missing or failing `tr` would leave awk with
+# empty input, which reads exactly like a clean diff.
+st=("${PIPESTATUS[@]}")
+set -e
+[ "${st[0]}" = 0 ] || { echo "unicode-guard: tr failed (rc=${st[0]}) — the scan never saw the diff. Failing closed." >&2; exit 2; }
+rc=${st[1]}
 case "$rc" in
   0) echo "unicode-guard: OK" ;;
   1) echo "unicode-guard: FAILED — invisible or direction-overriding code points in added lines (see above)" >&2 ;;

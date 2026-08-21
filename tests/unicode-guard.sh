@@ -64,10 +64,11 @@ t2 second-file-dirty 1 'mkdir -p src; printf "clean\n" > src/i.txt; printf "\xe2
 t2 excluded-path     0 'mkdir -p src/vendor; printf "\xe2\x80\xae\n" > src/vendor/x.js; export UNICODE_GUARD_EXCLUDE="(^|/)vendor/"'
 t2 exclude-does-not-leak 1 'mkdir -p src/vendor src/app; printf "\xe2\x80\xae\n" > src/vendor/x.js; printf "\xe2\x80\xae\n" > src/app/y.js; export UNICODE_GUARD_EXCLUDE="(^|/)vendor/"'
 # Binary content is scanned, not skipped (skipping it would make a NUL byte an
-# off switch). The RLO sits BEFORE the NUL: busybox awk truncates a record at
-# the first NUL, so bytes after it are only seen by gawk/mawk — a documented
-# "less, never more" limit, not something a fixture should depend on.
+# off switch), and the bytes AFTER a NUL count too: NULs are stripped before
+# awk, because busybox awk splits a record there and the tail — exactly where
+# something would be hidden — stops looking like an added line.
 t2 binary-with-nul-still-scanned 1 'mkdir -p src; printf "PNG\xe2\x80\xae\x1a\0tail" > src/img.png'
+t2 bytes-after-a-nul-are-scanned 1 'mkdir -p src; printf "head\0 bad \xe2\x80\xae here\n" > src/afternul.js'
 t2 gitattributes-minus-diff 1 'mkdir -p src; printf "*.js -diff\n" > .gitattributes; printf "var x = \"\xe2\x80\xae\";\n" > src/evil.js'
 t2 formfeed-does-not-disable 1 'mkdir -p src; printf "a\x0cb\n\xe2\x80\xae\n" > src/ff.js'
 t2 inline-allow 0 'mkdir -p src; printf "rle \xe2\x80\xab fixture // unicode-guard:allow\n" > src/fixture.js'
@@ -78,6 +79,14 @@ t2 noprefix-forced-off 1 'mkdir -p src; printf "\xe2\x80\xae\n" > src/x.js; git 
 t2 single-line-hunk-numbering 1 'mkdir -p src; printf "\xe2\x80\xae\n" > src/one.js'
 t2 removed-line-with-rlo 0 'mkdir -p src; printf "bad \xe2\x80\xae\n" > src/old.js; git add -A; git -c user.name=t -c user.email=t@t commit -qm old; printf "fixed\n" > src/old.js'
 t2 only-output-is-path-line 1 'mkdir -p src; printf "x\n\xe2\x80\xae\n" > src/z.js'
+# An added line whose CONTENT starts with "++ " reaches the parser as "+++ …":
+# read as a file header it would end the hunk and hide everything after it.
+t2 content-line-looks-like-a-header 1 'mkdir -p src; printf "++ diff marker\n\xe2\x80\xae\n" > src/hdr.md'
+t2 content-line-looks-like-diff-git 1 'mkdir -p src; printf "+diff --git a/x b/x\n\xe2\x80\xae\n" > src/hdr2.md'
+t2 content-line-looks-like-hunk 1 'mkdir -p src; printf "+@@ -1 +1 @@\n\xe2\x80\xae\n" > src/hdr3.md'
+# An exclude that matches every path is an off switch, not an exclusion
+t2 exclude-matches-everything 2 'mkdir -p src; printf "clean\n" > src/ok.js; export UNICODE_GUARD_EXCLUDE=.'
+t2 exclude-dot-star 2 'mkdir -p src; printf "clean\n" > src/ok.js; export UNICODE_GUARD_EXCLUDE=".*"'
 }
 
 run_fixtures
@@ -101,6 +110,12 @@ out=$(GATE_BASE_REF=nope bash "$GUARD" 2>&1) && rc=0 || rc=$?
 git checkout -q main; git branch -q -D feature
 
 # --- tool failures fail closed (rc 2), never pass ---
+mkdir -p "$TMP/badtr"; printf '#!/bin/sh\necho "tr: simulated failure" >&2\nexit 3\n' > "$TMP/badtr/tr"; chmod +x "$TMP/badtr/tr"
+mkdir -p src; printf 'clean\n' > src/t.js; git add -A
+out=$(PATH="$TMP/badtr:$PATH" bash "$GUARD" --staged 2>&1) && rc=0 || rc=$?
+[ "$rc" = 2 ] && pass=$((pass+1)) || { fail=$((fail+1)); printf 'FAIL broken-tr: rc=%s\n%s\n' "$rc" "$out" >&2; }
+git rm -rq --cached . >/dev/null 2>&1 || true; rm -rf src
+
 mkdir -p "$TMP/badbin"; printf '#!/bin/sh\necho "awk: simulated failure" >&2\nexit 2\n' > "$TMP/badbin/awk"; chmod +x "$TMP/badbin/awk"
 mkdir -p src; printf 'clean\n' > src/w.js; git add -A
 out=$(PATH="$TMP/badbin:$PATH" bash "$GUARD" --staged 2>&1) && rc=0 || rc=$?

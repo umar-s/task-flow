@@ -21,9 +21,13 @@
 /ci/                      @OWNER
 /.gitleaks.toml           @OWNER
 /.pre-commit-config.yaml  @OWNER
-# .gitattributes decides what git shows as text: `*.js -diff` hides a file
-# from the secret scan and from unicode-guard's input.
-/.gitattributes           @OWNER
+# .gitattributes decides what git shows as text: `*.js -diff` hides a file from
+# the local `gitleaks protect --staged` hook (it has no --text override). The CI
+# scans, pre-push and unicode-guard pass --text and are not blinded — but the
+# attribute still changes what every reviewer's `git diff` shows.
+# No leading slash: git reads a .gitattributes from every directory, so the
+# rule has to match the file wherever it appears.
+.gitattributes            @OWNER
 # All three places a CODEOWNERS file is read from — otherwise a change can add
 # a higher-priority one that owns nothing (GitHub reads .github/ first, then
 # the root, then docs/; GitLab reads the root, then .gitlab/, then docs/).

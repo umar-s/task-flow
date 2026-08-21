@@ -12,6 +12,11 @@
 # (same version, same verdict as CI).
 set -euo pipefail
 
+# Verdicts are byte comparisons, so the locale must not decide them: in tr_TR
+# and az_AZ, `i` and `I` are not a case pair, and `grep -i` there stops
+# matching lowercase `index`, `constraint`, `trigger`, `materialized`.
+export LC_ALL=C
+
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(git rev-parse --show-toplevel)
 cd "$repo"
@@ -25,7 +30,7 @@ trap cleanup EXIT
 if [ -z "${GITLEAKS_RUN_DIR:-}" ]; then
   export GITLEAKS_RUN_DIR; GITLEAKS_RUN_DIR=$(mktemp -d); GATE_OWNS_RUN_DIR=1
 fi
-GL="$(bash "$here/gitleaks-bin.sh")"
+GL="$(bash "$here/gitleaks-bin.sh")" || { echo "gate: cannot resolve gitleaks (nothing on PATH and the pinned fetch failed) — failing closed." >&2; exit 2; }
 
 # ---------------------------------------------------------------------------
 # --selftest: a gate nobody has seen fail is not known to be wired up. Every
@@ -101,8 +106,10 @@ if [ "$mode" = "--selftest" ]; then
   out=$(uguard) && rc=0 || rc=$?; result "unicode-guard: ZWJ emoji + prose" 0 "$rc" '' "$out"; unstage
 
   hookdir=$(git rev-parse --git-path hooks)
-  if [ -x "$hookdir/pre-push" ] || grep -rqs 'pre-push' "$hookdir/pre-push" 2>/dev/null; then   # lint: allow — absence is a warn, not a verdict
+  if [ -x "$hookdir/pre-push" ]; then
     echo "  ok    pre-push hook installed"
+  elif [ -f "$hookdir/pre-push" ]; then
+    echo "  warn  $hookdir/pre-push exists but is not executable — git ignores it silently (chmod +x)"
   else
     echo "  warn  no pre-push hook in $hookdir — the pre-push layer is not wired (pre-commit install, or cp ci/pre-push.sh)"
   fi
@@ -119,6 +126,13 @@ if [ "$mode" = "--staged" ]; then
   # CI scan (and pre-push) pass --text and catch it. Documented in ci/README.md.
   "$GL" protect --staged --redact --no-banner -v
 else
+  # Same validation as the CI templates, with the command gitleaks runs: git
+  # failing inside gitleaks reads as "no leaks found" (rc 0), and --diff-merges
+  # needs git >= 2.31.
+  if ! git log --text --diff-merges=first-parent --max-count=1 --format=%H --all >/dev/null; then
+    echo "gate: this git cannot run 'log --text --diff-merges=first-parent' (needs git >= 2.31) — failing closed" >&2
+    exit 2
+  fi
   "$GL" detect --redact --no-banner -v --log-opts="--text --diff-merges=first-parent"
 fi
 

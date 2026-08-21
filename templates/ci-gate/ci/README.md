@@ -30,11 +30,26 @@ replace) unit tests and LLM review.
 
 Copy the directory as a whole — the scripts call each other.
 
+**What the host needs:** `bash` 3.2+, `git` **2.31+** (older git has no
+`--diff-merges`, and a scan without it is blind to secrets added in a merge
+commit — the layers refuse to run rather than scan less than they claim), any
+of gawk / mawk / busybox awk, `grep`, `sed`, `tr`, plus `curl` or `wget` and
+`sha256sum` or `shasum` when the pinned scanner is fetched (no egress to
+github.com? point `GITLEAKS_URL_BASE` at an internal mirror — the committed
+SHA256 still decides whether the binary is the pinned one). Every layer pins
+`LC_ALL=C`: in a Turkish locale `grep -i` does not fold `i`/`I`, which would
+quietly stop matching `index`, `constraint` and `trigger`. The pre-commit
+config needs `pre-commit` **3.2.0+** (that is where the `pre-commit` /
+`pre-push` stage names exist). Linux and macOS have pinned scanner builds;
+anywhere else, put `gitleaks` on `PATH` yourself.
+
 ## Local layer
 ```bash
 pip install pre-commit && pre-commit install   # installs BOTH hook types (pre-commit + pre-push)
 bash ci/gate.sh --staged      # run the full gate on staged changes
 bash ci/gate.sh --selftest    # prove it can fail (see below)
+# migrations elsewhere? give the selftest the same value CI uses:
+#   MIGRATION_DIRS="database/migrations" bash ci/gate.sh --selftest
 ```
 `gate.sh` uses a `gitleaks` on PATH, else fetches a pinned, checksum-verified
 binary via `ci/gitleaks-fetch.sh` (no docker needed).
@@ -57,11 +72,14 @@ the failure path; it says nothing about violations it does not list.
 machine, per ref, before the remote has them — the cases the commit hook never
 saw: `git commit --no-verify`, an amend, a rebase, history made elsewhere. Range
 per ref: `remote..local` when the remote sha is known here; otherwise
-`merge-base(default branch)..local`; otherwise the whole history of the ref —
-more, never less. A git failure while computing the range **blocks** the push.
-Bypass only with `GATE_PREPUSH_SKIP="<reason>"`, which appends
-`time user refs reason` to `.git/gate-bypass.log` (local, readable in a
-post-mortem). Installed through pre-commit it scans the first ref of a push
+`<local> --not --remotes=<remote>` — everything this remote does not have yet,
+which also covers commits sitting unpushed on another local branch. The range
+is validated with `git rev-list` first (gitleaks exits 0 when the git command
+inside it fails), and a git failure **blocks** the push. Bypass only with
+`GATE_PREPUSH_SKIP="<sha>: <reason>"`, where `<sha>` (≥7 hex) is the local sha
+this push sends — a value left in a shell profile does not bypass the next
+push — and the bypass is appended to `.git/gate-bypass.log` (local, readable in
+a post-mortem). Installed through pre-commit it scans the first ref of a push
 (pre-commit's contract); `cp ci/pre-push.sh .git/hooks/pre-push` covers every
 ref. `git push --no-verify` skips it — the CI secret-scan is the backstop.
 
@@ -109,14 +127,17 @@ whatever version — an old one silently ignores the `[[allowlists]]` syntax of
 `.gitleaks.toml`, which errs on the strict side); `GATE_PINNED_ONLY=1` makes it
 fetch the pinned one instead, for the same verdict CI will give.
 
-A frozen scanner goes stale — bump all four together: `PIN_VERSION` + both
-SHA256s (from the release `checksums.txt`, checked once by a human), the image
-digest (`docker buildx imagetools inspect ghcr.io/gitleaks/gitleaks:vX`), and the
-pre-commit `rev`. Never `pre-commit autoupdate` this repo.
+A frozen scanner goes stale — bump every pin together: `PIN_VERSION` + **all
+four** SHA256s (`linux`/`darwin` × `x64`/`arm64`, from the release
+`checksums.txt`, checked once by a human), the image digest (`docker buildx
+imagetools inspect ghcr.io/gitleaks/gitleaks:vX`), and the pre-commit `rev`.
+Never `pre-commit autoupdate` this repo.
 
 ## migration-guard policy
 On any changed file under a migrations dir:
 - an **already-committed** migration modified / deleted / renamed → **FAIL** (forward-only);
+- a migration added as a **symlink** → **FAIL**: its blob is the target path,
+  so the file that actually runs is somewhere the guard is not looking;
 - a **new** migration with a destructive statement in its **forward part** →
   **FAIL** unless the same file carries a marker comment **with a reason**:
   `-- destructive: approved (<ticket or reason>)`. A bare
@@ -154,9 +175,14 @@ On any changed file under a migrations dir:
   fails closed (`exit 2`) when `awk`/`grep` themselves fail — a missing tool is
   not a clean migration.
 
-Env: `MIGRATION_DIRS` (default `migrations db/migrate db/migration prisma/migrations`),
-`GATE_BASE_REF` (override the diff base), `STAGED=1` (check the index).
+Env: `MIGRATION_DIRS` (default `migrations db/migrate db/migration prisma/migrations`;
+`./x`, `/x` and `x/` all mean `x`, and an entry that normalises to nothing is a
+config error, not a silent skip), `GATE_BASE_REF` (override the diff base),
+`STAGED=1` (check the index).
 Exit codes: `0` ok · `1` policy violation · `2` config/infra (fails closed).
+The change set is read NUL-delimited (`--raw -z`), so a path git would print in
+C-quotes (a quote, a backslash, a tab in the name) is still recognised as a
+migration instead of quietly falling outside the pattern.
 
 Deliberate destructive change is fine — mark it, with the reason:
 ```sql
@@ -191,12 +217,19 @@ but a compiler or an LLM reads: bidi overrides/isolates (`U+202A–202E`,
 (emoji sequences, Arabic and Persian typography), LRM/RLM, soft hyphen —
 ordinary non-ASCII prose must never trip it, or it gets switched off. Known
 false positive: subdivision flag emoji (🏴 + a tag sequence). Files git treats
-as binary are not diffed as text and are reported as skipped. Matching is
-done by `awk` under `LC_ALL=C` on purpose: GNU grep in the C locale silently
-fails to match byte ranges ≥ 0x80, which would read as a clean verdict.
+as binary — including a text file marked `-diff` in `.gitattributes` — are
+still diffed (`--text`) and scanned; a finding in such a line is marked
+`[line looks binary …]`, and a real binary asset that trips the patterns is
+excluded by path. Skipping them instead would make one NUL byte an off switch
+for the whole layer. Matching is done by `awk` under `LC_ALL=C` on purpose:
+GNU grep in the C locale silently fails to match byte ranges ≥ 0x80, which
+would read as a clean verdict; the script probes its own awk before trusting
+one.
 
 Env: `UNICODE_GUARD_EXCLUDE` (ERE over paths — vendored fonts, i18n fixtures;
-empty = everything), `GATE_BASE_REF`, `STAGED=1`.
+empty excludes nothing, and a pattern that matches *every* path — `.`, `.*` —
+is rejected with exit 2: that is an off switch, not an exclusion),
+`GATE_BASE_REF`, `STAGED=1`.
 Exit codes: `0` ok · `1` forbidden code point · `2` config/infra (fails closed).
 
 ## When secret-scan fires
@@ -229,8 +262,12 @@ survive. After an upgrade, two things are not automatic:
   only enforced once it is in the branch-protection contexts; until then it is
   a check that can go red without blocking anything;
 - **the reason-bearing marker** (1.8.0) — before merging the upgrade, find the
-  markers that will start failing:
-  `git grep -nE 'destructive:[[:space:]]*approved([^(]|$)' -- <your migrations dirs>`.
+  markers that will start failing (the ones *not* followed by a parenthesised
+  reason):
+  ```bash
+  git grep -nE 'destructive:[[:space:]]*approved' -- <your migrations dirs> \
+    | grep -vE 'approved[[:space:]]*\([^)]*[[:alnum:]][^)]*\)'
+  ```
   A migration that is already committed cannot be edited (forward-only), so fix
   those on the integration branch with the gate owner, or add the reason in the
   same MR that brings the upgrade.
@@ -262,7 +299,9 @@ PROJ="group/repo"; BR="main"; ID=$(printf %s "$PROJ" | jq -sRr @uri)
 glab api -X PUT "projects/$ID" -f only_allow_merge_if_pipeline_succeeds=true \
   -f only_allow_merge_if_all_discussions_are_resolved=true
 glab api -X DELETE "projects/$ID/protected_branches/$BR" 2>/dev/null || true
-glab api -X POST  "projects/$ID/protected_branches?name=$BR&allow_force_push=false"
+# code_owner_approval_required is Premium; on Free tier drop it (CODEOWNERS then
+# assigns reviewers and enforces nothing — say so in your docs).
+glab api -X POST  "projects/$ID/protected_branches?name=$BR&allow_force_push=false&code_owner_approval_required=true"
 ```
 
 **GitHub** (`contexts` must match the workflow job names; the review block
@@ -282,9 +321,12 @@ scanner rules, the hook config and the CI job definitions decide the verdict;
 the MR under check must not be able to edit them without the gate owner's
 approval. The shipped `CODEOWNERS` lists them — replace `@OWNER`, then make the
 review required: GitHub — the `required_pull_request_reviews` block above;
-GitLab — `glab api -X POST "projects/$ID/protected_branches?name=$BR&code_owner_approval_required=true"`
-(**Premium**; on Free tier the file assigns reviewers and enforces nothing —
-write that down rather than assume it). Solo repo: an author cannot approve
+GitLab — the `code_owner_approval_required=true` already in the POST above (on
+an existing protection use `glab api -X PATCH
+"projects/$ID/protected_branches/$BR" -f code_owner_approval_required=true`;
+re-POSTing the same branch name returns 409). It is a **Premium** feature; on
+Free tier the file assigns reviewers and enforces nothing — write that down
+rather than assume it). Solo repo: an author cannot approve
 their own MR, so either a second account owns the gate or you keep the file
 for visibility and skip enforcement, knowingly. Control it like the rest:
 open an MR that narrows `SQL_RE` and confirm it asks for the owner's review.
@@ -320,6 +362,11 @@ grow a regex into a parser:
   that points elsewhere, or a client without hook support all skip it, and
   `.git/gate-bypass.log` only records the honest bypasses. The CI secret-scan
   is the enforced floor.
+- **Submodules are outside the perimeter.** Every layer judges this
+  repository: a secret or a migration inside a submodule is not scanned here
+  (a full-history scan of the superproject reports "no leaks" for a key
+  committed in the submodule). A submodule that carries code needs its own
+  vendored `ci/` and its own pipeline.
 - **The destructive marker is a declaration, not an approval.** Anyone who can
   write the migration can write `-- destructive: approved (T-1)`. What makes it
   an approval is a reviewer — put your migrations dirs in `CODEOWNERS` if you

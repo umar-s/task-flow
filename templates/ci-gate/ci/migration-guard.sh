@@ -23,6 +23,11 @@
 # Exit codes: 0 ok · 1 policy violation · 2 config/infra (fails closed).
 set -euo pipefail
 
+# Verdicts are byte comparisons, so the locale must not decide them: in tr_TR
+# and az_AZ, `i` and `I` are not a case pair, and `grep -i` there stops
+# matching lowercase `index`, `constraint`, `trigger`, `materialized`.
+export LC_ALL=C
+
 here=$(cd "$(dirname "$0")" && pwd)
 MIGRATION_DIRS="${MIGRATION_DIRS:-migrations db/migrate db/migration prisma/migrations}"
 STAGED="${STAGED:-0}"
@@ -110,6 +115,16 @@ is_destructive() {   # stdin: file content → 0 destructive · 1 clean · 2 can
 # Build a regex matching any path under a configured migrations dir.
 dir_re=""
 for d in $MIGRATION_DIRS; do
+  # "migrations/", "./migrations" and "/migrations" all mean the same dir; a
+  # trailing slash used to produce `migrations//`, which matches nothing and
+  # turned the layer off without a word.
+  d=${d#./}
+  while [ "${d#/}" != "$d" ]; do d=${d#/}; done
+  while [ "${d%/}" != "$d" ]; do d=${d%/}; done
+  if [ -z "$d" ]; then
+    echo "migration-guard: MIGRATION_DIRS contains an entry that normalises to nothing. Failing closed." >&2
+    exit 2
+  fi
   d_esc=$(printf '%s' "$d" | sed 's/[.[\*^$()+?{|\\]/\\&/g')
   dir_re="${dir_re:+$dir_re|}(^|/)${d_esc}/"
 done
@@ -124,21 +139,43 @@ fi
 is_migration() { [[ "$1" =~ $dir_re ]]; }
 
 # Resolve the change set + how to read a file at the evaluated tip.
+# `--raw -z`: NUL-delimited, so a path with a quote, a backslash or a tab is not
+# C-quoted into something the path regex no longer recognises (that path would
+# silently stop being a migration); and the raw line carries the destination
+# file MODE, which is how a symlinked migration is caught.
+changes_file=$(mktemp) || { echo "migration-guard: cannot create a temp file. Failing closed." >&2; exit 2; }
+trap 'rm -f "$changes_file"' EXIT
 if [ "$STAGED" = "1" ]; then
-  changes=$(git -c core.quotePath=false diff --cached --name-status --no-renames)
+  if ! git -c core.quotePath=false diff --cached --raw -z --no-renames > "$changes_file"; then
+    echo "migration-guard: git diff --cached failed. Failing closed." >&2; exit 2
+  fi
   read_tip() { git show ":$1"; }
 else
   BASE=$(GATE_LAYER=migration-guard bash "$here/base-ref.sh") || exit $?
-  changes=$(git -c core.quotePath=false diff --name-status --no-renames "${BASE}...HEAD")
+  if ! git -c core.quotePath=false diff --raw -z --no-renames "${BASE}...HEAD" > "$changes_file"; then
+    echo "migration-guard: git diff failed. Failing closed." >&2; exit 2
+  fi
   read_tip() { git show "HEAD:$1"; }
 fi
 
 fail=0
-while IFS=$'\t' read -r status path _rest; do
-  [ -z "${status:-}" ] && continue
+# Raw format: ":<srcmode> <dstmode> <srcsha> <dstsha> <status>\0<path>\0"
+while IFS= read -r -d '' meta; do
+  IFS= read -r -d '' path || break
+  read -r srcmode dstmode srcsha dstsha status <<EOF_META
+${meta#:}
+EOF_META
+  [ -n "${status:-}" ] && [ -n "${path:-}" ] || continue
   is_migration "$path" || continue
   case "$status" in
     A)  # new migration — allowed, but scan for unapproved destructive DDL
+      # A symlink's blob is its target path, not SQL: scanning it would always
+      # look clean while the migration that actually runs lives elsewhere.
+      if [ "$dstmode" = "120000" ]; then
+        echo "FAIL [symlink]      $path : a migration must be a regular file, not a symlink (its target is what runs, and the guard cannot judge it here)" >&2
+        fail=1
+        continue
+      fi
       # Fail closed on an unreadable file: an empty read would sail through the
       # destructive-DDL grep and report a pass the guard never established.
       if ! content=$(read_tip "$path"); then
@@ -175,7 +212,7 @@ while IFS=$'\t' read -r status path _rest; do
       fail=1
       ;;
   esac
-done <<< "$changes"
+done < "$changes_file"
 
 if [ "$fail" = "1" ]; then
   echo "migration-guard: FAILED" >&2

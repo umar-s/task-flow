@@ -138,7 +138,7 @@ for f in templates/ci-gate/gitlab/ci-gate.gitlab-ci.yml templates/ci-gate/gitlab
 done
 for f in templates/ci-gate/gitlab/ci-gate.gitlab-ci.yml templates/ci-gate/gitlab/ci-gate.shell.gitlab-ci.yml templates/ci-gate/github/gate.yml; do
   grep -qF -- '--log-opts="--text --diff-merges=first-parent${RANGE:+ $RANGE}"' "$f" || err "$f: --log-opts must use \${RANGE:+ \$RANGE} (a stray empty word scans nothing)"
-  grep -q 'git rev-list "$RANGE"' "$f" || err "$f: validate the range with git rev-list — gitleaks exits 0 when the git command inside it fails"
+  grep -q 'git log --text --diff-merges=first-parent --max-count=1' "$f" || err "$f: validate the range with the same 'git log' gitleaks runs — it exits 0 when the git command inside it fails, and rev-list cannot tell whether git log accepts the options"
 done
 # unicode-guard's diff must be immune to the knobs reachable from the change
 # under review or the developer's own config.
@@ -177,6 +177,12 @@ if grep -nE 'grep.*(BIDI_RE|ZW_RE|TAG_RE|BOM_RE)' templates/ci-gate/ci/unicode-g
   err "unicode-guard.sh uses grep on a byte pattern (fail-open on GNU grep in the C locale) — match with awk"
 fi
 grep -q 'LC_ALL=C awk' templates/ci-gate/ci/unicode-guard.sh || err "unicode-guard.sh must run awk under LC_ALL=C"
+grep -q "tr -d '\\\\000'" templates/ci-gate/ci/unicode-guard.sh || err "unicode-guard.sh must strip NUL bytes before awk (busybox awk splits the record there and the tail is never scanned)"
+# Case folding is locale-dependent (tr_TR: i/I are not a pair), so a verdict
+# must not depend on the runner's locale.
+for f in templates/ci-gate/ci/migration-guard.sh templates/ci-gate/ci/unicode-guard.sh templates/ci-gate/ci/diff-coverage.sh templates/ci-gate/ci/gate.sh templates/ci-gate/ci/pre-push.sh; do
+  grep -q '^export LC_ALL=C' "$f" || err "$f must pin LC_ALL=C — grep -i and awk case folding are locale-dependent"
+done
 
 # 11. README.md and README.ru.md move in lockstep (structure only; text is a translation).
 bash scripts/readme-parity.sh >/dev/null || err "README.md / README.ru.md structure differs (run scripts/readme-parity.sh)"

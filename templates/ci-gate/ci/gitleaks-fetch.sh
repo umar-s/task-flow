@@ -12,13 +12,16 @@
 # without passing the committed sum first. A cached tarball that no longer
 # matches is discarded and re-fetched.
 #
+# Env: GITLEAKS_CACHE_DIR (where the verified tarball is kept),
+# GITLEAKS_RUN_DIR (where this call extracts it), GITLEAKS_URL_BASE (mirror).
+#
 # Cleanup: the extracted binary lives in a per-call directory under
 # GITLEAKS_RUN_DIR (default: $TMPDIR or /tmp) and is NOT removed by this script
 # — the caller needs it after this process exits. Callers remove it (gate.sh
 # traps it; the CI templates point GITLEAKS_RUN_DIR at the job workspace).
 #
-# Maintenance: a pinned scanner goes stale. Bump PIN_VERSION and ALL FOUR SHA256s
-# together — plus the image digest in the CI files and the `rev` in
+# Maintenance: a pinned scanner goes stale. Bump PIN_VERSION and ALL FOUR
+# SHA256s (linux/darwin x x64/arm64) together — plus the image digest in the CI files and the `rev` in
 # .pre-commit-config.yaml (see ci/README.md). Get the sums from the release
 # checksums at authoring time (verify once, by a human, over a trusted channel —
 # do NOT trust a checksums.txt downloaded next to the binary in the same job):
@@ -58,7 +61,11 @@ else log "no sha256sum/shasum available"; exit 2; fi
 
 CACHE="${GITLEAKS_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/gitleaks-pinned}"
 TARBALL="gitleaks_${PIN_VERSION}_${OS}_${ARCH}.tar.gz"
-URL="https://github.com/gitleaks/gitleaks/releases/download/v${PIN_VERSION}/${TARBALL}"
+# GITLEAKS_URL_BASE points the download at an internal mirror (a shop whose
+# runners have no egress to github.com). The committed SHA256 stays the trust
+# anchor: a mirror that serves something else fails the same check.
+URL_BASE="${GITLEAKS_URL_BASE:-https://github.com/gitleaks/gitleaks/releases/download}"
+URL="${URL_BASE}/v${PIN_VERSION}/${TARBALL}"
 CACHED="$CACHE/$TARBALL"
 RUN_BASE="${GITLEAKS_RUN_DIR:-${TMPDIR:-/tmp}}"
 mkdir -p "$CACHE" "$RUN_BASE"

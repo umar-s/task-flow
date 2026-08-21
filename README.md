@@ -74,7 +74,8 @@ blast-radius categories tests and LLM review miss:
   being pushed
 - **migration-guard** — tool-agnostic, path-based: forward-only immutability +
   destructive DDL requires an explicit `-- destructive: approved (<reason>)`
-  marker — the reason is mandatory
+  marker — the reason is mandatory; a migration added as a symlink fails (its
+  blob is the target path, not the SQL that runs)
 - **unicode-guard** — no bidi overrides, zero-width or tag characters in
   added lines (Trojan Source); ordinary non-ASCII prose and emoji never trip it
 - **diff-coverage** — changed-line coverage threshold, opt-in: reads the report
@@ -91,6 +92,11 @@ fail — known-bad fixtures judged by this repo's own scripts, scanner and
 allowlist — before anyone trusts its green; `ci/scan-text.sh <file>` scans a
 comment or MR description before it is posted. Template payload lives in
 `templates/ci-gate/`.
+
+Host requirements: `bash` 3.2+, `git` **2.31+** (a scan without
+`--diff-merges` is blind to secrets added in a merge commit — the layers refuse
+to run rather than scan less than they promise), any awk, and `pre-commit`
+3.2.0+ for the local hooks.
 
 Executor-aware for GitLab: a **docker/k8s** variant (uses `image:`) and a
 **shell** variant that fetches a pinned, checksum-verified gitleaks in-job — no
