@@ -27,6 +27,8 @@
 # Exit codes: 0 ok · 1 below threshold · 2 config/infra (fails closed).
 set -euo pipefail
 
+here=$(cd "$(dirname "$0")" && pwd)
+
 REPORTS="${GATE_COVERAGE_REPORT:-}"
 MIN="${GATE_COVERAGE_MIN:-80}"
 MAX_MISSES="${GATE_COVERAGE_MISSES:-10}"
@@ -40,23 +42,8 @@ case "$MIN" in
   ''|*[!0-9]*) echo "diff-coverage: GATE_COVERAGE_MIN='$MIN' is not an integer. Failing closed." >&2; exit 2 ;;
 esac
 
-# --- base ref: same resolution (and same fail-closed rule) as migration-guard
-BASE="${GATE_BASE_REF:-}"
-if [ -z "$BASE" ]; then
-  if [ -n "${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}" ]; then
-    BASE="$CI_MERGE_REQUEST_DIFF_BASE_SHA"          # GitLab MR pipeline
-  elif [ -n "${GITHUB_BASE_REF:-}" ]; then
-    BASE="origin/${GITHUB_BASE_REF}"                # GitHub PR
-  fi
-fi
-if [ -z "$BASE" ]; then
-  echo "diff-coverage: cannot resolve base ref (set GATE_BASE_REF). Failing closed." >&2
-  exit 2
-fi
-if ! git rev-parse --verify --quiet "${BASE}^{commit}" >/dev/null; then
-  echo "diff-coverage: base '$BASE' not in clone — need full history (GIT_DEPTH=0 / fetch-depth: 0). Failing closed." >&2
-  exit 2
-fi
+# --- base ref: one resolution for every range-based layer (ci/base-ref.sh)
+BASE=$(GATE_LAYER=diff-coverage bash "$here/base-ref.sh") || exit $?
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT

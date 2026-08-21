@@ -66,18 +66,30 @@ merge.
 Ставит в любой репозиторий переносимый неподкупный «пол» под категории, которые
 не ловят ни тесты, ни LLM-ревью:
 
-- **secret-scan** — gitleaks, в pre-commit и CI
+- **secret-scan** — gitleaks, в pre-commit, pre-push и CI; pre-push сканирует
+  коммиты, которые вот-вот покинут машину, по каждому ref (ловит `--no-verify`,
+  amend, историю с другой машины) и блокирует push, если git не может сказать,
+  что именно уходит
 - **migration-guard** — инструмент-агностичный, по путям: forward-only
-  неизменяемость + деструктивный DDL только с маркером `-- destructive: approved`
+  неизменяемость + деструктивный DDL только с маркером
+  `-- destructive: approved (<причина>)` — причина обязательна
+- **unicode-guard** — в добавленных строках нет bidi-override, zero-width и
+  tag-символов (Trojan Source); обычная не-ASCII проза и emoji его не задевают
 - **diff-coverage** — порог покрытия по изменённым строкам, опционально: читает
   отчёт, который уже производит тестовый прогон проекта (lcov / Cobertura /
   Clover), и судит только те строки, которых коснулось изменение
-- **protected-branch** — запрет force-push + required status checks (правило
-  платформы, ставится один раз через `glab`/`gh`)
+- **protected-branch** — запрет force-push + required status checks +
+  обязательное ревью владельца на файлы гейта (`CODEOWNERS`): MR под проверкой
+  не может править судью (правило платформы, ставится один раз через
+  `glab`/`gh`)
 
 Вызов: `/ci-gate` в репозитории. Копирует `ci/`, конфиги gitleaks и pre-commit,
-CI-файл под GitLab **или** GitHub, печатает команды protected-branch. Полезная
-нагрузка шаблона — в `templates/ci-gate/`.
+`CODEOWNERS`, CI-файл под GitLab **или** GitHub, печатает команды
+protected-branch. Затем `ci/gate.sh --selftest` доказывает, что гейт умеет
+падать — заведомо плохие фикстуры судят скрипты, сканер и allowlist этого же
+репозитория — прежде чем кто-то поверит его «зелёному»; `ci/scan-text.sh <file>`
+сканирует комментарий или описание MR до публикации. Полезная нагрузка шаблона
+— в `templates/ci-gate/`.
 
 Executor-aware для GitLab: вариант под **docker/k8s** (через `image:`) и вариант
 под **shell**, который тянет pinned gitleaks с проверкой sha прямо в джобе — без

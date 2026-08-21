@@ -30,8 +30,25 @@ jobs:
         run: bash scripts/lint.sh
       - name: release state
         run: bash scripts/release-check.sh
-      - name: payload negative controls (migration-guard fixtures, gitleaks-fetch failure paths)
+      - name: payload negative controls (tests/run.sh — every suite under tests/)
         run: bash tests/run.sh
+      - name: unicode-guard over this repo's own change (dogfood)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          # The plugin ships prompt templates: an invisible instruction smuggled
+          # into a SKILL.md would reach every consumer. Same script the payload
+          # installs, run against this repository's own added lines.
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags origin "$BASE_REF"
+            GATE_BASE_REF="origin/$BASE_REF" bash templates/ci-gate/ci/unicode-guard.sh
+          elif [ "$EVENT_NAME" = "push" ] && ! printf '%s' "$BEFORE_SHA" | grep -qE '^0+$'; then
+            GATE_BASE_REF="$BEFORE_SHA" bash templates/ci-gate/ci/unicode-guard.sh
+          else
+            echo "unicode-guard: no base revision for this event — skipped (first push / schedule)"
+          fi
       - name: workflow lint (actionlint — the shipped GitHub template and this file)
         run: |
           docker run --rm -v "$PWD:/repo:ro" -w /repo "$ACTIONLINT_IMAGE" -color \
@@ -55,15 +72,23 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
         run: |
-          RANGE=()
+          RANGE=""
           if [ "$EVENT_NAME" = "pull_request" ]; then
             git fetch --no-tags origin "$BASE_REF"
-            RANGE=("--log-opts=origin/${BASE_REF}..HEAD")
+            RANGE="origin/${BASE_REF}..HEAD"
           elif [ "$EVENT_NAME" = "push" ]; then
             if ! printf '%s' "$BEFORE_SHA" | grep -qE '^0+$'; then
-              RANGE=("--log-opts=${BEFORE_SHA}..${HEAD_SHA}")
+              RANGE="${BEFORE_SHA}..${HEAD_SHA}"
             fi
+          fi
+          # Same three landmines as the shipped template: a range git cannot
+          # resolve exits 0 inside gitleaks, an empty word in --log-opts scans
+          # nothing, and without --text/--diff-merges the scan is blind to
+          # `-diff` attributes and merge commits.
+          if [ -n "$RANGE" ] && ! git rev-list "$RANGE" >/dev/null; then
+            echo "secret-scan: git cannot resolve '$RANGE' — failing closed" >&2
+            exit 2
           fi
           docker run --rm -v "$PWD:/repo:ro" -w /repo "$GITLEAKS_IMAGE" \
             detect --source /repo --config /repo/templates/ci-gate/.gitleaks.toml \
-            --redact --no-banner -v "${RANGE[@]}"
+            --redact --no-banner -v --log-opts="--text --diff-merges=first-parent${RANGE:+ $RANGE}"

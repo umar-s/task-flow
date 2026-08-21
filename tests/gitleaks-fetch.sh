@@ -10,7 +10,10 @@ pass=0; fail=0
 ok()   { pass=$((pass+1)); }
 bad()  { fail=$((fail+1)); printf 'FAIL %s\n' "$*" >&2; }
 runs() { find "$GITLEAKS_RUN_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' '; }
-TARBALL=$(sed -nE 's/^PIN_VERSION="([0-9.]+)"/gitleaks_\1_linux_x64.tar.gz/p' "$FETCH")
+V=$(sed -nE 's/^PIN_VERSION="([0-9.]+)"/\1/p' "$FETCH")
+case "$(uname -m)" in x86_64|amd64) A=x64 ;; aarch64|arm64) A=arm64 ;; *) A=x64 ;; esac
+case "$(uname -s)" in Linux) O=linux ;; Darwin) O=darwin ;; *) O=linux ;; esac
+TARBALL="gitleaks_${V}_${O}_${A}.tar.gz"
 
 # a) fresh: downloads, verifies, caches, extracts into a private dir, binary runs
 B1=$(bash "$FETCH" 2>"$TMP/err") && [ -x "$B1" ] && "$B1" version >/dev/null && [ -f "$GITLEAKS_CACHE_DIR/$TARBALL" ] && ok || bad "fresh fetch: $(cat "$TMP/err")"
@@ -28,7 +31,8 @@ out=$(bash "$FETCH" 2>/dev/null) && rc=0 || rc=$?
 unset -f curl wget
 [ "$rc" != 0 ] && [ -z "$out" ] && [ "$(runs)" = "$n" ] && [ ! -f "$GITLEAKS_CACHE_DIR/$TARBALL" ] && ok || bad "no-network: rc=$rc out='$out' runs=$(runs)"
 # e) wrong committed checksum: exit 1, nothing cached, nothing left behind
-sed 's/^SHA256_x64=.*/SHA256_x64="0000000000000000000000000000000000000000000000000000000000000000"/' "$FETCH" > "$TMP/fetch-bad.sh"
+sed -E 's/^SHA256_[a-z0-9_]+=.*/&\nSHA256_'"${O}_${A}"'="0000000000000000000000000000000000000000000000000000000000000000"/' "$FETCH" | awk '!/^SHA256_/ || !seen[$0]++' > "$TMP/fetch-bad.sh"
+grep -q "^SHA256_${O}_${A}=\"0\{64\}\"" "$TMP/fetch-bad.sh" || { echo "FAIL bad-checksum fixture did not patch SHA256_${O}_${A}" >&2; fail=$((fail+1)); }
 n=$(runs)
 out=$(bash "$TMP/fetch-bad.sh" 2>"$TMP/err") && rc=0 || rc=$?
 [ "$rc" = 1 ] && [ -z "$out" ] && grep -q 'CHECKSUM MISMATCH' "$TMP/err" && [ "$(runs)" = "$n" ] && [ ! -f "$GITLEAKS_CACHE_DIR/$TARBALL" ] && ok || bad "bad checksum: rc=$rc $(cat "$TMP/err")"
@@ -46,7 +50,13 @@ else
   B5=$(bash "$FETCH" 2>"$TMP/err") && "$B5" version >/dev/null && grep -q 'not cached' "$TMP/err" && ok || bad "read-only cache: $(cat "$TMP/err")"
   chmod 755 "$GITLEAKS_CACHE_DIR"
 fi
-# h) stdout carries only the path (every run)
+# h) an unsupported platform fails closed with a way out, instead of running a
+#    binary for the wrong OS (the pre-push hook would block every push)
+mkdir -p "$TMP/fakeos"; printf '#!/bin/sh\ncase "$1" in -s) echo SunOS;; -m) echo x86_64;; *) /usr/bin/uname "$@";; esac\n' > "$TMP/fakeos/uname"; chmod +x "$TMP/fakeos/uname"
+out=$(PATH="$TMP/fakeos:$PATH" bash "$FETCH" 2>"$TMP/err") && rc=0 || rc=$?
+[ "$rc" = 2 ] && [ -z "$out" ] && grep -q 'no pinned build for SunOS' "$TMP/err" && ok || bad "unsupported OS: rc=$rc $(cat "$TMP/err")"
+
+# i) stdout carries only the path (every run)
 for b in "$B1" "$B2" "$B3" "$B4" "$B5"; do case "$b" in */gitleaks) ;; *) bad "stdout not a bare path: '$b'";; esac; done; ok
 
 echo "tests/gitleaks-fetch: $pass passed, $fail failed"

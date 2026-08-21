@@ -5,7 +5,10 @@
 #   1) forward-only / immutability — an already-committed migration file may not
 #      be modified, deleted or renamed. Only NEW migration files are allowed.
 #   2) destructive DDL in a NEW migration requires an explicit approval marker
-#      ("destructive: approved" in a comment) inside the same file.
+#      with a reason — `destructive: approved (<ticket or reason>)` in a
+#      comment inside the same file. A bare `destructive: approved` is not
+#      an approval: the parenthesised reason is what a reviewer and a
+#      post-mortem can hold someone to.
 #
 # Config (env):
 #   MIGRATION_DIRS  space-separated dir names treated as migrations
@@ -20,9 +23,13 @@
 # Exit codes: 0 ok · 1 policy violation · 2 config/infra (fails closed).
 set -euo pipefail
 
+here=$(cd "$(dirname "$0")" && pwd)
 MIGRATION_DIRS="${MIGRATION_DIRS:-migrations db/migrate db/migration prisma/migrations}"
 STAGED="${STAGED:-0}"
 [ "${1:-}" = "--staged" ] && STAGED=1
+# Print the knobs that decide the verdict: a job log that does not say what the
+# guard was watching cannot be told apart from one that watched nothing.
+echo "migration-guard: dirs=\"$MIGRATION_DIRS\" staged=$STAGED${GATE_BASE_REF:+ base=$GATE_BASE_REF}"
 
 # Destructive patterns (POSIX-extended). Two families, both matched only in
 # the FORWARD PART of a migration (see forward_part below):
@@ -65,7 +72,10 @@ _PFX_OPT='(public[[:space:]]+)?(async[[:space:]]+)?(def[[:space:]]+(self\.)?|fun
 _PFX_REQ='((module\.)?exports\.|export[[:space:]]+(async[[:space:]]+)?(function[[:space:]]+|const[[:space:]]+)|const[[:space:]]+|let[[:space:]]+|var[[:space:]]+)'
 export UP_RE="^[[:space:]]*(${_PFX_OPT}(up|upgrade|change)[[:space:]]*([(:{]|\$)|${_PFX_REQ}(up|upgrade|change)[[:space:]]*[=:(])"
 export DOWN_RE="^[[:space:]]*(${_PFX_OPT}(down|downgrade)[[:space:]]*([(:{]|\$)|${_PFX_REQ}(down|downgrade)[[:space:]]*[=:(])"
-APPROVAL_RE='destructive:[[:space:]]*approved'
+# The marker must carry a reason: at least one letter or digit inside the
+# parentheses. `approved ()` and `approved (  )` are bare markers.
+APPROVAL_RE='destructive:[[:space:]]*approved[[:space:]]*\([^)]*[[:alnum:]][^)]*\)'
+BARE_MARKER_RE='destructive:[[:space:]]*approved'
 
 forward_part() {     # stdin: file content → the same lines with down-block bodies blanked; rc = awk's
   awk '
@@ -104,8 +114,11 @@ for d in $MIGRATION_DIRS; do
   dir_re="${dir_re:+$dir_re|}(^|/)${d_esc}/"
 done
 if [ -z "$dir_re" ]; then
-  echo "migration-guard: no MIGRATION_DIRS configured, skipping"
-  exit 0
+  # An empty MIGRATION_DIRS is a configuration error, not "no migrations": a
+  # blank CI variable would otherwise switch the whole layer off from the
+  # settings UI, leaving a green job that inspected nothing.
+  echo "migration-guard: MIGRATION_DIRS is empty — nothing would ever be checked. Failing closed." >&2
+  exit 2
 fi
 # bash ERE, no external tool: a broken grep must never turn a migration into "not a migration".
 is_migration() { [[ "$1" =~ $dir_re ]]; }
@@ -115,22 +128,7 @@ if [ "$STAGED" = "1" ]; then
   changes=$(git -c core.quotePath=false diff --cached --name-status --no-renames)
   read_tip() { git show ":$1"; }
 else
-  BASE="${GATE_BASE_REF:-}"
-  if [ -z "$BASE" ]; then
-    if [ -n "${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}" ]; then
-      BASE="$CI_MERGE_REQUEST_DIFF_BASE_SHA"          # GitLab MR pipeline
-    elif [ -n "${GITHUB_BASE_REF:-}" ]; then
-      BASE="origin/${GITHUB_BASE_REF}"                # GitHub PR
-    fi
-  fi
-  if [ -z "$BASE" ]; then
-    echo "migration-guard: cannot resolve base ref (set GATE_BASE_REF). Failing closed." >&2
-    exit 2
-  fi
-  if ! git rev-parse --verify --quiet "${BASE}^{commit}" >/dev/null; then
-    echo "migration-guard: base '$BASE' not in clone — need full history (GIT_DEPTH=0 / fetch-depth: 0). Failing closed." >&2
-    exit 2
-  fi
+  BASE=$(GATE_LAYER=migration-guard bash "$here/base-ref.sh") || exit $?
   changes=$(git -c core.quotePath=false diff --name-status --no-renames "${BASE}...HEAD")
   read_tip() { git show "HEAD:$1"; }
 fi
@@ -155,10 +153,19 @@ while IFS=$'\t' read -r status path _rest; do
         exit 2
       fi
       if [ "$drc" -eq 0 ]; then
-        if printf '%s\n' "$content" | grep -Ei "$APPROVAL_RE" >/dev/null; then
+        # Three grep outcomes again: found / not found / grep broke.
+        if printf '%s\n' "$content" | grep -Ei "$APPROVAL_RE" >/dev/null; then arc=0; else arc=$?; fi
+        if [ "$arc" -ge 2 ]; then
+          echo "migration-guard: cannot evaluate '$path' (grep failed on the marker check). Failing closed." >&2
+          exit 2
+        fi
+        if [ "$arc" -eq 0 ]; then
           echo "warn [destructive]  $path : destructive DDL present but approved" >&2
+        elif printf '%s\n' "$content" | grep -Ei "$BARE_MARKER_RE" >/dev/null; then
+          echo "FAIL [destructive]  $path : marker present but carries no reason — use '-- destructive: approved (TICKET-123: data archived)'" >&2
+          fail=1
         else
-          echo "FAIL [destructive]  $path : destructive DDL without '-- destructive: approved' marker" >&2
+          echo "FAIL [destructive]  $path : destructive DDL without a '-- destructive: approved (<ticket or reason>)' marker" >&2
           fail=1
         fi
       fi

@@ -1,0 +1,42 @@
+# CODEOWNERS — the gate must not be editable by the MR it judges.
+#
+# Every file that decides the verdict (the scripts, the scanner rules, the
+# hook config, the CI job definitions, this file) needs an approval from the
+# gate's owner before it merges. Without this, the party under check can
+# narrow a regex or widen an allowlist in the same MR — and the deterministic
+# layer stops being independent of the LLM layer, which is the whole point.
+#
+# Replace @OWNER with a team or user (GitHub: @org/team or @user; GitLab:
+# @group or @user). Then make the review REQUIRED — the file alone only
+# requests it (see ci/README.md → Protected-branch):
+#   GitHub  branch protection → required_pull_request_reviews.require_code_owner_reviews
+#   GitLab  protected branch → code_owner_approval_required (Premium; on Free this
+#           file assigns reviewers but enforces nothing — say so in your docs)
+# Solo repo: the author cannot approve their own MR — either a second account
+# owns the gate, or keep the file for visibility and skip enforcement, knowingly.
+#
+# Copied from the task-flow `ci-gate` payload; read by GitHub and GitLab from
+# the repository root.
+
+/ci/                      @OWNER
+/.gitleaks.toml           @OWNER
+/.pre-commit-config.yaml  @OWNER
+# .gitattributes decides what git shows as text: `*.js -diff` hides a file
+# from the secret scan and from unicode-guard's input.
+/.gitattributes           @OWNER
+# All three places a CODEOWNERS file is read from — otherwise a change can add
+# a higher-priority one that owns nothing (GitHub reads .github/ first, then
+# the root, then docs/; GitLab reads the root, then .gitlab/, then docs/).
+/CODEOWNERS               @OWNER
+/.github/CODEOWNERS       @OWNER
+/.gitlab/CODEOWNERS       @OWNER
+/docs/CODEOWNERS          @OWNER
+# The whole workflows directory, not just gate.yml: a required status check is
+# matched by NAME, so a new workflow declaring a job called `secret-scan` can
+# report a green check under the required name.
+/.github/workflows/       @OWNER
+# GitLab: the project file carries the gate's `include:` — own it too
+/.gitlab-ci.yml           @OWNER
+# Optionally add your migrations dirs (the marker in a migration is a
+# declaration by its author, not an approval by anyone else):
+# /db/migrate/            @OWNER

@@ -94,8 +94,23 @@ t sequelize-multiline-down migrations/20240105_b.js 0 'module.exports = {\n  up:
 # --- marker ---
 t marker-sql        migrations/0006_a.sql 0 '-- destructive: approved (T-1, archived)\nDROP VIEW v;'
 t marker-rails      db/migrate/006_a.rb 0 '# destructive: approved (T-2)\ndef change\n  drop_table :legacy\nend'
+t marker-case-and-spacing migrations/0006_b.sql 0 '-- Destructive:Approved(ticket 42)\nDROP TABLE t;'
+# a marker without a reason is not an approval (1.8.0)
+t marker-bare       migrations/0006_c.sql 1 '-- destructive: approved\nDROP TABLE t;'
+t marker-empty-parens migrations/0006_d.sql 1 '-- destructive: approved ()\nDROP TABLE t;'
+t marker-blank-parens migrations/0006_e.sql 1 '-- destructive: approved (   )\nDROP TABLE t;'
+t marker-punct-only  migrations/0006_f.sql 1 '-- destructive: approved (--)\nDROP TABLE t;'
+t marker-on-clean-file migrations/0006_g.sql 0 '-- destructive: approved\nCREATE TABLE t (id int);'
 }
 run_fixtures
+
+# --- an empty MIGRATION_DIRS is a config error, not "no migrations" ---
+mkdir -p migrations; printf 'DROP TABLE t;\n' > migrations/0009_a.sql; git add -A
+err=$(MIGRATION_DIRS=" " bash "$GUARD" --staged 2>&1 >/dev/null) && rc=0 || rc=$?
+if [ "$rc" = 2 ] && printf '%s' "$err" | grep -q 'MIGRATION_DIRS is empty'; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL empty-migration-dirs: rc=%s expected=2\n%s\n' "$rc" "$err" >&2; fi
+err=$(MIGRATION_DIRS="nowhere" bash "$GUARD" --staged 2>&1 >/dev/null) && rc=0 || rc=$?
+[ "$rc" = 0 ] && pass=$((pass+1)) || { fail=$((fail+1)); printf 'FAIL unrelated-migration-dirs: rc=%s expected=0\n%s\n' "$rc" "$err" >&2; }
+git rm -rq --cached . >/dev/null 2>&1 || true; rm -rf migrations
 
 # --- infrastructure failures fail closed (rc 2), never pass ---
 mkdir -p "$TMP/badbin"; printf '#!/bin/sh\necho "awk: simulated failure" >&2\nexit 2\n' > "$TMP/badbin/awk"; chmod +x "$TMP/badbin/awk"

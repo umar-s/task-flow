@@ -79,7 +79,17 @@ the checklist below only guards against blind spots.
    to the deterministic CI gate — but that gate matches per line on SQL and
    the common ORM DSL tokens only; a statement split across lines, SQL built
    inside a string, a data-destroying `UPDATE`, or an unlisted DSL is yours
-   to read and flag.
+   to read and flag. A `-- destructive: approved (<reason>)` marker is a
+   declaration by whoever wrote the migration, not an approval by anyone
+   else: judge the drop on its merits and say whether the stated reason
+   matches what the statement actually does.
+7b. **Suppressions and gate edits in this diff** — a new `# gitleaks:allow`,
+   a new `unicode-guard:allow`, a widened `[[allowlists]]` entry, a narrowed
+   pattern in `ci/`, a new `.gitattributes` line marking source as `-diff`, or
+   a `MIGRATION_DIRS`/`UNICODE_GUARD_EXCLUDE` change are each a finding to
+   justify explicitly — they turn a deterministic check off for the very
+   change you are reviewing. Identifiers mixing scripts (a Cyrillic `а` in an
+   ASCII name) belong here too: no scanner sees them.
 8. **AI / LLM surfaces** (if the diff touches prompts, agents, tools) —
    model output treated as untrusted (never into eval/SQL/shell/innerHTML);
    the system prompt not relied on as a security boundary (prompt

@@ -94,7 +94,91 @@ if grep -q 'autoupdate' templates/ci-gate/.pre-commit-config.yaml && ! grep -q '
 fi
 grep -q 'regexTarget = "line"' templates/ci-gate/.gitleaks.toml && err '.gitleaks.toml: regexTarget = "line" lets a placeholder excuse a real secret on the same line'
 
-# 9. README.md and README.ru.md move in lockstep (structure only; text is a translation).
+# 9. The payload is one set: every ci/*.sh and CODEOWNERS the payload ships is
+#    named in the ci-gate SKILL.md copy step and in ci/README.md; the three CI
+#    templates define the same gate jobs; the pre-commit config carries every
+#    local guard; the gitleaks-backed scripts resolve the scanner the same way.
+# The skill copies ci/ as a directory (a per-file list drifts the moment a
+# script is added); ci/README.md is where each script is documented.
+grep -q 'the whole `ci/` directory' skills/ci-gate/SKILL.md || err "skills/ci-gate/SKILL.md must tell the agent to copy the whole ci/ directory, not a file list"
+for f in templates/ci-gate/ci/*.sh; do
+  b=$(basename "$f")
+  grep -q "$b" templates/ci-gate/ci/README.md || err "templates/ci-gate/ci/README.md does not document payload script $b"
+done
+for f in .gitleaks.toml .pre-commit-config.yaml CODEOWNERS; do
+  grep -q "$f" skills/ci-gate/SKILL.md || err "skills/ci-gate/SKILL.md does not name payload root file $f"
+done
+for job in secret-scan migration-guard unicode-guard; do
+  for f in templates/ci-gate/gitlab/ci-gate.gitlab-ci.yml templates/ci-gate/gitlab/ci-gate.shell.gitlab-ci.yml templates/ci-gate/github/gate.yml; do
+    grep -qE "^\s*${job}:" "$f" || err "$f lacks the '$job' job"
+  done
+  grep -q "$job" templates/ci-gate/ci/README.md || err "ci/README.md does not mention the '$job' job"
+done
+for h in migration-guard.sh unicode-guard.sh pre-push.sh; do
+  grep -q "ci/$h" templates/ci-gate/.pre-commit-config.yaml || err ".pre-commit-config.yaml lacks a hook for ci/$h"
+done
+grep -q 'stages: \[pre-push\]' templates/ci-gate/.pre-commit-config.yaml || err ".pre-commit-config.yaml: pre-push hook must be staged 'pre-push'"
+grep -q '^default_stages: \[pre-commit\]' templates/ci-gate/.pre-commit-config.yaml || err ".pre-commit-config.yaml: default_stages must pin the other hooks to pre-commit"
+# One scanner resolution, in one file: three inline copies drifted apart once.
+grep -q 'GATE_PINNED_ONLY' templates/ci-gate/ci/gitleaks-bin.sh || err "gitleaks-bin.sh no longer honours GATE_PINNED_ONLY"
+for f in templates/ci-gate/ci/gate.sh templates/ci-gate/ci/scan-text.sh templates/ci-gate/ci/pre-push.sh; do
+  grep -q 'gitleaks-bin.sh' "$f" || err "$f must resolve the scanner through ci/gitleaks-bin.sh"
+  grep -qE '(^|[^-])command -v gitleaks' "$f" && err "$f resolves gitleaks itself instead of through ci/gitleaks-bin.sh"
+done
+# One base-ref resolution, likewise (a new CI platform is taught once).
+for f in templates/ci-gate/ci/migration-guard.sh templates/ci-gate/ci/unicode-guard.sh templates/ci-gate/ci/diff-coverage.sh; do
+  grep -q 'base-ref.sh' "$f" || err "$f must resolve the base ref through ci/base-ref.sh"
+  grep -q 'CI_MERGE_REQUEST_DIFF_BASE_SHA' "$f" && err "$f still resolves the base ref itself (ci/base-ref.sh is the one place)"
+done
+# Every git-range scan carries --text (a `-diff` attribute would hide a file)
+# and --diff-merges (a secret added in a merge commit is otherwise invisible),
+# and never lets an empty word into --log-opts (that silently scans nothing).
+for f in templates/ci-gate/gitlab/ci-gate.gitlab-ci.yml templates/ci-gate/gitlab/ci-gate.shell.gitlab-ci.yml templates/ci-gate/github/gate.yml templates/ci-gate/ci/pre-push.sh templates/ci-gate/ci/gate.sh; do
+  grep -q -- '--text --diff-merges=first-parent' "$f" || err "$f: a git-range scan without '--text --diff-merges=first-parent' is blind to -diff attributes and merge commits"
+done
+for f in templates/ci-gate/gitlab/ci-gate.gitlab-ci.yml templates/ci-gate/gitlab/ci-gate.shell.gitlab-ci.yml templates/ci-gate/github/gate.yml; do
+  grep -qF -- '--log-opts="--text --diff-merges=first-parent${RANGE:+ $RANGE}"' "$f" || err "$f: --log-opts must use \${RANGE:+ \$RANGE} (a stray empty word scans nothing)"
+  grep -q 'git rev-list "$RANGE"' "$f" || err "$f: validate the range with git rev-list — gitleaks exits 0 when the git command inside it fails"
+done
+# unicode-guard's diff must be immune to the knobs reachable from the change
+# under review or the developer's own config.
+for flag in -- '--text' '--no-ext-diff' '--no-textconv' 'diff.noprefix=false'; do
+  [ "$flag" = "--" ] && continue
+  grep -q -- "$flag" templates/ci-gate/ci/unicode-guard.sh || err "unicode-guard.sh: git diff must pass $flag"
+done
+grep -q 'default_install_hook_types' templates/ci-gate/.pre-commit-config.yaml || err ".pre-commit-config.yaml: without default_install_hook_types a plain 'pre-commit install' leaves the pre-push layer uninstalled"
+# No literal credential-shaped strings in tracked files: our own secret-scan
+# (and every consumer's) would flag the gate's own source.
+# (AKIAIOSFODNN7EXAMPLE is AWS's own published example — excluded by the default
+# gitleaks ruleset and named in our docs on purpose.)
+if git grep -nE '\b(A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16}\b' -- . ':!CHANGELOG.md' | grep -v 'AKIAIOSFODNN7EXAMPLE' >/dev/null; then
+  err "a credential-shaped literal in a tracked file (build it at run time instead):"
+  git grep -nE '\b(A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16}\b' -- . ':!CHANGELOG.md' | grep -v 'AKIAIOSFODNN7EXAMPLE' >&2
+fi
+# The payload version marker in ci/README.md tracks the plugin version, so a
+# consumer can tell which payload they vendored.
+PV=$(jq -r .version .claude-plugin/plugin.json)
+grep -q "ci-gate payload version: $PV" templates/ci-gate/ci/README.md || err "templates/ci-gate/ci/README.md: payload version marker is not $PV"
+# The marker form documented everywhere must be the one the guard accepts.
+MARKER_DOCS="README.md README.ru.md templates/ci-gate/ci/README.md skills/ci-gate/SKILL.md skills/task/SKILL.md"
+# shellcheck disable=SC2086
+if grep -nE 'destructive: approved([^ (]|$)' $MARKER_DOCS | grep -vE 'bare|no reason|carries|is not an|approved \(  ?\)' >/dev/null; then
+  err "shipped documentation shows a destructive marker without a reason:"
+  grep -nE 'destructive: approved([^ (]|$)' $MARKER_DOCS | grep -vE 'bare|no reason|carries|is not an|approved \(  ?\)' >&2
+fi
+for pth in '/ci/' '/.gitleaks.toml' '/.pre-commit-config.yaml' '/CODEOWNERS'; do
+  grep -qF "$pth" templates/ci-gate/CODEOWNERS || err "templates/ci-gate/CODEOWNERS does not own $pth"
+done
+
+# 10. unicode-guard matches bytes with awk only: GNU grep in the C locale silently
+#     fails to match bracket ranges of bytes >= 0x80 (rc 1 = a clean verdict it
+#     never established).
+if grep -nE 'grep.*(BIDI_RE|ZW_RE|TAG_RE|BOM_RE)' templates/ci-gate/ci/unicode-guard.sh >/dev/null; then
+  err "unicode-guard.sh uses grep on a byte pattern (fail-open on GNU grep in the C locale) — match with awk"
+fi
+grep -q 'LC_ALL=C awk' templates/ci-gate/ci/unicode-guard.sh || err "unicode-guard.sh must run awk under LC_ALL=C"
+
+# 11. README.md and README.ru.md move in lockstep (structure only; text is a translation).
 bash scripts/readme-parity.sh >/dev/null || err "README.md / README.ru.md structure differs (run scripts/readme-parity.sh)"
 
 if [ "$fail" = 0 ]; then echo "lint: OK"; fi

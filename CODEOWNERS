@@ -1,0 +1,10 @@
+# The gate payload and the checks that guard this repo's own rules are owned
+# by the maintainer: a change there needs their review (dogfooding the
+# `ci-gate` CODEOWNERS rule — see templates/ci-gate/CODEOWNERS).
+# Enforcement (required code-owner review on `main`) is a repo setting, not
+# this file.
+/templates/ci-gate/   @umar-s
+/scripts/             @umar-s
+/tests/               @umar-s
+/.github/             @umar-s
+/CODEOWNERS           @umar-s

@@ -68,18 +68,29 @@ fixed; concrete tracker/VCS/build commands are resolved from the project's
 Drops a portable, non-gameable gate into any repo — the floor under the
 blast-radius categories tests and LLM review miss:
 
-- **secret-scan** — gitleaks, in pre-commit and CI
+- **secret-scan** — gitleaks, in pre-commit, pre-push and CI; pre-push scans
+  the commits about to leave the machine, per ref (catches `--no-verify`,
+  amends, history from elsewhere), and blocks when git cannot tell what is
+  being pushed
 - **migration-guard** — tool-agnostic, path-based: forward-only immutability +
-  destructive DDL requires an explicit `-- destructive: approved` marker
+  destructive DDL requires an explicit `-- destructive: approved (<reason>)`
+  marker — the reason is mandatory
+- **unicode-guard** — no bidi overrides, zero-width or tag characters in
+  added lines (Trojan Source); ordinary non-ASCII prose and emoji never trip it
 - **diff-coverage** — changed-line coverage threshold, opt-in: reads the report
   the project's own test run produced (lcov / Cobertura / Clover), judges only
   the lines this change touched
-- **protected-branch** — no force-push + required status checks (platform rule,
-  set once via `glab`/`gh`)
+- **protected-branch** — no force-push + required status checks + required
+  code-owner review on the gate files (`CODEOWNERS`): the MR under check cannot
+  edit the judge (platform rule, set once via `glab`/`gh`)
 
 Invoke with `/ci-gate` in a repo. It copies `ci/`, the gitleaks + pre-commit
-config, the GitLab **or** GitHub CI file, and prints the protected-branch
-commands. Template payload lives in `templates/ci-gate/`.
+config, `CODEOWNERS`, the GitLab **or** GitHub CI file, and prints the
+protected-branch commands. `ci/gate.sh --selftest` then proves the gate can
+fail — known-bad fixtures judged by this repo's own scripts, scanner and
+allowlist — before anyone trusts its green; `ci/scan-text.sh <file>` scans a
+comment or MR description before it is posted. Template payload lives in
+`templates/ci-gate/`.
 
 Executor-aware for GitLab: a **docker/k8s** variant (uses `image:`) and a
 **shell** variant that fetches a pinned, checksum-verified gitleaks in-job — no

@@ -1,11 +1,21 @@
 # pre-commit hooks — the LOCAL half of the gate (catches secrets before push).
-# Install once per clone:  pip install pre-commit && pre-commit install
+# Install once per clone:
+#   pip install pre-commit && pre-commit install
+# `default_install_hook_types` below makes that one command install BOTH the
+# pre-commit and the pre-push hook — a layer that needs a second, easily
+# forgotten command is a layer nobody has.
 #
 # The gitleaks rev is pinned to a COMMIT, not a tag (a tag can be re-pointed
 # upstream, a commit cannot). Bump it together with PIN_VERSION + both SHA256s
 # in ci/gitleaks-fetch.sh and the image digest in the CI files — see
 # ci/README.md → "Pinned gitleaks". Never `pre-commit autoupdate` this file:
 # it would move the local hook off the version CI runs.
+#
+# Already have a .pre-commit-config.yaml? Merge these entries into your
+# `repos:` — do not replace the file.
+minimum_pre_commit_version: '2.18.0'      # default_install_hook_types
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
 repos:
   - repo: https://github.com/gitleaks/gitleaks
     rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e  # v8.30.1
@@ -20,3 +30,20 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: unicode-guard
+        name: unicode-guard (invisible / bidi code points in added lines)
+        entry: bash ci/unicode-guard.sh --staged
+        language: system
+        pass_filenames: false
+        always_run: true
+      # The pre-push layer: scans the commits about to leave this machine, per
+      # ref — catches `commit --no-verify`, amends and history from elsewhere.
+      # pre-commit hands over one ref (PRE_COMMIT_FROM_REF/TO_REF); see
+      # ci/pre-push.sh for the native-hook install that covers every ref.
+      - id: pre-push-secret-scan
+        name: pre-push secret-scan (commits about to leave this machine)
+        entry: bash ci/pre-push.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

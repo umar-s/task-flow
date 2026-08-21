@@ -1,6 +1,6 @@
 # ci-gate — deterministic merge gate for GitHub Actions.
 # Install: copy this file to .github/workflows/gate.yml, vendor ci/ + .gitleaks.toml,
-# then make `secret-scan` and `migration-guard` required status checks (see ../README.md).
+# then make `secret-scan`, `migration-guard` and `unicode-guard` required status checks (see ../README.md).
 #
 # Pins: the gitleaks image is pinned by DIGEST (same version as PIN_VERSION in
 # ci/gitleaks-fetch.sh — bump together, see ci/README.md), and actions are
@@ -36,17 +36,25 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
         run: |
-          RANGE=()
+          RANGE=""
           if [ "$EVENT_NAME" = "pull_request" ]; then
             git fetch --no-tags origin "$BASE_REF"
-            RANGE=("--log-opts=origin/${BASE_REF}..HEAD")                 # PR: only the PR's commits
+            RANGE="origin/${BASE_REF}..HEAD"                             # PR: only the PR's commits
           elif [ "$EVENT_NAME" = "push" ]; then
             if ! printf '%s' "$BEFORE_SHA" | grep -qE '^0+$'; then
-              RANGE=("--log-opts=${BEFORE_SHA}..${HEAD_SHA}")             # push: only new commits
+              RANGE="${BEFORE_SHA}..${HEAD_SHA}"                         # push: only new commits
             fi                                                           # first push / zero-sha → full scan
           fi                                                             # schedule (RANGE empty) → full-history audit
+          # gitleaks exits 0 when the git command inside it fails, an empty word
+          # in --log-opts silently scans nothing, a `-diff` attribute hides a
+          # file without --text, and a merge commit is invisible without
+          # --diff-merges. All four are handled here, not hoped away.
+          if [ -n "$RANGE" ] && ! git rev-list "$RANGE" >/dev/null; then
+            echo "secret-scan: git cannot resolve '$RANGE' — failing closed" >&2
+            exit 2
+          fi
           docker run --rm -v "$PWD:/repo:ro" -w /repo "$GITLEAKS_IMAGE" \
-            detect --source /repo --redact --no-banner -v "${RANGE[@]}"
+            detect --source /repo --redact --no-banner -v --log-opts="--text --diff-merges=first-parent${RANGE:+ $RANGE}"
 
   migration-guard:
     if: github.event_name == 'pull_request'
@@ -62,6 +70,21 @@ jobs:
         run: |
           git fetch --no-tags origin "$BASE_REF"
           bash ci/migration-guard.sh
+
+  unicode-guard:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: unicode-guard
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          GATE_BASE_REF: origin/${{ github.base_ref }}
+        run: |
+          git fetch --no-tags origin "$BASE_REF"
+          bash ci/unicode-guard.sh
 
   # Changed-line coverage. The script is tool-agnostic (lcov / Cobertura / Clover);
   # producing the report is your test job's business. Uncomment and point it at

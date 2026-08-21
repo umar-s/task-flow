@@ -247,11 +247,19 @@ check). Clean up any test fixtures you seeded.
   from one final fresh run made after the last edit, the single command that
   reproduces them, and every skipped check named with its reason — e.g.
   "тесты 47/47 · diff-coverage 31/31 (100%) · мутанты 5/5 killed · CI green
-  (secret-scan, migration-guard, diff-coverage) · live на dev: <url> · repro:
+  (secret-scan, migration-guard, unicode-guard, diff-coverage) · live на dev: <url> · repro:
   `make check` · property-тесты: пропущены, в изменении нет инвариантов".
   Never "всё зелёно" — a check nobody ran and nobody mentioned reads exactly
   like a check that passed. Shape and rules in
   `references/implementation-integrity.md` §6.
+  **Scan outgoing text at the sink:** when the repo carries the gate, write
+  the comment / MR description to a file, run `bash ci/scan-text.sh <file>`,
+  and post that same file — a pasted log or config snippet is how a secret
+  reaches the tracker, where no hook runs. rc 1 = do not post it (rotate the
+  credential first); rc 2 = the scanner could not run, which is not a clean
+  verdict — fix it, or say in the evidence block that the text went out
+  unscanned. No `ci/scan-text.sh` in the repo means the gate predates it: note
+  that instead of skipping silently.
 - Set state **Done** and log **Spent time**.
 - If the work spans surfaces (e.g. backend + frontend), create/link the paired
   ticket and note it.
@@ -264,6 +272,11 @@ check). Clean up any test fixtures you seeded.
 - CI pipeline **green before merge**; if a prior merge was blind, that is the bug.
 - Never commit `Co-Authored-By` trailers unless the project asks for them.
 - Never hand-edit tracker/migration bookkeeping tables; use the proper commands.
+- **Never `--no-verify` and never `GATE_PREPUSH_SKIP`.** A hook that blocks a
+  commit or a push is a finding to fix, not friction to route around: rc 1 is a
+  real secret (rotate it, then rewrite the commit), rc 2 is a broken clone or
+  tool (fix that). Bypassing a gate is the user's call, with their reason on
+  the record — never the agent's.
 - Watch monorepo/symlink traps: stage the **real** file path, not a symlinked one.
 - Report honestly: if a step was skipped or a test failed, say so with the output.
 - Confirm outward-facing / irreversible actions (deploys, merges, external

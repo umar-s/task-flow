@@ -1,28 +1,76 @@
 # ci-gate (vendored)
 
+<!-- ci-gate payload version: 1.8.0 — `/ci-gate` re-run upgrades it; see "Upgrading" -->
+
 Deterministic merge gate for this repository — the non-gameable floor under
 secrets, destructive migrations, and force-push. It complements (does not
 replace) unit tests and LLM review.
 
 | Layer | What | Where |
 |---|---|---|
-| **secret-scan** | gitleaks — secret in the diff/history | pre-commit + CI |
-| **migration-guard** | forward-only + destructive DDL needs a marker | pre-commit + CI |
+| **secret-scan** | gitleaks — secret in the diff/history | pre-commit + pre-push + CI |
+| **migration-guard** | forward-only + destructive DDL needs a marker with a reason | pre-commit + CI |
+| **unicode-guard** | no invisible / direction-overriding code points in added lines (Trojan Source) | pre-commit + CI |
 | **diff-coverage** | changed lines actually executed by a test, above a threshold | CI (opt-in) |
-| **protected-branch** | no force-push, required status checks | platform rule (set once) |
+| **scan-text** | one file scanned before its text leaves the repo (MR description, close comment) | `ci/scan-text.sh` on demand |
+| **protected-branch** | no force-push, required status checks, **required code-owner review on the gate files** | platform rule (set once) + `CODEOWNERS` |
+
+## What is in `ci/`
+| Script | Runs | Verdict |
+|---|---|---|
+| `gate.sh` | locally (`--staged`, `--selftest`) | runs every layer below; `--selftest` proves they can fail |
+| `migration-guard.sh` | pre-commit + CI | forward-only + destructive DDL marker |
+| `unicode-guard.sh` | pre-commit + CI | invisible / bidi code points in added lines |
+| `pre-push.sh` | pre-push hook | secret-scan of the commits a push sends |
+| `scan-text.sh` | on demand | secret-scan of one file before its text is posted |
+| `diff-coverage.sh` | CI (opt-in) | changed-line coverage against a threshold |
+| `gitleaks-fetch.sh` | called by the below | downloads + verifies the pinned scanner |
+| `gitleaks-bin.sh` | called by the layers | the one place that decides which gitleaks runs |
+| `base-ref.sh` | called by the layers | the one place that decides what "this change" is |
+
+Copy the directory as a whole — the scripts call each other.
 
 ## Local layer
 ```bash
-pip install pre-commit && pre-commit install   # catches secrets before push
-bash ci/gate.sh --staged                        # run the full gate on staged changes
+pip install pre-commit && pre-commit install   # installs BOTH hook types (pre-commit + pre-push)
+bash ci/gate.sh --staged      # run the full gate on staged changes
+bash ci/gate.sh --selftest    # prove it can fail (see below)
 ```
 `gate.sh` uses a `gitleaks` on PATH, else fetches a pinned, checksum-verified
 binary via `ci/gitleaks-fetch.sh` (no docker needed).
 
-Run it once against a deliberately bad change — an unmarked `DROP TABLE` in a
-new migration under a configured migrations dir — and watch it go red before
-you trust a green. A gate nobody has seen fail is not known to be wired up:
-a mis-set `MIGRATION_DIRS` looks exactly like a clean diff.
+**Prove the gate can fail before trusting its green.** A gate nobody has seen
+fail is not known to be wired up: a mis-set `MIGRATION_DIRS`, an allowlist
+that swallows everything and a scanner that never started all read exactly
+like a clean diff. `ci/gate.sh --selftest` stages known-bad and known-good
+fixtures in a throwaway repo and judges them with *this* repo's scripts,
+scanner and `.gitleaks.toml`: an unmarked `DROP TABLE` (must fail), a marker
+without a reason (must fail), a marked drop (must pass), an edit to a
+committed migration (must fail), a broken `awk` (must fail closed), a
+credential-shaped line (gitleaks must trip), a bidi override (unicode-guard
+must trip) and ZWJ-emoji prose (must pass). The fixtures land under the first
+of your `MIGRATION_DIRS`, and it warns when none of those dirs exists in the
+repo. It proves wiring, not coverage — one known-bad input per rule reaches
+the failure path; it says nothing about violations it does not list.
+
+**Pre-push layer.** `ci/pre-push.sh` scans the commits about to leave the
+machine, per ref, before the remote has them — the cases the commit hook never
+saw: `git commit --no-verify`, an amend, a rebase, history made elsewhere. Range
+per ref: `remote..local` when the remote sha is known here; otherwise
+`merge-base(default branch)..local`; otherwise the whole history of the ref —
+more, never less. A git failure while computing the range **blocks** the push.
+Bypass only with `GATE_PREPUSH_SKIP="<reason>"`, which appends
+`time user refs reason` to `.git/gate-bypass.log` (local, readable in a
+post-mortem). Installed through pre-commit it scans the first ref of a push
+(pre-commit's contract); `cp ci/pre-push.sh .git/hooks/pre-push` covers every
+ref. `git push --no-verify` skips it — the CI secret-scan is the backstop.
+
+**Scan-at-sink.** `ci/scan-text.sh <file>` runs the same scanner, same rules,
+on one file — a merge-request description, a tracker close comment, a release
+note, a pasted log — *before* the text is posted. Write the text to a file,
+scan it, post that same file: the bytes scanned are the bytes that leave.
+Path allowlists in `.gitleaks.toml` apply to the file's name, so call it
+`comment.md`, never `*.example`.
 
 ## CI variant (GitLab)
 Two include files ship — pick by your runner **executor**:
@@ -70,8 +118,12 @@ pre-commit `rev`. Never `pre-commit autoupdate` this repo.
 On any changed file under a migrations dir:
 - an **already-committed** migration modified / deleted / renamed → **FAIL** (forward-only);
 - a **new** migration with a destructive statement in its **forward part** →
-  **FAIL** unless the same file carries a marker comment
-  `-- destructive: approved`. Two pattern families: SQL, case-insensitive —
+  **FAIL** unless the same file carries a marker comment **with a reason**:
+  `-- destructive: approved (<ticket or reason>)`. A bare
+  `-- destructive: approved`, `approved ()` or `approved (  )` is not an
+  approval — the parenthesised reason is what a reviewer and a post-mortem
+  hold someone to; who may approve is CODEOWNERS' job (below), not the
+  marker's. Two pattern families: SQL, case-insensitive —
   `DROP <table | column | schema | database | index | constraint | view | type |
   sequence | trigger | function | procedure | materialized view>`, `TRUNCATE`,
   `DELETE FROM`, `ALTER TABLE … DROP <anything>` (the `COLUMN` keyword is
@@ -106,14 +158,14 @@ Env: `MIGRATION_DIRS` (default `migrations db/migrate db/migration prisma/migrat
 `GATE_BASE_REF` (override the diff base), `STAGED=1` (check the index).
 Exit codes: `0` ok · `1` policy violation · `2` config/infra (fails closed).
 
-Deliberate destructive change is fine — mark it:
+Deliberate destructive change is fine — mark it, with the reason:
 ```sql
--- destructive: approved  (TICKET-123, data archived)
+-- destructive: approved (TICKET-123: data archived to s3://…, restore tested)
 DROP TABLE legacy_sessions;
 ```
 
-**Known limits / bypasses** (so nobody mistakes the guard's perimeter for
-coverage): the match is per line, so a statement split across lines
+**Known limits / bypasses** — migration-guard (so nobody mistakes the guard's
+perimeter for coverage): the match is per line, so a statement split across lines
 (`DROP\nTABLE`), SQL assembled from several strings, `DELETE` without `FROM`
 (MSSQL), a type change that truncates data (`ALTER COLUMN … TYPE`),
 `RunSQL`/`RunPython` with non-literal SQL, constraint-dropping DSL calls
@@ -124,10 +176,64 @@ statement deliberately indented into a `down` block, or hidden behind an
 `up: realUp` alias, passes. That residue is the LLM security review's job (it
 reads the migration, not a regex); widening this regex into a parser is not.
 Nor does the guard re-read migrations that are already committed — it judges
-what an MR adds. And the guard lives in the repository it judges: without
-required review on `ci/`, `.gitleaks.toml` and the CI files (CODEOWNERS), the
-party under check can edit it in the same MR — that protection is the next
-layer, not this script.
+what an MR adds. And the guard lives in the repository it judges: the
+`CODEOWNERS` file shipped next to it puts `ci/`, `.gitleaks.toml`,
+`.pre-commit-config.yaml` and the CI files under the gate owner's required
+review, so the party under check cannot narrow a regex in the same MR — see
+Protected-branch below for making that review *required*.
+
+## unicode-guard policy
+Added lines of the diff must not carry code points a reviewer cannot see
+but a compiler or an LLM reads: bidi overrides/isolates (`U+202A–202E`,
+`U+2066–2069`), zero-width space / word joiner (`U+200B`, `U+2060`),
+`U+FEFF` anywhere but as a file's leading BOM, and the Unicode tag block
+(`U+E0000–E007F`, ASCII smuggling). Deliberately **not** flagged: ZWJ/ZWNJ
+(emoji sequences, Arabic and Persian typography), LRM/RLM, soft hyphen —
+ordinary non-ASCII prose must never trip it, or it gets switched off. Known
+false positive: subdivision flag emoji (🏴 + a tag sequence). Files git treats
+as binary are not diffed as text and are reported as skipped. Matching is
+done by `awk` under `LC_ALL=C` on purpose: GNU grep in the C locale silently
+fails to match byte ranges ≥ 0x80, which would read as a clean verdict.
+
+Env: `UNICODE_GUARD_EXCLUDE` (ERE over paths — vendored fonts, i18n fixtures;
+empty = everything), `GATE_BASE_REF`, `STAGED=1`.
+Exit codes: `0` ok · `1` forbidden code point · `2` config/infra (fails closed).
+
+## When secret-scan fires
+The order matters; under stress people do it backwards.
+1. **Revoke or rotate the credential at the provider — first**, before
+   touching git. Forks, clones, CI logs and caches already hold the history;
+   a scrubbed history with a live key is a live key.
+2. **Size the exposure window:** when it was committed (`git log -S'<prefix>'
+   --all --format='%h %ad %an'`), whether the repo was public, mirrored or
+   forked in that window, whether the value reached CI logs or artifacts.
+3. **Not yet on a shared branch** (pre-push or MR pipeline caught it): remove
+   it from the branch — `commit --amend` / interactive rebase — and force-push
+   *your* branch. The default branch is untouched.
+4. **Already on a shared branch:** scrub history (`git filter-repo
+   --replace-text`, or BFG). That is a force-push, which this gate's
+   protected-branch rule forbids — lift the protection **deliberately, for
+   the duration, on the record** (who, when, why), re-apply it, and have every
+   clone re-fetch. Do not skip step 1 because of this step.
+5. **Audit:** provider access logs for the window; if gitleaks missed a
+   variant, add a *rule* to `.gitleaks.toml`, never an allowlist entry.
+6. Never allowlist "because it is rotated now" — the next one will not be.
+
+## Upgrading the payload
+The marker at the top of this file says which payload version is vendored here.
+Re-running the `ci-gate` skill upgrades it: the `ci/` scripts and this README are
+replaced, while `.gitleaks.toml`, `.pre-commit-config.yaml`, `CODEOWNERS` and the
+CI files are *merged* — your `MIGRATION_DIRS`, coverage wiring and extra rules
+survive. After an upgrade, two things are not automatic:
+- **required status checks** — a new gate job (1.8.0 added `unicode-guard`) is
+  only enforced once it is in the branch-protection contexts; until then it is
+  a check that can go red without blocking anything;
+- **the reason-bearing marker** (1.8.0) — before merging the upgrade, find the
+  markers that will start failing:
+  `git grep -nE 'destructive:[[:space:]]*approved([^(]|$)' -- <your migrations dirs>`.
+  A migration that is already committed cannot be edited (forward-only), so fix
+  those on the integration branch with the gate owner, or add the reason in the
+  same MR that brings the upgrade.
 
 ## diff-coverage policy
 
@@ -159,12 +265,64 @@ glab api -X DELETE "projects/$ID/protected_branches/$BR" 2>/dev/null || true
 glab api -X POST  "projects/$ID/protected_branches?name=$BR&allow_force_push=false"
 ```
 
-**GitHub** (`contexts` must match the workflow job names):
+**GitHub** (`contexts` must match the workflow job names; the review block
+makes the `CODEOWNERS` approval on gate files *required* — count `0` means
+only MRs touching owned files need a review, the rest merge on green):
 ```bash
 gh api -X PUT repos/OWNER/REPO/branches/main/protection --input - <<'JSON'
-{ "required_status_checks": { "strict": true, "contexts": ["secret-scan","migration-guard"] },
-  "enforce_admins": true, "required_pull_request_reviews": null, "restrictions": null }
+{ "required_status_checks": { "strict": true, "contexts": ["secret-scan","migration-guard","unicode-guard"] },
+  "enforce_admins": true,
+  "required_pull_request_reviews": { "require_code_owner_reviews": true, "required_approving_review_count": 0, "dismiss_stale_reviews": true },
+  "restrictions": null }
 JSON
 ```
+
+**Gate files under required review (`CODEOWNERS`).** The scripts, the
+scanner rules, the hook config and the CI job definitions decide the verdict;
+the MR under check must not be able to edit them without the gate owner's
+approval. The shipped `CODEOWNERS` lists them — replace `@OWNER`, then make the
+review required: GitHub — the `required_pull_request_reviews` block above;
+GitLab — `glab api -X POST "projects/$ID/protected_branches?name=$BR&code_owner_approval_required=true"`
+(**Premium**; on Free tier the file assigns reviewers and enforces nothing —
+write that down rather than assume it). Solo repo: an author cannot approve
+their own MR, so either a second account owns the gate or you keep the file
+for visibility and skip enforcement, knowingly. Control it like the rest:
+open an MR that narrows `SQL_RE` and confirm it asks for the owner's review.
+
+## Known limits — the whole gate
+Every layer here is a floor with a documented residue. The residue is the LLM
+review's job (it reads the change; a scanner reads bytes), never a reason to
+grow a regex into a parser:
+- **`# gitleaks:allow`** on a line suppresses the secret-scan in every path —
+  pre-commit, pre-push and CI. It is the cheapest bypass there is, and it is
+  deliberate: a one-off example in docs should not need a global allowlist.
+  A **new** `gitleaks:allow` (or `unicode-guard:allow`, or a widened
+  `[[allowlists]]`) in a change is a review finding, not a detail.
+- **`.gitattributes`** decides what git shows as text. The CI scans and
+  `pre-push.sh` pass `--text`, so a `-diff` attribute cannot hide a file from
+  them; the local `pre-commit` hook and `gate.sh --staged` run
+  `gitleaks protect --staged`, which has no such override — a file marked
+  `-diff` is invisible there until CI sees it. Own `.gitattributes` in
+  `CODEOWNERS` (the shipped file does).
+- **Merge commits**: `git log -p` shows no patch for a merge, so a secret
+  introduced *in* a conflict resolution is invisible without
+  `--diff-merges=first-parent`. Every range scan here passes it; a scan you add
+  yourself must too.
+- **`--log-opts` is space-split by gitleaks**: an empty word in it makes the
+  scan cover nothing and still exit 0. Build it as the templates do.
+- **A broken git range exits 0** inside gitleaks ("0 commits scanned, no leaks
+  found"), which is why the templates validate the range with `git rev-list`
+  before scanning.
+- **Homoglyphs / mixed-script identifiers** (`раssword` with a Cyrillic `а`)
+  are not detected by unicode-guard — the bytes are ordinary letters. That is
+  the security review's job.
+- **`pre-push.sh` is advisory**: `git push --no-verify`, a `core.hooksPath`
+  that points elsewhere, or a client without hook support all skip it, and
+  `.git/gate-bypass.log` only records the honest bypasses. The CI secret-scan
+  is the enforced floor.
+- **The destructive marker is a declaration, not an approval.** Anyone who can
+  write the migration can write `-- destructive: approved (T-1)`. What makes it
+  an approval is a reviewer — put your migrations dirs in `CODEOWNERS` if you
+  want a second signature.
 
 Scaffolded by the `task-flow` Claude Code plugin (`ci-gate` skill).

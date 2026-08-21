@@ -25,20 +25,35 @@ secret-scan:
     - if: '$CI_MERGE_REQUEST_IID'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
   variables:
+    GIT_DEPTH: 0
     GITLEAKS_RUN_DIR: "$CI_PROJECT_DIR/.gitleaks-run"   # per-call extraction dir inside the job workspace
+    GATE_PINNED_ONLY: "1"                               # never a stray gitleaks on the runner's PATH
   script:
-    - GL="$(bash ci/gitleaks-fetch.sh)"
+    - GL="$(bash ci/gitleaks-bin.sh)"
     - |
+      set -e
+      # Range handling, three landmines this shape avoids:
+      #  * gitleaks exits 0 when the git command inside it fails ("0 commits
+      #    scanned, no leaks found") — so the range is validated with
+      #    `git rev-list` first;
+      #  * an empty word inside --log-opts (a stray space) silently scans
+      #    nothing — hence ${RANGE:+ $RANGE};
+      #  * without --text a `-diff` attribute hides a file from the scan, and
+      #    without --diff-merges a secret added in a merge commit is invisible.
       if [ -n "${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}" ]; then
-        RANGE="--log-opts=${CI_MERGE_REQUEST_DIFF_BASE_SHA}..HEAD"      # MR: only the MR's commits
+        RANGE="${CI_MERGE_REQUEST_DIFF_BASE_SHA}..HEAD"                 # MR: only the MR's commits
       elif [ "${CI_PIPELINE_SOURCE:-}" = "schedule" ]; then
         RANGE=""                                                        # scheduled: full-history audit
       elif [ -n "${CI_COMMIT_BEFORE_SHA:-}" ] && ! printf '%s' "$CI_COMMIT_BEFORE_SHA" | grep -qE '^0+$'; then
-        RANGE="--log-opts=${CI_COMMIT_BEFORE_SHA}..${CI_COMMIT_SHA}"    # default branch: only new commits
+        RANGE="${CI_COMMIT_BEFORE_SHA}..${CI_COMMIT_SHA}"               # default branch: only new commits
       else
         RANGE=""                                                        # first push / zero-sha: full scan
       fi
-      "$GL" detect --redact --no-banner -v $RANGE
+      if [ -n "$RANGE" ] && ! git rev-list "$RANGE" >/dev/null; then
+        echo "secret-scan: git cannot resolve '$RANGE' (shallow clone? force-pushed base?) — failing closed" >&2
+        exit 2
+      fi
+      "$GL" detect --redact --no-banner -v --log-opts="--text --diff-merges=first-parent${RANGE:+ $RANGE}"
   after_script:
     # ~22 MB per run otherwise left on the host. Inside the workspace on purpose:
     # a noexec /tmp cannot run the binary, and if after_script is skipped (job
@@ -52,6 +67,13 @@ migration-guard:
     - if: '$CI_MERGE_REQUEST_IID'
   script:
     - bash ci/migration-guard.sh          # runs directly on host (git/bash/grep)
+
+unicode-guard:
+  extends: .gate_base_shell
+  rules:
+    - if: '$CI_MERGE_REQUEST_IID'
+  script:
+    - bash ci/unicode-guard.sh            # added lines of the MR (git/bash/awk)
 
 # Changed-line coverage — same layer as the docker variant, running on the host.
 # Your test job produces the report; this one only judges it. Skips itself while

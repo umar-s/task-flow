@@ -29,16 +29,29 @@ secret-scan:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
   script:
     - |
+      set -e
+      # Range handling, three landmines this shape avoids:
+      #  * gitleaks exits 0 when the git command inside it fails ("0 commits
+      #    scanned, no leaks found") — so the range is validated with
+      #    `git rev-list` first;
+      #  * an empty word inside --log-opts (a stray space) silently scans
+      #    nothing — hence ${RANGE:+ $RANGE};
+      #  * without --text a `-diff` attribute hides a file from the scan, and
+      #    without --diff-merges a secret added in a merge commit is invisible.
       if [ -n "${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}" ]; then
-        RANGE="--log-opts=${CI_MERGE_REQUEST_DIFF_BASE_SHA}..HEAD"      # MR: only the MR's commits
+        RANGE="${CI_MERGE_REQUEST_DIFF_BASE_SHA}..HEAD"                 # MR: only the MR's commits
       elif [ "${CI_PIPELINE_SOURCE:-}" = "schedule" ]; then
         RANGE=""                                                        # scheduled: full-history audit
       elif [ -n "${CI_COMMIT_BEFORE_SHA:-}" ] && ! printf '%s' "$CI_COMMIT_BEFORE_SHA" | grep -qE '^0+$'; then
-        RANGE="--log-opts=${CI_COMMIT_BEFORE_SHA}..${CI_COMMIT_SHA}"    # default branch: only new commits
+        RANGE="${CI_COMMIT_BEFORE_SHA}..${CI_COMMIT_SHA}"               # default branch: only new commits
       else
         RANGE=""                                                        # first push / zero-sha: full scan
       fi
-      gitleaks detect --redact --no-banner -v $RANGE
+      if [ -n "$RANGE" ] && ! git rev-list "$RANGE" >/dev/null; then
+        echo "secret-scan: git cannot resolve '$RANGE' (shallow clone? force-pushed base?) — failing closed" >&2
+        exit 2
+      fi
+      gitleaks detect --redact --no-banner -v --log-opts="--text --diff-merges=first-parent${RANGE:+ $RANGE}"
 
 migration-guard:
   extends: .gate_base
@@ -49,6 +62,18 @@ migration-guard:
     - apk add --no-cache git bash grep
   script:
     - bash ci/migration-guard.sh
+
+# Invisible / direction-overriding code points in added lines (Trojan Source).
+# awk-based; alpine's busybox awk is enough.
+unicode-guard:
+  extends: .gate_base
+  image: alpine:3.20
+  rules:
+    - if: '$CI_MERGE_REQUEST_IID'
+  before_script:
+    - apk add --no-cache git bash
+  script:
+    - bash ci/unicode-guard.sh
 
 # Changed-line coverage. The script is tool-agnostic (lcov / Cobertura / Clover),
 # but only your test job knows how to PRODUCE the report — so wire that job to

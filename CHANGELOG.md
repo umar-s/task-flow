@@ -9,6 +9,122 @@ below is tagged `vX.Y.Z` in git. Installs track the default branch (the
 marketplace entry pins no ref), so a release tag marks history rather than a
 download.
 
+## [1.8.0] — 2026-08-22
+
+`ci-gate` hardening — the second item of the donor-audit plan
+(`docs/audits/2026-08-21-dmitriy-toolkit-v3-audit.md` §3.3 G5–G11, G13; design in
+`docs/superpowers/specs/2026-08-21-ci-gate-hardening-design.md`, premortem panel
+over that design in the same directory). Three holes closed: the gate could be
+edited by the MR it judges; text leaving the repo and commits leaving the
+machine were never scanned; invisible code points in a diff had no layer at all.
+Then the premortem found four ways the scans themselves reported "clean"
+without having looked — each is fixed here, with a fixture that fails on 1.7.1.
+
+### Added
+- **`CODEOWNERS` in the payload** — `ci/`, `.gitleaks.toml`,
+  `.pre-commit-config.yaml`, `.gitattributes`, the whole `.github/workflows/`
+  directory and every location a `CODEOWNERS` file is read from, under the gate
+  owner's review. (A required status check is matched by *name*, so a new
+  workflow declaring a job called `secret-scan` could otherwise report a green
+  check under the required name; and a higher-priority `CODEOWNERS` added in a
+  later MR could own nothing.) The skill asks who owns the gate and writes the
+  file where the platform reads it first; step 5 prints the *required*
+  code-owner review rule with its GitLab-Premium and solo-repo caveats. This
+  repo carries a `CODEOWNERS` too.
+- **`ci/gate.sh --selftest`** — known-bad and known-good fixtures judged in a
+  throwaway repo by the repo's own scripts, scanner and `.gitleaks.toml`:
+  unmarked drop, marker without a reason, marked drop, edited committed
+  migration, broken `awk`, credential-shaped line, bidi override, ZWJ-emoji
+  prose, plus a warning when none of `MIGRATION_DIRS` exists and when no
+  pre-push hook is installed. The repo's git config cannot break it
+  (`GIT_CONFIG_GLOBAL=/dev/null`, empty template, no gpg signing, no
+  `core.hooksPath`). The skill's negative control (step 6) is now this command.
+- **`ci/unicode-guard.sh`** — added lines must not carry bidi
+  overrides/isolates, zero-width space / word joiner, a mid-line `U+FEFF` or
+  Unicode tag characters (Trojan Source). ZWJ/ZWNJ, LRM/RLM and soft hyphens
+  are deliberately not flagged; one line can carry `unicode-guard:allow`.
+  Matches bytes with `awk` under `LC_ALL=C` and **self-probes that awk first**
+  (GNU grep in the C locale silently fails on byte ranges ≥ 0x80 — a clean
+  verdict it never established). Its `git diff` pins every knob that could
+  empty its input: `--text` (a `-diff` attribute in `.gitattributes`),
+  `--no-ext-diff`, `--no-textconv`, `--no-color`, fixed prefixes. Wired into
+  `gate.sh`, pre-commit and all three CI templates as a job, and run over this
+  repository's own changes in `check.yml`.
+- **`ci/pre-push.sh`** — per-ref secret-scan of the commits a push actually
+  sends: `remote..local` when the remote sha is known here, otherwise
+  `local --not --remotes=<remote>` (which also covers commits sitting unpushed
+  on another local branch — a merge-base against the default branch missed
+  those). The range is validated with `git rev-list` before the scan, because
+  gitleaks exits 0 when the git command inside it fails. Runs through
+  pre-commit or as the native hook. Bypass only with
+  `GATE_PREPUSH_SKIP="<sha>: <reason>"` naming the sha being pushed — a value
+  left in a shell profile does not bypass the next push — and it is logged to
+  `.git/gate-bypass.log`.
+- **`ci/scan-text.sh <file>`** — one file scanned with the gate's scanner and
+  rules before its text is posted; `task` phase 8 writes the close comment / MR
+  description to a file, scans it and posts that same file. A gitleaks exit 1
+  with no report is a configuration error, not a finding — it fails closed.
+- **`ci/gitleaks-bin.sh` and `ci/base-ref.sh`** — one place each for "which
+  scanner runs" and "what counts as this change"; `gate.sh`, `scan-text.sh`,
+  `pre-push.sh`, `migration-guard.sh`, `unicode-guard.sh` and
+  `diff-coverage.sh` now call them instead of carrying copies.
+- **macOS support in `gitleaks-fetch.sh`** — committed SHA256s for
+  `darwin_{x64,arm64}` next to the Linux pair, and an explicit fail-closed
+  message on any other platform (it used to download a Linux tarball and hand
+  back a binary that cannot run — which, with the new pre-push layer, would
+  block every push from a mac).
+- **`ci/README.md`** — "When secret-scan fires" (revoke first, size the window,
+  rewrite the branch or scrub history with the protection lifted on the record,
+  audit, never allowlist), an inventory of `ci/`, an "Upgrading the payload"
+  section, and "Known limits — the whole gate": `gitleaks:allow` as the cheapest
+  bypass, `.gitattributes` blinding the local `protect --staged` path,
+  homoglyphs, `pre-push` being advisory, and the `--log-opts` landmines.
+- **Repository tests**: `tests/unicode-guard.sh` (fixtures × gawk/mawk/busybox),
+  `tests/pre-push.sh` (amend, unknown remote sha, unpushed work on another
+  branch, evil merge, `-diff` attribute, unresolvable range, broken git, broken
+  scanner, stale bypass, native hook via `git push`), `tests/scan-text.sh`,
+  `tests/gate-selftest.sh` (the selftest goes red when a regex is emptied, the
+  marker check relaxed, the allowlist widened or unicode-guard neutered).
+  `tests/run.sh` now globs `tests/*.sh`, and `scripts/lint.sh` checks the
+  payload is one set: one scanner resolution, one base-ref resolution, `--text`
+  and `--diff-merges=first-parent` on every range scan, the `${RANGE:+ …}` form,
+  no credential-shaped literal in any tracked file, the payload version marker,
+  and the documented marker form matching the one the guard accepts.
+
+### Changed
+- **`migration-guard`: the marker must carry a reason.** `-- destructive:
+  approved (<ticket or reason>)` — a bare `-- destructive: approved`,
+  `approved ()` or `approved (  )` now **fails** with a message showing the
+  form. MRs in flight with a bare marker will start failing; `ci/README.md` →
+  "Upgrading the payload" has the `git grep` that finds them.
+- **`migration-guard`: an empty `MIGRATION_DIRS` is `exit 2`**, not "skipping".
+  A blank CI variable used to switch the whole layer off from the settings UI
+  and leave a green job that inspected nothing.
+- **Every git-range secret-scan** (three CI templates, `pre-push.sh`,
+  `gate.sh`, this repo's own `check.yml`) now passes
+  `--text --diff-merges=first-parent` and validates the range with
+  `git rev-list` first. Without them a `-diff` line in `.gitattributes` hid a
+  file from the scan, a secret added in a merge commit was invisible, and a
+  range git could not resolve was reported as "no leaks found".
+- **`unicode-guard` is active, not opt-in**, and belongs in the required status
+  checks — a layer wired in halfway is green by omission.
+- `.pre-commit-config.yaml` sets `default_install_hook_types: [pre-commit,
+  pre-push]`, so the usual `pre-commit install` wires the pre-push layer too,
+  and `default_stages: [pre-commit]` keeps the other hooks off that stage.
+- `ci-gate` skill: step 2 merges into existing `.pre-commit-config.yaml`,
+  `.gitleaks.toml` and `CODEOWNERS` instead of overwriting and copies `ci/`
+  wholesale; new step 3b covers upgrading a gate that is already installed;
+  step 5 now points at the commands in the vendored `ci/README.md` rather than
+  repeating them.
+- `task` phase 8 names the gate jobs from the repo's own CI file (not a list
+  memorised in the skill), spells out what `scan-text.sh` rc 1 / rc 2 mean, and
+  the fixed discipline forbids `--no-verify` and `GATE_PREPUSH_SKIP` for the
+  agent: a blocked push is a finding, and bypassing a gate is the user's call.
+- `security-review-prompt.md`: the destructive marker is a declaration by its
+  author, not an approval; a new suppression in the diff (allow comment,
+  widened allowlist, `-diff` attribute, narrowed gate pattern) and
+  mixed-script identifiers are findings.
+
 ## [1.7.1] — 2026-08-21
 
 Defects in our own files, surfaced by the donor audit of a colleague's toolkit
@@ -245,6 +361,7 @@ Donor audit of the `hybrid-plan` / `hybrid-review` skill set —
   tool-agnostic migration-guard and protected-branch rules into any repo —
   GitLab and GitHub CI, pre-commit hooks, failing closed.
 
+[1.8.0]: https://github.com/umar-s/task-flow/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/umar-s/task-flow/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/umar-s/task-flow/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/umar-s/task-flow/compare/v1.5.0...v1.6.0
