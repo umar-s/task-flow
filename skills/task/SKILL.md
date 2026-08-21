@@ -89,24 +89,16 @@ depending on its answer wait. Two options with the same consequences are not a
 decision — pick one, state the assumption, move on.
 
 **Restate the DoD as a numbered checklist** — `DoD-1..n`, each with its class:
-`diff` (visible in the code), `live` (a command or user path after deploy),
-`external` (physically outside the project's reach — someone else's account,
-another team's system). The class is a *proposal* here, and in phase 8 it may only move **towards**
-verifiability (`external` → `live` → `diff`) when it turns out something was
-checkable after all. It never moves the other way to excuse a check nobody
-ran: a `live` item with no live evidence is `FAIL` or `PARTIAL`, not
-"actually external". `external` is only for a party physically outside the
-project's reach, named in phase 0. An item nobody can verify is a question for the ticket, not an
-assumption you carry.
+`diff`, `live` or `external` (what each means, and why a class may only move
+*towards* verifiability later, is in `design-spec-template.md` §6). An item
+nobody can verify is a question for the ticket, not an assumption you carry.
 
 **Declare tier · type · reversibility** in one line, e.g. `T2 · feature ·
-two-way`. The tier scales the *artifacts*, never the gates. The type shapes the
-first red test (bug → it reproduces the ticket's Actual, and you locate the
-commit that introduced it: `git log -S'<symbol>'`, blame; refactor →
-characterisation tests, mutation check mandatory; feature → as written).
-`one-way` — migration, persistent data, a public API or event contract, a
-security boundary, a coordinated rollout — pulls in T3 artifacts and the spec's
-Reversibility section whatever the tier says.
+two-way`. The tier scales the *artifacts*, never the gates; the type shapes the
+first red test (`implementation-integrity.md` §2) and, for a bug, phase 0 also
+locates the commit that introduced it (`git log -S'<symbol>'`, blame);
+`one-way` (list in `design-spec-template.md` §5) pulls in T3 artifacts and the
+spec's Reversibility section whatever the tier says.
 
 **A tier only moves up**, and moving it up **replays what it changes**, by
 where it fired: in phase 1–2 → fix the spec and continue; in phase 3 → the spec
@@ -194,10 +186,10 @@ Load `implementation-integrity.md`
 first test: baseline, what RED means, the anti-gaming rules, the mutation check,
 and the evidence rules phases 7–8 report against.
 
-**Before the baseline, pin the toolchain**: resolve the project's version file
-(`.nvmrc`, `.node-version`, `.python-version`, `.tool-versions`, `composer.json`
-platform) and activate it — numbers produced on another runtime are not evidence
-— and record the actual `node --version` / `php -v` for the evidence block.
+**Before the baseline, pin the toolchain**: activate the version the repo pins
+and report it as a comparison (`pin · actual · match`) — numbers produced on
+another runtime are not evidence. Which files carry the pin, and what a
+mismatch means, is in `implementation-integrity.md` §6.
 
 Branch off the integration branch (`fix/…` or `feature/…`, one branch per task).
 Implement to the DoD. Write tests **at the seam chosen in phase 3** that encode
@@ -303,25 +295,14 @@ the `landing:` field, and reverting through this same flow.
   with the manual check and the person who will do it. A PASS with nothing to
   point at is not a PASS.
   The verification part is an **evidence block**, not an adjective: numbers
-  from one final fresh run made after the last edit, the single command that
-  reproduces them, and every skipped check named with its reason — e.g.
-  "тесты 47/47 · diff-coverage 31/31 (100%) · мутанты 5/5 killed · CI green
-  (secret-scan, migration-guard, unicode-guard, diff-coverage) · review @ 3f2a1c9
-  · re-reviewed: n/a (no code since review) · security @ skip (нет чувствительных
-  поверхностей) · HEAD @ 3f2a1c9 · node: pin 20.11.1 · actual 20.11.1 (match) ·
-  live на dev: <url> · repro: `make check` ·
-  property-тесты: пропущены, в изменении нет инвариантов".
-  Never "всё зелёно" — a check nobody ran and nobody mentioned reads exactly
-  like a check that passed. Shape and rules in
-  `references/implementation-integrity.md` §6.
-  **Scan outgoing text at the sink:** when the repo carries the gate, write
-  the comment / MR description to a file, run `bash ci/scan-text.sh <file>`,
-  and post that same file — a pasted log or config snippet is how a secret
-  reaches the tracker, where no hook runs. rc 1 = do not post it (rotate the
-  credential first); rc 2 = the scanner could not run, which is not a clean
-  verdict — fix it, or say in the evidence block that the text went out
-  unscanned. No `ci/scan-text.sh` in the repo means the gate predates it: note
-  that instead of skipping silently.
+  from one final fresh run made after the last edit, the command that
+  reproduces them, and every skipped check named with its reason. Never "всё
+  зелёно" — a check nobody ran and nobody mentioned reads exactly like a check
+  that passed. The rules are in `implementation-integrity.md` §6 (load it again
+  here if this session did not run phase 5:
+  `Read "$ROOT/skills/task/references/implementation-integrity.md"`); the shape
+  of the comment, and scanning it at the sink before posting, are in `land.md`
+  §5.
 - **The tracker state follows the status:** `DONE` / `DONE_WITH_CONCERNS` →
   set **Done** and log **Spent time**. `BLOCKED` / `MERGED_NOT_LIVE` /
   `ABANDONED` → the ticket stays open with the status and the reason in the

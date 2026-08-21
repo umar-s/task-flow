@@ -84,8 +84,15 @@ checkable, irreversibility never named, and a phase 8 that stopped at "merged".
 - Orchestrator-facing review mechanics (severity → action, the
   behavioural/description split, one commit per fix, the verdict's sha) moved
   from the skill into the dispatch template that phase 6 already loads — the
-  skill keeps the decision, the template keeps the method. `task`'s prompt
-  weight grew 24 % (2678 → 3327 words) against the audit's 22 % estimate.
+  skill keeps the decision, the template keeps the method — as do
+  `design-spec-template.md` (DoD classes, reversibility), `land.md` (the
+  close-comment shape and scan-at-sink) and `implementation-integrity.md` (the
+  status table, the toolchain comparison). After two review rounds added
+  rules — `gate: absent` must carry the command that established it, the DoD
+  class decides what counts as evidence, `landing:` is part of the comment —
+  `task`'s prompt weight is **+27 % (2678 → 3411 words)** against the audit's
+  22 % estimate; the four new references carry ~3.6k words that load one per
+  phase.
 - `decompose` may end a task's `context` with an advisory
   `risk tier: T1|T2|T3 — <why>`; it is a **floor, not a ceiling** for the
   tier `task` declares, and not a seventh field — the 6-field contract stands.

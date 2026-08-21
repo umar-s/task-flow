@@ -43,13 +43,33 @@ for f in templates/ci-gate/ci/*.sh; do
 done
 jq -e . .claude-plugin/plugin.json >/dev/null || err ".claude-plugin/plugin.json is not valid JSON"
 
-# 5. Axioms as text invariants (CLAUDE.md → "The central axiom", "Clean-context dispatch").
-# Whitespace-tolerant: a rewrap must not be able to drop an axiom silently.
+# 5. Axioms as text invariants (CLAUDE.md → "The central axiom", "Clean-context
+#    dispatch"). Two rules learned the hard way: greps are whitespace-tolerant
+#    (a rewrap must not drop an axiom silently) and they are **scoped to the
+#    section that must carry the rule** and pinned to the load-bearing wording —
+#    a token that also appears elsewhere in the file protects nothing.
 flat() { tr '\n' ' ' < "$1" | tr -s ' '; }
-flat skills/task/SKILL.md | grep -q 'deterministic gate' || err "task phase 8 lost the 'deterministic gate' clause"
-flat skills/task/SKILL.md | grep -q 'never the session transcript' || err "task phase 6 lost the clean-context clause"
+section() {  # file, awk range → the section as one line
+  awk "$2" "$1" | tr '\n' ' ' | tr -s ' '
+}
+P8=$(section skills/task/SKILL.md '/^## 8\. Close/,/^## Fixed discipline/')
+P6=$(section skills/task/SKILL.md '/^## 6\. Code-review/,/^## 6b\./')
+[ -n "$P8" ] && [ -n "$P6" ] || err "task/SKILL.md: phase 6 or phase 8 section not found — the axiom checks below are blind"
+printf '%s' "$P8" | grep -q 'deterministic gate' || err "task phase 8 lost the 'deterministic gate' clause"
+printf '%s' "$P8" | grep -q 'present and passed' || err "task phase 8 lost the 'green means the gate jobs are present and passed' rule"
+printf '%s' "$P8" | grep -q "repo's own gate" || err "task phase 8 no longer reads the gate jobs from the repo's own CI file"
+printf '%s' "$P6" | grep -q 'never the session transcript' || err "task phase 6 lost the clean-context clause"
+printf '%s' "$P6" | grep -qi 'read-only' || err "task phase 6 lost the read-only rule for the reviewer"
 flat skills/decompose/SKILL.md | grep -q 'fresh context' || err "decompose phase 5 lost the fresh-context clause"
 grep -q 'factual' skills/task/references/code-review-prompt.md || err "code-review-prompt lost the 'WHAT_CHANGED is factual' rule"
+# The orchestrator's half of the review contract lives in the template now: pin
+# the section and each rule it carries, not the words that also appear in prose.
+CR=skills/task/references/code-review-prompt.md
+grep -q '^## After the review comes back' "$CR" || err "$CR lost the orchestrator section (severity, termination, verdict sha)"
+flat "$CR" | grep -q 'Severity maps to action' || err "$CR lost 'severity maps to action'"
+flat "$CR" | grep -q 'behavioural' || err "$CR lost the behavioural/description split that terminates the loop"
+flat "$CR" | grep -q 'fix(review):' || err "$CR lost the one-commit-per-fix rule"
+flat "$CR" | grep -q 'A verdict attaches to the commit it saw' || err "$CR lost 'a verdict attaches to the commit it saw'"
 
 # 6. decompose vocabulary is a cross-file contract: 6 author fields, 4 dod members, 8 checks.
 for f in skills/decompose/SKILL.md skills/decompose/references/task-schema.md \
@@ -195,18 +215,42 @@ for w in DONE_WITH_CONCERNS MERGED_NOT_LIVE ABANDONED BLOCKED; do
   grep -q "$w" skills/task/SKILL.md || err "task/SKILL.md lost the terminal status '$w'"
   grep -q "$w" skills/task/references/implementation-integrity.md || err "implementation-integrity.md lost the terminal status '$w'"
 done
-# The landing field and the terminal status are deliberately disjoint
-# vocabularies — a grep for one must never be satisfied by the other.
-for w in 'deployed-with-concerns' 'not-live' 'reverted'; do
-  grep -q "landing:.*$w\|\`$w\`" skills/task/references/land.md || err "land.md lost the landing value '$w'"
+# The landing field and the terminal status are disjoint vocabularies, and the
+# landing table is what defines them — check the table rows, then check that the
+# two sets share no token (the hole the split was made to close).
+LAND=skills/task/references/land.md
+for w in deployed deployed-with-concerns not-live reverted; do
+  grep -qE "^\| \`$w\`" "$LAND" || err "$LAND: the landing table has no row for \`$w\`"
 done
-for w in DONE_WITH_CONCERNS MERGED_NOT_LIVE BLOCKED ABANDONED; do
-  grep -q "$w" skills/task/references/land.md || err "land.md must name the terminal status '$w' it feeds"
+grep -q 'landing: deployed | deployed-with-concerns | not-live | reverted' "$LAND" || err "$LAND lost the 'landing:' field definition"
+for w in DONE DONE_WITH_CONCERNS MERGED_NOT_LIVE BLOCKED ABANDONED; do
+  grep -qE "^\| \`$w\`" "$LAND" && err "$LAND: '$w' is a terminal status and must not appear as a landing value"
 done
-grep -q 'landing: deployed' skills/task/references/land.md || err "land.md lost the 'landing:' field"
-if grep -qE '^\| `?DEPLOYED' skills/task/references/land.md; then
-  err "land.md still uses an uppercase landing verdict — it must not share tokens with the terminal status"
-fi
+# The status table is a procedure: a row count plus its header, so emptying it
+# cannot pass as "the vocabulary is still there".
+II=skills/task/references/implementation-integrity.md
+grep -q '| Condition | Status |' "$II" || err "$II lost the condition→status table header"
+ROWS=$(awk '/^  \| Condition \| Status \|/{t=1;next} t && /^  \|---/{next} t && /^  \|/{n++} t && !/^  \|/{t=0} END{print n+0}' "$II")
+[ "$((ROWS))" -ge 7 ] || err "$II: the condition→status table has $ROWS rows, fewer than the outcomes the release named"
+flat "$II" | grep -q 'derived, not chosen' || err "$II lost 'the status is derived, not chosen'"
+flat "$II" | grep -q 'risk owner is a person outside this flow' || err "$II lost the definition of the risk owner"
+# Procedures behind the phase-0 contracts, pinned by their load-bearing phrase.
+SK=skills/task/SKILL.md
+flat "$SK" | grep -q 'replays what it changes' || err "$SK: the tier ratchet no longer says that it replays anything"
+flat "$SK" | grep -q 'premortem #1 are redone' || err "$SK: the tier ratchet no longer names what a phase-3 escalation replays"
+flat "$SK" | grep -q 'pulls in T3 artifacts' || err "$SK: one-way reversibility no longer pulls in the T3 artifacts"
+flat "$SK" | grep -q 'A PASS with nothing to point at is not a PASS' || err "$SK lost the DoD grading rule"
+flat "$SK" | grep -q 'Stage by path' || err "$SK lost the stage-by-path rule"
+flat "$SK" | grep -q '<TASK-ID>.spec.md' || err "$SK lost the canonical spec path"
+flat "$SK" | grep -q 'state.md' || err "$SK lost the resume rule for a hand-over"
+flat skills/task/references/blast-radius.md | grep -q 'An empty result is a claim' || err "blast-radius.md lost 'an empty result is a claim'"
+DST=skills/task/references/design-spec-template.md
+grep -q '^## 5. Reversibility' "$DST" || err "$DST lost the Reversibility section"
+for w in 'Stop condition' 'Compatibility window' 'Rollback'; do
+  grep -q "$w" "$DST" || err "$DST: Reversibility lost '$w'"
+done
+flat "$DST" | grep -q 'What does \*\*not\*\* count' || err "$DST lost the rejection criteria that stop a rollback plan from being fiction"
+flat skills/task/references/checkpoint.md | grep -q 'validate before you trust' || err "checkpoint.md lost the resume validation"'
 grep -q 'Reviewed:' skills/task/references/code-review-prompt.md || err "code-review-prompt.md: the verdict must carry 'Reviewed: <sha>'"
 grep -q 'review @' skills/task/SKILL.md || err "task/SKILL.md evidence block lost the 'review @ <sha>' field"
 grep -q 'DoD-n' skills/task/SKILL.md || err "task/SKILL.md lost the DoD-n grading rule"
@@ -224,8 +268,10 @@ done
 # The close comment's contract: a status line, a landing line, and an evidence
 # example that obeys the rules it points at.
 grep -q 'landing:' skills/task/SKILL.md || err "task/SKILL.md does not require the 'landing:' line in the close comment"
-grep -q 're-reviewed:' skills/task/SKILL.md || err "task/SKILL.md evidence example lost 're-reviewed:' (a bare commit count reads as a judgement)"
-grep -q 'pin 20.11.1 · actual' skills/task/SKILL.md || err "task/SKILL.md evidence example must show the toolchain as pin·actual, not a bare version"
+grep -q 're-reviewed:' skills/task/references/land.md || err "land.md's close-comment example lost 're-reviewed:' (a bare commit count reads as a judgement)"
+grep -q 'pin 20.11.1 · actual' skills/task/references/land.md || err "land.md's example must show the toolchain as pin·actual, not a bare version"
+grep -q 'scan-text.sh' skills/task/references/land.md || err "land.md lost scan-at-sink for the close comment"
+flat skills/task/SKILL.md | grep -q 'land.md` §5' || err "task/SKILL.md phase 8 no longer points at the close-comment shape in land.md"
 grep -q 'gate: absent (' skills/task/SKILL.md || err "task/SKILL.md: 'gate: absent' must carry the command that established it"
 # Shipped skills are written in English; Russian belongs only to the output
 # templates (the reviewer answers in Russian) and to quoted examples. This
@@ -241,11 +287,20 @@ for f in skills/*/references/*.md; do
     END { exit found ? 1 : 0 }' "$f" >&2 || err "$f: Russian instruction prose in a shipped English reference (line above)"
 done
 # Reverse of check 1: a reference nobody loads is a reference nobody reads.
-for s in skills/*/; do
-  s="${s%/}"; [ -d "$s/references" ] || continue
-  for f in "$s"/references/*.md; do
+for sk in skills/*/; do
+  sk="${sk%/}"; [ -d "$sk/references" ] || continue
+  for f in "$sk"/references/*.md; do
     b=$(basename "$f")
-    grep -q "$b" "$s/SKILL.md" || err "$b exists in $s/references but no phase in $s/SKILL.md loads it"
+    [ -s "$f" ] || err "$f is empty"
+    # A load, not a mention: either an explicit per-phase
+    # `Read "$ROOT/<skill>/references/<file>"`, or (the decompose style) the
+    # generic Read form declared once plus a "load it now" instruction next to
+    # the file name. Checked on the flattened text, so a rewrap cannot hide it.
+    FLAT=$(flat "$sk/SKILL.md")
+    printf '%s' "$FLAT" | grep -qE "Read \"\\\$ROOT/$sk/references/$b\"" \
+      || { printf '%s' "$FLAT" | grep -qE 'Read "\$ROOT/'"$sk"'/references/' \
+           && printf '%s' "$FLAT" | grep -qE "(Load [^.]{0,40})?references/$b[^.]{0,40}(load it now|load now)|Load .{0,4}references/$b"; } \
+      || err "$sk/SKILL.md never instructs a load of $b — a reference nobody loads degrades into memory"
   done
 done
 grep -q 'one-way' skills/task/SKILL.md || err "task/SKILL.md lost the reversibility classification"

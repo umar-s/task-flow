@@ -57,7 +57,8 @@ OrderService.total_for_order — src/services/order.py:88
   outside the commit (`git check-ignore -v` tells you what the repo already
   thinks; add it to the project's ignore list if it does not), and delete it
   when the task closes.
-- **On resume, validate before you trust.** Compare the recorded branch and
+- **On resume, validate before you trust** (this is the whole resume
+  procedure — there is no second list). Compare the recorded branch and
   base with `git rev-parse --abbrev-ref HEAD` and `git rev-parse HEAD`:
   - branch and HEAD match **and** `git status --porcelain` is empty → continue
     from the phase named in `next:` (`phase:` is what is already closed);

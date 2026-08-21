@@ -187,11 +187,12 @@ What phase 7 and phase 8 report must be:
 
   | Condition | Status |
   |---|---|
-  | merged, deployed, every `DoD-n` PASS (an `external` item may be `UNVERIFIABLE` with its manual check and owner named), no check skipped | `DONE` |
+  | merged, deployed, every `DoD-n` PASS (an `external` item may be `UNVERIFIABLE` with its manual check and owner named); every skipped check was one the tier or the risk profile allows, and it is named with its reason in the evidence block | `DONE` |
   | nothing to deploy (docs, a library with no runtime surface) — say so in the evidence block | `DONE` (the deploy condition is met by there being none) |
   | an `UNVERIFIABLE` item with **no** named manual check | `DONE_WITH_CONCERNS` |
   | merged, then taken back out through a revert MR | `MERGED_NOT_LIVE` + `landing: reverted` |
-  | merged and live, but a Required accepted by the risk owner (recorded on the MR), a check skipped with a reason, or a `DoD-n` not PASS | `DONE_WITH_CONCERNS` |
+  | merged and live, but a Required accepted by the risk owner (recorded on the MR), or a `DoD-n` not PASS | `DONE_WITH_CONCERNS` |
+  | a check the tier makes **mandatory** was not run (6b on a T3, the mutation check on a refactor, the live verification of a `live` item) | `DONE_WITH_CONCERNS` at best — and if it was skipped because it could not run, `BLOCKED` is the honest one |
   | merged, not running (deploy failed, never triggered, health check failed) | `MERGED_NOT_LIVE` |
   | not merged; the blocker is named and not yours to clear | `BLOCKED` |
   | work stopped on purpose; say what happens to the branch | `ABANDONED` |

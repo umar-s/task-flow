@@ -109,7 +109,40 @@ landing: deployed | deployed-with-concerns | not-live | reverted
    improvise;
 3. re-run the health check afterwards and update the field.
 
-## 5. Always stop / never stop
+## 5. Posting the close comment
+
+The comment is the task's public record, so it is also the last place a secret
+can leave: **scan it at the sink**. Write the comment (and the MR description)
+to a file, run `bash ci/scan-text.sh <file>` when the repo carries the gate, and
+post *that same file* — a pasted log or config snippet is how a credential
+reaches a tracker, where no hook runs. `rc 1` → do not post it; rotate the
+credential first. `rc 2` → the scanner could not run, which is not a clean
+verdict: fix it, or say in the evidence block that the text went out unscanned.
+No `ci/scan-text.sh` in the repo means the gate predates it — note that rather
+than skip silently.
+
+Shape (the rules behind each part are in `implementation-integrity.md` §6):
+
+```
+DONE_WITH_CONCERNS — merged and live; DoD-4 accepted by <risk owner> on the MR
+landing: deployed
+
+Что сделано: <per surface>
+DoD-1 → PASS (src/api/orders.py:88) · DoD-2 → PASS (`make check`, вывод ниже)
+DoD-3 → UNVERIFIABLE (DNS у платформенной команды, тикет OPS-77, проверит <кто>)
+DoD-4 → PARTIAL (принято <risk owner> на MR, follow-up DEV-512)
+
+тесты 47/47 · diff-coverage 31/31 (100%) · мутанты 5/5 killed ·
+CI green (secret-scan, migration-guard, unicode-guard, diff-coverage) ·
+review @ 3f2a1c9 · re-reviewed: n/a (merge only) · security @ skip (нет
+чувствительных поверхностей) · HEAD @ 9c1b7d2 · node: pin 20.11.1 · actual
+20.11.1 (match) · live на dev: <url> · repro: `make check` · property-тесты:
+пропущены, в изменении нет инвариантов
+
+MR: <url> · follow-ups: DEV-512
+```
+
+## 6. Always stop / never stop
 
 **Always stop and report** (never retry, never work around): CI red on the merge
 commit, merge conflicts, permission denied, MR not found, deploy failure, a
@@ -119,7 +152,7 @@ migration that failed halfway, the MR falling out of a merge queue.
 a poll timeout you can extend once with a reason, a formatting-only difference
 in the MR body, a deploy log line that predates this deploy window.
 
-## 6. Cleanup
+## 7. Cleanup
 
 Delete only what this session created: a fixture directory, a review worktree,
 a temp file whose path you wrote down when you created it. The task's own

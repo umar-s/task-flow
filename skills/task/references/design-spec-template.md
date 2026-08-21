@@ -72,8 +72,17 @@ verifiability, and the class decides what "done" may mean:
 | DoD-3 | … | `external` | outside this repo (DNS, a provider, another team) — the manual check and who does it |
 
 An item nobody can verify is a question for the ticket, not an assumption you
-carry. `external` items close as **UNVERIFIABLE with a named manual check** —
-never as done "because the code handles it".
+carry.
+
+**What the classes mean, and how they may move.** `diff` — visible in the code
+itself. `live` — a command or user path run after the deploy. `external` —
+physically outside the project's reach (someone else's account, another team's
+system), named as such in phase 0. In phase 8 a class may only move **towards**
+verifiability (`external` → `live` → `diff`) when something turned out to be
+checkable after all; it never moves the other way to excuse a check nobody ran.
+A `live` item with no live evidence is `FAIL` or `PARTIAL`, not "actually
+external". `external` items close as **UNVERIFIABLE with a named manual check
+and the person who will do it** — never as done "because the code handles it".
 
 ## 7. Premortem edges (filled in by phases 2 and 4)
 The failure modes the premortems found, one line each:
