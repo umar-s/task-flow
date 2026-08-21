@@ -24,8 +24,17 @@ MIGRATION_DIRS="${MIGRATION_DIRS:-migrations db/migrate db/migration prisma/migr
 STAGED="${STAGED:-0}"
 [ "${1:-}" = "--staged" ] && STAGED=1
 
-# Destructive DDL patterns (case-insensitive, POSIX-extended).
-DESTRUCTIVE_RE='(DROP[[:space:]]+(TABLE|COLUMN|SCHEMA|DATABASE|INDEX|CONSTRAINT)|TRUNCATE|DELETE[[:space:]]+FROM|ALTER[[:space:]]+TABLE[[:space:]].*DROP[[:space:]]+COLUMN)'
+# Destructive patterns (case-insensitive, POSIX-extended). Two families:
+#   SQL  — DROP TABLE/COLUMN/..., TRUNCATE, DELETE FROM, ALTER TABLE ... DROP COLUMN
+#   ORM  — the DSL tokens of the migration frameworks whose dirs are scanned by
+#          default: Rails/Alembic (drop_table, remove_column), Django (DeleteModel,
+#          RemoveField), Laravel (Schema::drop/dropIfExists), Knex/Sequelize/
+#          TypeORM (dropTable, dropColumn, removeColumn).
+# Known limits (documented in ci/README.md): a statement split across lines,
+# SQL built inside a string, and DSLs not listed here are NOT detected — that
+# residue is the LLM security pass's job, never a reason to widen this regex
+# into a parser.
+DESTRUCTIVE_RE='(DROP[[:space:]]+(TABLE|COLUMN|SCHEMA|DATABASE|INDEX|CONSTRAINT)|TRUNCATE|DELETE[[:space:]]+FROM|ALTER[[:space:]]+TABLE[[:space:]].*DROP[[:space:]]+COLUMN|drop_table|drop_column|remove_column|dropTable|dropColumn|removeColumn|DeleteModel|RemoveField|RemoveModel|Schema::drop(IfExists)?)'
 APPROVAL_RE='destructive:[[:space:]]*approved'
 
 # Build a regex matching any path under a configured migrations dir.

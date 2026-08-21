@@ -36,16 +36,36 @@ Secret-scan is **incremental**: MR → the MR's commits; default-branch push →
 new commits; scheduled pipeline → full-history audit. Set up a pipeline schedule
 so the periodic full scan runs.
 
-## Pinned gitleaks (shell variant / local)
-`ci/gitleaks-fetch.sh` pins a version + a **committed** SHA256 (the trust anchor).
-A frozen scanner goes stale — bump `PIN_VERSION` + both SHA256s together from the
-release `checksums.txt`, and keep `.pre-commit-config.yaml`'s `rev` in step.
+## Pinned gitleaks
+One scanner version, pinned in every path it runs through — so the local hook,
+the shell runner and the docker/GitHub jobs give the same verdict on the same diff:
+
+| Path | Pin | Where |
+|---|---|---|
+| shell runner / local `gate.sh` | version + **committed** SHA256 of the tarball (trust anchor) | `ci/gitleaks-fetch.sh` |
+| GitLab docker/k8s, GitHub Actions | image **digest** (`ghcr.io/gitleaks/gitleaks:vX@sha256:…`) | `ci/ci-gate.gitlab-ci.yml`, `.github/workflows/gate.yml` |
+| pre-commit | **commit** SHA of the release tag (`rev: <sha>  # vX`) | `.pre-commit-config.yaml` |
+
+`gitleaks-fetch.sh` re-verifies the cached tarball against the committed SHA256
+on **every** call and extracts into a fresh private dir — a shared runner cache
+can never feed it a binary it did not just verify. A tag or a `:latest` is
+re-pointable upstream; a digest, a commit and a checksum are not.
+
+A frozen scanner goes stale — bump all four together: `PIN_VERSION` + both
+SHA256s (from the release `checksums.txt`, checked once by a human), the image
+digest (`docker buildx imagetools inspect ghcr.io/gitleaks/gitleaks:vX`), and the
+pre-commit `rev`. Never `pre-commit autoupdate` this repo.
 
 ## migration-guard policy
 On any changed file under a migrations dir:
 - an **already-committed** migration modified / deleted / renamed → **FAIL** (forward-only);
-- a **new** migration with `DROP/TRUNCATE/DELETE FROM/DROP COLUMN …` → **FAIL** unless the
-  same file carries a marker comment `-- destructive: approved`.
+- a **new** migration with a destructive statement → **FAIL** unless the same
+  file carries a marker comment `-- destructive: approved`. Detected: SQL
+  (`DROP TABLE/COLUMN/SCHEMA/DATABASE/INDEX/CONSTRAINT`, `TRUNCATE`, `DELETE FROM`,
+  `ALTER TABLE … DROP COLUMN`) and the DSL tokens of the frameworks whose dirs
+  are scanned by default — Rails/Alembic `drop_table`/`drop_column`/`remove_column`,
+  Django `DeleteModel`/`RemoveField`/`RemoveModel`, Laravel `Schema::drop`/
+  `dropIfExists`, Knex/Sequelize/TypeORM `dropTable`/`dropColumn`/`removeColumn`.
 
 Env: `MIGRATION_DIRS` (default `migrations db/migrate db/migration prisma/migrations`),
 `GATE_BASE_REF` (override the diff base), `STAGED=1` (check the index).
@@ -56,6 +76,14 @@ Deliberate destructive change is fine — mark it:
 -- destructive: approved  (TICKET-123, data archived)
 DROP TABLE legacy_sessions;
 ```
+
+**Known limits / bypasses** (so nobody mistakes the guard's perimeter for
+coverage): the match is per line, so a statement split across lines
+(`DROP\nTABLE`), SQL assembled inside a string, a migration DSL not listed
+above, and data-destroying `UPDATE`s are **not** detected. That residue is the
+LLM security review's job (it reads the migration, not a regex); widening this
+regex into a parser is not. Nor does the guard re-read migrations that are
+already committed — it judges what an MR adds.
 
 ## diff-coverage policy
 

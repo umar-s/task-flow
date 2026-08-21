@@ -1,6 +1,10 @@
 # ci-gate — deterministic merge gate for GitHub Actions.
 # Install: copy this file to .github/workflows/gate.yml, vendor ci/ + .gitleaks.toml,
 # then make `secret-scan` and `migration-guard` required status checks (see ../README.md).
+#
+# Pins: the gitleaks image is pinned by DIGEST (same version as PIN_VERSION in
+# ci/gitleaks-fetch.sh — bump together, see ci/README.md), and actions are
+# pinned by commit SHA (a tag is re-pointable, a SHA is not).
 name: ci-gate
 
 on:
@@ -13,40 +17,50 @@ on:
 permissions:
   contents: read
 
+env:
+  GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+
 jobs:
   secret-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - name: gitleaks
+        # Event data reaches the shell through env, never inlined into `run:` —
+        # inlined `${{ }}` is the GitHub script-injection pattern.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
           RANGE=""
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch --no-tags origin "${{ github.base_ref }}"
-            RANGE="--log-opts=origin/${{ github.base_ref }}..HEAD"         # PR: only the PR's commits
-          elif [ "${{ github.event_name }}" = "push" ]; then
-            BEFORE="${{ github.event.before }}"
-            if ! printf '%s' "$BEFORE" | grep -qE '^0+$'; then
-              RANGE="--log-opts=${BEFORE}..${{ github.sha }}"              # push: only new commits
-            fi                                                             # first push / zero-sha → full scan
-          fi                                                               # schedule (RANGE="") → full-history audit
-          docker run --rm -v "$PWD:/repo" -w /repo ghcr.io/gitleaks/gitleaks:latest \
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags origin "$BASE_REF"
+            RANGE="--log-opts=origin/${BASE_REF}..HEAD"                 # PR: only the PR's commits
+          elif [ "$EVENT_NAME" = "push" ]; then
+            if ! printf '%s' "$BEFORE_SHA" | grep -qE '^0+$'; then
+              RANGE="--log-opts=${BEFORE_SHA}..${HEAD_SHA}"             # push: only new commits
+            fi                                                           # first push / zero-sha → full scan
+          fi                                                             # schedule (RANGE="") → full-history audit
+          docker run --rm -v "$PWD:/repo" -w /repo "$GITLEAKS_IMAGE" \
             detect --source /repo --redact --no-banner -v $RANGE
 
   migration-guard:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - name: migration-guard
         env:
+          BASE_REF: ${{ github.base_ref }}
           GATE_BASE_REF: origin/${{ github.base_ref }}
         run: |
-          git fetch --no-tags origin "${{ github.base_ref }}"
+          git fetch --no-tags origin "$BASE_REF"
           bash ci/migration-guard.sh
 
   # Changed-line coverage. The script is tool-agnostic (lcov / Cobertura / Clover);
@@ -57,17 +71,18 @@ jobs:
   #     if: github.event_name == 'pull_request'
   #     runs-on: ubuntu-latest
   #     steps:
-  #       - uses: actions/checkout@v4
+  #       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
   #         with: { fetch-depth: 0 }
   #       - run: <your test command producing coverage.xml / lcov.info / clover.xml>
   #       - name: diff-coverage
   #         env:
+  #           BASE_REF: ${{ github.base_ref }}
   #           GATE_BASE_REF: origin/${{ github.base_ref }}
   #           GATE_COVERAGE_REPORT: coverage.xml
   #           GATE_COVERAGE_MIN: "80"
   #           GATE_COVERAGE_STRICT: "1"      # once the report path is proven
   #         run: |
-  #           git fetch --no-tags origin "${{ github.base_ref }}"
+  #           git fetch --no-tags origin "$BASE_REF"
   #           bash ci/diff-coverage.sh
 
   # Optional: dependency / SCA scan is language-specific — add a job here, e.g.
@@ -75,5 +90,5 @@ jobs:
   #     if: github.event_name == 'pull_request'
   #     runs-on: ubuntu-latest
   #     steps:
-  #       - uses: actions/checkout@v4
+  #       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
   #       - run: npm audit --audit-level=high   # pip-audit / govulncheck / etc.

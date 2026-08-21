@@ -83,8 +83,11 @@ commands. Template payload lives in `templates/ci-gate/`.
 
 Executor-aware for GitLab: a **docker/k8s** variant (uses `image:`) and a
 **shell** variant that fetches a pinned, checksum-verified gitleaks in-job — no
-docker, no runner change, no docker-group escalation. Secret-scan is incremental
-(MR range / new commits on push / full-history on a schedule).
+docker, no runner change, no docker-group escalation. One scanner version in
+every path: image digest in the docker/GitHub jobs, committed SHA256 on the
+shell runner (re-verified on every call), commit-pinned `rev` in pre-commit.
+Secret-scan is incremental (MR range / new commits on push / full-history on a
+schedule).
 
 ## Install
 

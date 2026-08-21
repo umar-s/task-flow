@@ -32,6 +32,36 @@ the task "looks simple"; that is exactly when gaps hide.
 - **Build/verify** — test, static-analysis, and lint commands; how to deploy to
   the dev/staging environment; whether a browser-verify surface exists and its URL.
 
+## Reference loading (resolve once, read lazily per phase)
+
+Phases 5, 6 and 6b each load one reference file under this skill's
+`references/` dir. Resolve the base path **once**, at the start, with a bash
+step:
+
+```bash
+ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "<this SKILL.md's own path>")/../.." && pwd)}"
+echo "$ROOT"
+```
+
+`CLAUDE_PLUGIN_ROOT` is set when this runs as an installed plugin; the
+fallback walks up from this file's own location when it doesn't. Either way
+`$ROOT` is an **absolute path on disk**, and every reference load for the
+rest of the session is:
+
+```
+Read "$ROOT/skills/task/references/<file>.md"
+```
+
+using the **resolved value of `$ROOT`**, substituted in before the Read
+call — never pass the literal string `${CLAUDE_PLUGIN_ROOT}` to the Read
+tool; it does not expand shell/env syntax, so a literal pass reads nothing.
+Load lazily, one phase at a time: phase 5 needs only
+`implementation-integrity.md`, phase 6 only `code-review-prompt.md`, 6b only
+`security-review-prompt.md`. **A Read that fails stops the phase.** Never
+continue from memory of what the reference "probably says" — a reference that
+did not load is exactly how a phase degrades into plausible invention that
+reads like a pass.
+
 ## 0. Ingest
 Read the ticket **and every comment** in the tracker — the real DoD and the
 "важное уточнение" often live in a late comment, not the title. Assign the task
@@ -111,7 +141,8 @@ Attack the plan the same way: wrong ordering, a mutation that commits before a
 guard, a missing grant/migration, an un-flushed cache, an untested edge. Fix.
 
 ## 5. TDD implement
-Load [references/implementation-integrity.md](references/implementation-integrity.md)
+Load `implementation-integrity.md`
+(`Read "$ROOT/skills/task/references/implementation-integrity.md"`)
 before the first test: baseline on a repo that isn't already green, RED means
 you *watched* it fail, the anti-gaming rules, the mutation check that proves the
 tests would notice a wrong answer, and the "numbers, not adjectives" rule that
@@ -126,7 +157,8 @@ OpenAPI) in the same change.
 ## 6. Code-review (adversarial)
 Run an independent, adversarial review of the diff — the `code-review` Workflow
 at high effort, or a **fresh reviewer subagent** dispatched with
-[references/code-review-prompt.md](references/code-review-prompt.md).
+`code-review-prompt.md`
+(`Read "$ROOT/skills/task/references/code-review-prompt.md"`).
 Independence is structural, not aspirational: the reviewer receives the flow's
 artifacts — diff range (`git merge-base HEAD <integration-branch>` → `HEAD`),
 DoD, design-spec, premortem edge lists — and **never the session transcript,
@@ -163,8 +195,8 @@ silently is what turns the review into decoration.
 
 ## 6b. Security-review (conditional)
 Run an **independent** security pass on the diff (`/security-review`, or a fresh
-subagent dispatched with
-[references/security-review-prompt.md](references/security-review-prompt.md) —
+subagent dispatched with `security-review-prompt.md`
+(`Read "$ROOT/skills/task/references/security-review-prompt.md"`) —
 never the agent that implemented it, same clean-context rule as phase 6). A
 distinct threat-model lens, not a correctness re-run: STRIDE walked from the
 trust boundaries the diff touches — authz/permission bypass, injection
@@ -199,6 +231,11 @@ check). Clean up any test fixtures you seeded.
   blind-merge. "Green" must include the **deterministic gate** (secret-scan,
   migration-guard, dep/SCA), not only unit tests — that gate is what covers the
   blast-radius categories both the tests and the LLM security-review miss.
+  Include means **present and passed**: list this pipeline's jobs (VCS/CI
+  binding) and confirm the gate jobs actually ran on this MR. A pipeline that
+  never scheduled them is green by omission — "not measured" is not "passed",
+  and on GitLab "pipelines must succeed" is satisfied by a pipeline without
+  them. Name the gate jobs in the evidence block, not just "CI green".
   Force-push protection is a platform rule (protected branch), not a pipeline
   job. Merge, deploy to dev, flush the caches the change touches.
   - Scaffold this deterministic gate into a repo once with the **`ci-gate`**

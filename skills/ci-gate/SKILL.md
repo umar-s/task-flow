@@ -147,10 +147,17 @@ under it.
   it; never lower it to make one MR pass.
 - Keep the gitleaks allowlist tight — every entry is a hole. Prefer an inline
   `# gitleaks:allow` on a one-off doc line over a global regex.
-- **Pinned gitleaks is a maintenance commitment.** `ci/gitleaks-fetch.sh` pins a
-  version + committed SHA256; a frozen scanner goes stale (misses new secret
-  formats). Bump `PIN_VERSION` and both SHA256s together from the release's
-  `checksums.txt`, and keep the `.pre-commit-config.yaml` gitleaks `rev` in step.
+- **Pinned gitleaks is a maintenance commitment.** One version, pinned in every
+  path: `ci/gitleaks-fetch.sh` (version + committed SHA256, re-verified on every
+  call), the docker/GitHub CI files (image **digest**, never `:latest` — a tag
+  is re-pointable) and `.pre-commit-config.yaml` (`rev` = commit SHA of the
+  release tag). A frozen scanner goes stale (misses new secret formats): bump
+  `PIN_VERSION`, both SHA256s, the image digest and the `rev` together; never
+  `pre-commit autoupdate` the file.
+- **migration-guard reads SQL and the common ORM DSL tokens, per line.** A
+  statement split across lines, SQL built inside a string or a DSL it does not
+  list is its documented residue (`ci/README.md` → Known limits) and belongs
+  to the phase-6b security review — do not grow the regex into a parser.
 - Never fetch and trust a `checksums.txt` alongside the binary in the same job —
   the committed SHA256 in `gitleaks-fetch.sh` is the trust anchor.
 - On a shell runner, do **not** solve the docker dependency by adding the runner

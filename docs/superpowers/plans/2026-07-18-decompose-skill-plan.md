@@ -24,7 +24,7 @@
 
 ## Source material (adapt from — MIT, reword don't copy)
 
-Local GSD cache root `G = /home/serpens/.npm/_npx/a78857a30883db8e/node_modules/@opengsd/gsd-core`:
+Local GSD cache root `G = ~/.npm/_npx/<hash>/node_modules/@opengsd/gsd-core`:
 - `G/agents/gsd-planner.md` — break_into_tasks, task anatomy, scope-reduction prohibition
 - `G/gsd-core/references/spidr-splitting.md` — SPIDR axes + anti-patterns
 - `G/gsd-core/references/edge-probe.md` — 8 edge categories
@@ -403,7 +403,7 @@ grep -rhoE '\$\{CLAUDE_PLUGIN_ROOT\}/[A-Za-z0-9/_.-]+' skills/decompose/SKILL.md
   | sed 's|${CLAUDE_PLUGIN_ROOT}/||' | sort -u \
   | while read p; do test -e "$p" && echo "OK $p" || echo "MISSING $p"; done
 # no hardcoded home paths leaked
-grep -rn "/home/serpens\|~/.claude" skills/decompose && echo "LEAK FOUND" || echo "no home-path leaks"
+grep -rn "/home/[a-z]*/\|~/.claude" skills/decompose && echo "LEAK FOUND" || echo "no home-path leaks"
 ```
 Expected: all `OK`, and `no home-path leaks`.
 

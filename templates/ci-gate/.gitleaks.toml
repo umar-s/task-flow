@@ -10,7 +10,10 @@ useDefault = true
 # files are the only broadly-safe defaults.
 [allowlist]
 description = "project false-positives"
-regexTarget = "line"
+# "match", not "line": an allowlist regex suppresses only the matched span.
+# With "line", a placeholder anywhere on the line excuses a real secret next
+# to it — a one-word bypass of the whole gate.
+regexTarget = "match"
 paths = [
   '''(^|/)tests?/.*fixtures?/''',
   '''(^|/)testdata/''',

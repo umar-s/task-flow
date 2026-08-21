@@ -9,6 +9,55 @@ below is tagged `vX.Y.Z` in git. Installs track the default branch (the
 marketplace entry pins no ref), so a release tag marks history rather than a
 download.
 
+## [1.7.1] — 2026-08-21
+
+Defects in our own files, surfaced by the donor audit of a colleague's toolkit
+(`docs/audits/2026-08-21-dmitriy-toolkit-v3-audit.md`, §2). No new behaviour —
+every item makes an existing promise actually hold.
+
+### Fixed
+- **`task`** — reference files are now loaded through a resolved `$ROOT`
+  (`CLAUDE_PLUGIN_ROOT`, with a fallback), the same block `decompose` already
+  had; the three phase references were plain relative links, which the Read
+  tool cannot follow from an installed plugin, so a phase could silently run
+  from memory of the reference instead of the reference. A failed Read now
+  stops the phase.
+- **`task` phase 8** — "CI green including the gate" now means *present and
+  passed*: confirm the gate jobs actually ran on this MR and name them in the
+  evidence block. A pipeline that never scheduled them is green by omission.
+- **`ci-gate` — one scanner version in every path.** The GitLab docker/k8s
+  and GitHub templates pulled `ghcr.io/gitleaks/gitleaks:latest`, so the pin
+  policy held only on the shell runner; both now pin the image by digest at
+  the same version as `PIN_VERSION`. `.pre-commit-config.yaml` pins `rev` to
+  the release commit (a tag is re-pointable) and no longer recommends
+  `pre-commit autoupdate`. GitHub actions are pinned by commit SHA.
+- **`ci-gate` — `gitleaks-fetch.sh`** re-verifies the cached tarball against
+  the committed SHA256 on every call and extracts into a fresh private dir; a
+  cached binary in a shared runner cache was previously executed unverified
+  after the first download.
+- **`ci-gate` — `.gitleaks.toml`** allowlist uses `regexTarget = "match"`: with
+  `"line"`, a placeholder anywhere on a line excused a real secret beside it.
+- **`ci-gate` — `migration-guard.sh`** detects the destructive DSL tokens of
+  the frameworks whose directories it scans by default (Rails/Alembic, Django,
+  Laravel, Knex/Sequelize/TypeORM) in addition to SQL; its residue — multi-line
+  statements, SQL inside strings, unlisted DSLs — is documented as "Known
+  limits" in `ci/README.md` and handed to the phase-6b security review
+  explicitly.
+- **GitHub template** — event data reaches `run:` steps through `env:` rather
+  than inlined `${{ }}` (no injection was possible with the fields used; the
+  template no longer teaches the pattern).
+
+### Added
+- **Repository scripts** (not part of the plugin): `scripts/lint.sh` turns the
+  written rules of this repo into greps (reference links resolve, `$ROOT`
+  block present, no fail-open idioms in the payload, decompose vocabulary
+  consistent across its five files, one scanner version in every path, no
+  personal paths in tracked files); `scripts/release-check.sh` checks the
+  four-step release ritual and classifies the tree as unreleased / released /
+  drifted; `scripts/readme-parity.sh` keeps `README.md` and `README.ru.md`
+  structurally in lockstep. `.github/workflows/check.yml` runs them and the
+  product's own secret-scan over this repository.
+
 ## [1.7.0] — 2026-08-17
 
 ### Added
@@ -161,6 +210,7 @@ Donor audit of the `hybrid-plan` / `hybrid-review` skill set —
   tool-agnostic migration-guard and protected-branch rules into any repo —
   GitLab and GitHub CI, pre-commit hooks, failing closed.
 
+[1.7.1]: https://github.com/umar-s/task-flow/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/umar-s/task-flow/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/umar-s/task-flow/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/umar-s/task-flow/compare/v1.4.1...v1.5.0

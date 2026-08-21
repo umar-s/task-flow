@@ -75,8 +75,11 @@ the checklist below only guards against blind spots.
 6. **Third-party** — webhook signatures verified, OAuth with PKCE and state,
    SSRF on server-side fetches of user-supplied URLs.
 7. **Migrations** — a migration that drops/bypasses a permission check or
-   widens access is a security finding here (destructive-DDL mechanics
-   belong to the deterministic CI gate, not to this pass).
+   widens access is a security finding here. Destructive-DDL mechanics belong
+   to the deterministic CI gate — but that gate matches per line on SQL and
+   the common ORM DSL tokens only; a statement split across lines, SQL built
+   inside a string, a data-destroying `UPDATE`, or an unlisted DSL is yours
+   to read and flag.
 8. **AI / LLM surfaces** (if the diff touches prompts, agents, tools) —
    model output treated as untrusted (never into eval/SQL/shell/innerHTML);
    the system prompt not relied on as a security boundary (prompt
