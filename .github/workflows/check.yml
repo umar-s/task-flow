@@ -53,15 +53,15 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
         run: |
-          RANGE=""
+          RANGE=()
           if [ "$EVENT_NAME" = "pull_request" ]; then
             git fetch --no-tags origin "$BASE_REF"
-            RANGE="--log-opts=origin/${BASE_REF}..HEAD"
+            RANGE=("--log-opts=origin/${BASE_REF}..HEAD")
           elif [ "$EVENT_NAME" = "push" ]; then
             if ! printf '%s' "$BEFORE_SHA" | grep -qE '^0+$'; then
-              RANGE="--log-opts=${BEFORE_SHA}..${HEAD_SHA}"
+              RANGE=("--log-opts=${BEFORE_SHA}..${HEAD_SHA}")
             fi
           fi
           docker run --rm -v "$PWD:/repo:ro" -w /repo "$GITLEAKS_IMAGE" \
             detect --source /repo --config /repo/templates/ci-gate/.gitleaks.toml \
-            --redact --no-banner -v $RANGE
+            --redact --no-banner -v "${RANGE[@]}"
