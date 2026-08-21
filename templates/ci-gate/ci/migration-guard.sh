@@ -51,12 +51,14 @@ STAGED="${STAGED:-0}"
 # job, never a reason to widen this regex into a parser.
 SQL_RE='(DROP[[:space:]]+(TABLE|COLUMN|SCHEMA|DATABASE|INDEX|CONSTRAINT|VIEW|TYPE|SEQUENCE|TRIGGER|FUNCTION|PROCEDURE|MATERIALIZED)|TRUNCATE|DELETE[[:space:]]+FROM|ALTER[[:space:]]+TABLE[[:space:]].*[[:space:]]DROP[[:space:]])'
 ORM_RE='(^|[^A-Za-z0-9_])(drop_table|drop_column|remove_columns?|remove_reference|remove_belongs_to|remove_timestamps|drop_join_table|dropTable(IfExists)?|dropColumns?|removeColumn|dropTimestamps|dropSoftDeletes|DeleteModel|RemoveField|Schema::drop|Schema::dropIfExists)([^A-Za-z0-9_]|$)'
-# up/upgrade/change and down/downgrade definitions (Rails incl. `def self.` and
-# `dir.down {`, Alembic, Laravel, Knex/Sequelize/TypeORM incl. `exports.`,
-# `module.exports.`, `export const`, bare `const`/`let`). A bare assignment
-# (`down = 2`) does NOT count — only a prefixed one. Exported for awk via
-# ENVIRON: `-v` would re-process backslash escapes.
-_PFX_OPT='(public[[:space:]]+)?(async[[:space:]]+)?(def[[:space:]]+(self\.)?|function[[:space:]]+|dir\.)?'
+# up/upgrade/change and down/downgrade definitions (Rails incl. `def self.`,
+# Alembic, Laravel, Knex/Sequelize/TypeORM incl. `exports.`, `module.exports.`,
+# `export const`, bare `const`/`let`). A bare assignment (`down = 2`) does NOT
+# count — only a prefixed one. A down definition counts only at the SAME
+# indentation as the up definition it closes (a `down:` key or a `down(q)` call
+# nested inside up() is neither). Exported for awk via ENVIRON: `-v` would
+# re-process backslash escapes.
+_PFX_OPT='(public[[:space:]]+)?(async[[:space:]]+)?(def[[:space:]]+(self\.)?|function[[:space:]]+)?'
 _PFX_REQ='((module\.)?exports\.|export[[:space:]]+(async[[:space:]]+)?(function[[:space:]]+|const[[:space:]]+)|const[[:space:]]+|let[[:space:]]+|var[[:space:]]+)'
 export UP_RE="^[[:space:]]*(${_PFX_OPT}(up|upgrade|change)[[:space:]]*([(:{]|\$)|${_PFX_REQ}(up|upgrade|change)[[:space:]]*[=:(])"
 export DOWN_RE="^[[:space:]]*(${_PFX_OPT}(down|downgrade)[[:space:]]*([(:{]|\$)|${_PFX_REQ}(down|downgrade)[[:space:]]*[=:(])"
@@ -64,10 +66,14 @@ APPROVAL_RE='destructive:[[:space:]]*approved'
 
 forward_part() {     # stdin: file content → the part that is scanned; rc = awk's
   awk '
+    function indent(s) { match(s, /^[[:space:]]*/); return RLENGTH }
     { lines[NR] = $0 }
-    !u && $0 ~ ENVIRON["UP_RE"]   { u = NR }
-     d && $0 ~ ENVIRON["UP_RE"]   { again = NR }
-    !d && $0 ~ ENVIRON["DOWN_RE"] { d = NR }
+    # A one-line Rails `dir.down { … }` inside `reversible` is the reverse of the
+    # surrounding change: that line is not scanned, and it never cuts the file.
+    /^[[:space:]]*dir\.down[[:space:]]*\{.*\}[[:space:]]*$/ { lines[NR] = ""; next }
+    !u && $0 ~ ENVIRON["UP_RE"]                         { u = NR; ui = indent($0); next }
+    !d && $0 ~ ENVIRON["DOWN_RE"] && (!u || indent($0) == ui) { d = NR; di = indent($0); next }
+     d && $0 ~ ENVIRON["UP_RE"] && indent($0) == (u ? ui : di) { again = NR }
     END {
       cut = (u && d && u < d && !again) ? d : NR + 1
       for (i = 1; i < cut; i++) print lines[i]
@@ -77,8 +83,10 @@ is_destructive() {   # stdin: file content → 0 destructive · 1 clean · 2 can
   local content fwd
   content=$(cat)
   fwd=$(printf '%s\n' "$content" | forward_part) || return 2
-  if printf '%s\n' "$fwd" | grep -Eiq "$SQL_RE"; then return 0; else [ $? -le 1 ] || return 2; fi
-  if printf '%s\n' "$fwd" | grep -Eq  "$ORM_RE"; then return 0; else [ $? -le 1 ] || return 2; fi
+  # here-strings, not pipes: `grep -q` exits on the first match and a pipe
+  # writer would die of SIGPIPE (141) — a large file would read as "cannot evaluate".
+  if grep -Eiq "$SQL_RE" <<< "$fwd"; then return 0; else [ $? -le 1 ] || return 2; fi
+  if grep -Eq  "$ORM_RE" <<< "$fwd"; then return 0; else [ $? -le 1 ] || return 2; fi
   return 1
 }
 
@@ -92,7 +100,8 @@ if [ -z "$dir_re" ]; then
   echo "migration-guard: no MIGRATION_DIRS configured, skipping"
   exit 0
 fi
-is_migration() { printf '%s' "$1" | grep -Eq "$dir_re"; }
+# bash ERE, no external tool: a broken grep must never turn a migration into "not a migration".
+is_migration() { [[ "$1" =~ $dir_re ]]; }
 
 # Resolve the change set + how to read a file at the evaluated tip.
 if [ "$STAGED" = "1" ]; then
@@ -139,7 +148,7 @@ while IFS=$'\t' read -r status path _rest; do
         exit 2
       fi
       if [ "$drc" -eq 0 ]; then
-        if printf '%s' "$content" | grep -Eiq "$APPROVAL_RE"; then
+        if grep -Eiq "$APPROVAL_RE" <<< "$content"; then
           echo "warn [destructive]  $path : destructive DDL present but approved" >&2
         else
           echo "FAIL [destructive]  $path : destructive DDL without '-- destructive: approved' marker" >&2

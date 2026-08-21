@@ -25,11 +25,12 @@ existing promise actually hold.
   tracked files); `scripts/release-check.sh` checks the four-step release
   ritual and classifies the tree as unreleased / released / drifted;
   `scripts/readme-parity.sh` keeps `README.md` and `README.ru.md` structurally
-  in lockstep; `tests/` holds the payload's negative controls — 40
-  migration-guard fixtures (default reversible templates of Laravel, Knex,
-  Sequelize, TypeORM, Rails, Alembic must pass; drops in the forward part,
-  bypass layouts and a broken `awk` must not) and the failure paths of
-  `gitleaks-fetch.sh`. `.github/workflows/check.yml` runs them, actionlint
+  in lockstep; `tests/` holds the payload's negative controls — 46
+  migration-guard fixtures plus 3 under busybox where available (default
+  reversible templates of Laravel, Knex, Sequelize, TypeORM, Rails, Alembic
+  must pass; drops in the forward part, bypass layouts, nested `down`
+  look-alikes, files over 64 KB, a broken `awk` or `grep` must not) and the
+  failure paths of `gitleaks-fetch.sh`. `.github/workflows/check.yml` runs them, actionlint
   and yamllint (both pinned), and the product's own secret-scan over this
   repository.
 - **`ci-gate` — `gate.sh`** accepts `GATE_PINNED_ONLY=1` to ignore a `gitleaks`
@@ -39,9 +40,12 @@ existing promise actually hold.
 - **`ci-gate` — `migration-guard.sh` judges the forward part of a migration,
   and detects more there — MRs in flight may start to need the marker.** Both
   families are matched only before a `down` / `downgrade` definition that
-  follows an `up` / `upgrade` / `change` one (and is not followed by another
-  `up`): a conventional reversible migration, in DSL or in SQL, no longer needs
-  the marker; every other layout is scanned in full. SQL: `DROP` of a view,
+  follows an `up` / `upgrade` / `change` one in the same file, at the same
+  indentation, and is not followed by another `up`: a conventional reversible
+  migration in one file (Rails, Alembic, Laravel, Knex, Sequelize, TypeORM —
+  in DSL or in SQL) no longer needs the marker; every other layout, including
+  split `*.down.sql` files and `-- +goose Down`-style sections, is scanned in
+  full as before. SQL: `DROP` of a view,
   type, sequence, trigger, function, procedure or materialized view and
   `ALTER TABLE … DROP <anything>` (the `COLUMN` keyword is optional in
   PostgreSQL/MySQL) now count as destructive. ORM: the table/column-dropping

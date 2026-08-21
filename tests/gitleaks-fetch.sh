@@ -33,13 +33,19 @@ n=$(runs)
 out=$(bash "$TMP/fetch-bad.sh" 2>"$TMP/err") && rc=0 || rc=$?
 [ "$rc" = 1 ] && [ -z "$out" ] && grep -q 'CHECKSUM MISMATCH' "$TMP/err" && [ "$(runs)" = "$n" ] && [ ! -f "$GITLEAKS_CACHE_DIR/$TARBALL" ] && ok || bad "bad checksum: rc=$rc $(cat "$TMP/err")"
 # f) cache is an optimisation: unreadable cached tarball → re-download, not a crash
-bash "$FETCH" >/dev/null 2>&1; chmod 000 "$GITLEAKS_CACHE_DIR/$TARBALL"
-B4=$(bash "$FETCH" 2>"$TMP/err") && "$B4" version >/dev/null && ok || bad "unreadable cache: $(cat "$TMP/err")"
-chmod 644 "$GITLEAKS_CACHE_DIR/$TARBALL"
 # g) read-only cache dir after a successful verification: still succeeds (just not cached)
-rm -rf "$GITLEAKS_CACHE_DIR"; mkdir -p "$GITLEAKS_CACHE_DIR"; chmod 555 "$GITLEAKS_CACHE_DIR"
-B5=$(bash "$FETCH" 2>"$TMP/err") && "$B5" version >/dev/null && ok || bad "read-only cache: $(cat "$TMP/err")"
-chmod 755 "$GITLEAKS_CACHE_DIR"
+# Both need permission bits to bite — as root they don't, so the branch would never be entered.
+if [ "$(id -u)" = 0 ]; then
+  echo "tests/gitleaks-fetch: running as root — (f)/(g) permission fixtures skipped" >&2
+  B4=$(bash "$FETCH" 2>/dev/null); B5=$B4
+else
+  bash "$FETCH" >/dev/null 2>&1; chmod 000 "$GITLEAKS_CACHE_DIR/$TARBALL"
+  B4=$(bash "$FETCH" 2>"$TMP/err") && "$B4" version >/dev/null && grep -q 'unreadable' "$TMP/err" && ok || bad "unreadable cache: $(cat "$TMP/err")"
+  chmod 644 "$GITLEAKS_CACHE_DIR/$TARBALL"
+  rm -rf "$GITLEAKS_CACHE_DIR"; mkdir -p "$GITLEAKS_CACHE_DIR"; chmod 555 "$GITLEAKS_CACHE_DIR"
+  B5=$(bash "$FETCH" 2>"$TMP/err") && "$B5" version >/dev/null && grep -q 'not cached' "$TMP/err" && ok || bad "read-only cache: $(cat "$TMP/err")"
+  chmod 755 "$GITLEAKS_CACHE_DIR"
+fi
 # h) stdout carries only the path (every run)
 for b in "$B1" "$B2" "$B3" "$B4" "$B5"; do case "$b" in */gitleaks) ;; *) bad "stdout not a bare path: '$b'";; esac; done; ok
 

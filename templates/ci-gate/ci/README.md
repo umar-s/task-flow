@@ -86,11 +86,16 @@ On any changed file under a migrations dir:
   and no `up` is redefined after it, everything before that `down`: a
   conventional `down()` drops exactly what `up()` created — in DSL or in SQL
   (`queryRunner.query("DROP TABLE …")`, `op.execute("DROP …")`) — and flagging
-  every reversible migration would make the marker worthless. Any other layout
-  (`down` first, `up` redefined after `down`, bare `down = …` assignments, no
-  `up`, no `down`, plain `.sql` files with `-- +goose Down`-style sections) is
-  scanned in full. The verdict fails closed (`exit 2`) when `awk`/`grep`
-  themselves fail — a missing tool is not a clean migration.
+  every reversible migration would make the marker worthless. A `down`
+  definition counts only at the same indentation as the `up` it closes — a
+  `down:` key or a `down(q)` call nested inside `up()` is neither — and a
+  one-line Rails `dir.down { … }` inside `reversible` is simply not scanned
+  (a multi-line `dir.down do … end` is, and needs the marker). Any other
+  layout (`down` first, `up` redefined after `down`, bare `down = …`
+  assignments, no `up`, no `down`, plain `.sql` files with
+  `-- +goose Down`-style sections, `*.down.sql` files) is scanned in full. The
+  verdict fails closed (`exit 2`) when `awk`/`grep` themselves fail — a missing
+  tool is not a clean migration.
 
 Env: `MIGRATION_DIRS` (default `migrations db/migrate db/migration prisma/migrations`),
 `GATE_BASE_REF` (override the diff base), `STAGED=1` (check the index).

@@ -38,11 +38,11 @@ case "$(uname -m)" in
   *) log "unsupported arch $(uname -m)"; exit 2 ;;
 esac
 
-sha256_of() {
-  if   command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
-  elif command -v shasum    >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
-  else log "no sha256sum/shasum available"; exit 2; fi
-}
+# Pick the checksum tool up front: an `exit` inside $(…) would only end the
+# subshell and surface as a misleading "checksum mismatch".
+if   command -v sha256sum >/dev/null 2>&1; then sha256_of() { sha256sum "$1" | awk '{print $1}'; }
+elif command -v shasum    >/dev/null 2>&1; then sha256_of() { shasum -a 256 "$1" | awk '{print $1}'; }
+else log "no sha256sum/shasum available"; exit 2; fi
 
 CACHE="${GITLEAKS_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/gitleaks-pinned}"
 TARBALL="gitleaks_${PIN_VERSION}_linux_${ARCH}.tar.gz"

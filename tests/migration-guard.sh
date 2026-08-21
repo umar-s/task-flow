@@ -68,6 +68,18 @@ t identifier-droptable migrations/0005_b.sql 0 'CREATE TABLE droptable_audit (id
 t sql-dropped_at    migrations/0005_c.sql 0 'ALTER TABLE t ADD COLUMN dropped_at timestamp;'
 t rails-add_column  db/migrate/005_a.rb 0 'def change\n  add_column :users, :email, :string\nend'
 
+
+# --- nested `down` inside up(), one-line dir.down, and big files: the reviewer's fail-open layouts ---
+t rails-reversible-then-drop db/migrate/007_a.rb 1 'def change\n  reversible do |dir|\n    dir.up { add_column :t, :c, :string }\n    dir.down { remove_column :t, :c }\n  end\n  drop_table :legacy\nend'
+t rails-reversible-multiline db/migrate/007_b.rb 1 'def change\n  reversible do |dir|\n    dir.down do\n      remove_column :t, :c\n    end\n  end\nend'
+t knex-nested-down-key migrations/20240104_a.js 1 'exports.up = async k => {\n  const opts = {\n    down: false,\n  };\n  await k.schema.dropTable("users");\n};\nexports.down = async () => {};'
+t typeorm-down-call-in-up migrations/1700_b.ts 1 'export class M {\n  public async up(q) {\n    down(q);\n    await q.query("DROP TABLE old");\n  }\n  public async down(q) {}\n}'
+t sequelize-nested-up-key migrations/20240104_b.js 0 'module.exports = {\n  up: async (q) => { await q.createTable("t", {}); },\n  down: async (q) => {\n    await q.bulkInsert("x", [{\n      up: 1,\n    }]);\n    await q.dropTable("t");\n  },\n};'
+big=$(head -c 120000 /dev/zero | tr '\0' 'x' | fold -w 100)
+t big-file-drop-first-line migrations/0008_a.sql 1 "DROP TABLE t;\n$big"
+t big-file-drop-with-marker migrations/0008_b.sql 0 "-- destructive: approved (T-9)\nDROP TABLE t;\n$big"
+t big-file-clean migrations/0008_c.sql 0 "CREATE TABLE t (id int);\n$big"
+
 # --- marker ---
 t marker-sql        migrations/0006_a.sql 0 '-- destructive: approved (T-1, archived)\nDROP VIEW v;'
 t marker-rails      db/migrate/006_a.rb 0 '# destructive: approved (T-2)\ndef change\n  drop_table :legacy\nend'
@@ -77,6 +89,13 @@ mkdir -p "$TMP/badbin"; printf '#!/bin/sh\necho "awk: simulated failure" >&2\nex
 mkdir -p migrations; printf 'operations = [migrations.DeleteModel(name="Old")]\n' > migrations/0007_a.py; git add -A
 err=$(PATH="$TMP/badbin:$PATH" bash "$GUARD" --staged 2>&1 >/dev/null) && rc=0 || rc=$?
 if [ "$rc" = 2 ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL broken-awk-fails-closed: rc=%s expected=2\n%s\n' "$rc" "$err" >&2; fi
+git rm -rq --cached . >/dev/null 2>&1 || true; rm -rf migrations
+
+
+mkdir -p "$TMP/badgrep"; printf '#!/bin/sh\necho "grep: simulated failure" >&2\nexit 2\n' > "$TMP/badgrep/grep"; chmod +x "$TMP/badgrep/grep"
+mkdir -p migrations; printf 'operations = [migrations.DeleteModel(name="Old")]\n' > migrations/0007_b.py; git add -A
+err=$(PATH="$TMP/badgrep:$PATH" bash "$GUARD" --staged 2>&1 >/dev/null) && rc=0 || rc=$?
+if [ "$rc" = 2 ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL broken-grep-fails-closed: rc=%s expected=2\n%s\n' "$rc" "$err" >&2; fi
 git rm -rq --cached . >/dev/null 2>&1 || true; rm -rf migrations
 
 # --- portability: the same verdicts under busybox awk/grep when available ---
