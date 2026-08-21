@@ -129,7 +129,9 @@ diff is a finding you can raise from the diff alone.
      the blast radius (a new dependency, a touched shared module, a config
      default) is Required until the author names the requirement behind it.
    - **DoD / spec compliance** — grade each item `DoD-n → PASS | FAIL |
-     PARTIAL` with the `file:line` or command that shows it; a PASS with
+     PARTIAL | UNVERIFIABLE` (the last only for an item whose class is
+     `external`, and only with the manual check named) with the `file:line` or
+     command that shows it; a PASS with
      nothing to point at is not a PASS. Deviations from the design-spec are
      flagged explicitly (justified improvement or departure?). Issues with the
      spec itself — say so.

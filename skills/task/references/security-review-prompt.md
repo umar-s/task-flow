@@ -23,7 +23,10 @@ risks.
 
 ## Context
 
-- Design-spec: [DESIGN_SPEC]
+- Design-spec: [DESIGN_SPEC] — **without its *Premortem edges* section**: this
+  pass walks the trust boundaries itself instead of inheriting the team's
+  worry-list, and a security reviewer handed the author's list of fears checks
+  those and stops.
 - Data / permissions the feature touches: [DATA_AND_GRANTS]
 
 ## Git range

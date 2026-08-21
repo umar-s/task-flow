@@ -179,11 +179,12 @@ What phase 7 and phase 8 report must be:
   start with one of `DONE | DONE_WITH_CONCERNS | BLOCKED | MERGED_NOT_LIVE |
   ABANDONED` plus a one-line reason, followed by the `DoD-n → PASS | FAIL |
   PARTIAL` grading with a `file:line` or command per item. A human skims the
-  first line; a runner parses it. The status is **derived, not chosen**:
+  first line; a runner parses it. The grades are `PASS | FAIL | PARTIAL |
+  UNVERIFIABLE`, and the status is **derived, not chosen**:
 
   | Condition | Status |
   |---|---|
-  | merged, deployed, every `DoD-n` PASS, no check skipped | `DONE` |
+  | merged, deployed, every `DoD-n` PASS (an `external` item may be `UNVERIFIABLE` with its manual check named), no check skipped | `DONE` |
   | merged and live, but a Required accepted by the risk owner (recorded on the MR), a check skipped with a reason, or a `DoD-n` not PASS | `DONE_WITH_CONCERNS` |
   | merged, not running (deploy failed, never triggered, health check failed) | `MERGED_NOT_LIVE` |
   | not merged; the blocker is named and not yours to clear | `BLOCKED` |

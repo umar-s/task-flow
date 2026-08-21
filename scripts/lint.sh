@@ -212,6 +212,15 @@ grep -q 'review @' skills/task/SKILL.md || err "task/SKILL.md evidence block los
 grep -q 'DoD-n' skills/task/SKILL.md || err "task/SKILL.md lost the DoD-n grading rule"
 grep -qE 'DoD-n .*PASS' skills/task/references/code-review-prompt.md || err "code-review-prompt.md lost the DoD-n grading"
 grep -q 'only moves up' skills/task/SKILL.md || err "task/SKILL.md lost the 'a tier only moves up' rule"
+# One canonical name for the spec file, or a later phase looks for the wrong one.
+for f in skills/task/SKILL.md skills/task/references/design-spec-template.md skills/task/references/checkpoint.md; do
+  grep -q '\.spec\.md' "$f" || err "$f does not use the canonical <TASK-ID>.spec.md path"
+done
+# The security pass must not inherit the author's worry-list.
+tr '\n' ' ' < skills/task/references/security-review-prompt.md | grep -q 'without its \*Premortem edges\* section' || err "security-review-prompt.md lost the rule that 6b does not receive the premortem edges"
+for w in PASS FAIL PARTIAL UNVERIFIABLE; do
+  grep -q "$w" skills/task/references/implementation-integrity.md || err "implementation-integrity.md lost the DoD grade '$w'"
+done
 # Reverse of check 1: a reference nobody loads is a reference nobody reads.
 for s in skills/*/; do
   s="${s%/}"; [ -d "$s/references" ] || continue

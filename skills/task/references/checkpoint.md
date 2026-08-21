@@ -15,7 +15,7 @@ holds a secret, a token or personal data).
 phase: 5 (TDD implement), next: 6 (code review dispatch)
 tier: T2 · reversibility: one-way (migration) · type: feature
 branch: feature/DEV-475-order-total   base: develop @ 3f2a1c9
-spec: docs/specs/DEV-475.md            checkpoint written by: session 2
+spec: docs/specs/DEV-475.spec.md       checkpoint written by: session 2
 
 ## Baseline (the numbers a fresh run must reproduce)
 tests 47/47 · diff-coverage 31/31 · repro: `make check` (node 20.11.1)
@@ -56,7 +56,7 @@ OrderService.total_for_order — src/services/order.py:88
   never scanned by the gate's scan-at-sink. Keep it in the artifact directory
   outside the commit (`git check-ignore -v` tells you what the repo already
   thinks; add it to the project's ignore list if it does not), and delete it
-  when the task closes. Никогда не пиши в него секреты, токены или PII.
+  when the task closes.
 - **On resume, validate before you trust.** Compare the recorded branch and
   base with `git rev-parse --abbrev-ref HEAD` and `git rev-parse HEAD`:
   - branch and HEAD match → continue from the recorded phase;

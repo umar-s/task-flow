@@ -1,14 +1,17 @@
 # Design-spec template (phase 1)
 
 Loaded in phase 1. The spec is what the premortems attack, what the reviewer
-compares the diff against, and what survives a `/compact`. Write it in the
-project's artifact directory (the path the project's `CLAUDE.md` names, else
-next to the ticket's branch: `docs/specs/<TASK-ID>.md`), then confirm it will
-survive a checkout: `git ls-files --error-unmatch <path>` or
+compares the diff against, and what survives a `/compact`. Write it at the one
+path phase 0 named — `<artifact-dir>/<TASK-ID>.spec.md`, where `<artifact-dir>`
+is the project's artifact directory (its `CLAUDE.md` names it, else
+`docs/specs/`) — then confirm it will survive a checkout: `git ls-files --error-unmatch <path>` or
 `git check-ignore -v <path>` — an ignored spec is a spec you will lose.
 
 **Scale by tier, never by taste.** T1: three sentences in the ticket, no file —
-Problem, DoD, Reversibility if it is one-way. T2: sections 1–6. T3 / any
+Problem, DoD, Reversibility if it is one-way. The moment something has to
+survive the session — the first premortem edge, a decision the reviewer will be
+compared against — the file is created at that same path, even on T1: a slot
+the phase-6 dispatch reads *from the spec file* needs the file to exist. T2: sections 1–6. T3 / any
 one-way door: every section, and §5 is not optional.
 
 A section with nothing to say is written as "none, because …". An **absent**

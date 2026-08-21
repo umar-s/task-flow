@@ -1,6 +1,8 @@
-# Landing: merge → deploy → verified (phase 8)
+# Landing: verify → merge → deploy → verified (phases 7–8)
 
-Loaded in phase 8. Everything here is about the stretch nobody writes down —
+Loaded in **phase 7**, and it carries phase 8 as well — verification before the
+merge (phase 7) and everything after it are one landing sequence, and §6's
+cleanup rules are needed at the end of phase 7. Everything here is about the stretch nobody writes down —
 between "the MR is approved" and "the change is actually running". The failure
 classes below are all recoverable **if** you know the state; each one becomes
 unrecoverable the moment you act on a guess.
@@ -63,9 +65,11 @@ retry to fire.
   durably authorised it, and never invent the command — it comes from the
   Deploy binding, or you stop and say the binding is missing.
 
-## 3. Verify after deploy
+## 3. How deep to verify
 
-Depth follows the scope of the diff — say which level you used:
+Depth follows the scope of the diff — say which level you used. The same table
+applies twice: in phase 7 against the dev/staging environment before the merge,
+and after the deploy against the environment the change actually landed in.
 
 | Scope of the change | What "verified" means here |
 |---|---|

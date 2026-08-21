@@ -52,8 +52,9 @@ the task "looks simple"; that is exactly when gaps hide.
 
 ## Reference loading (resolve once, read lazily per phase)
 
-Phases 5, 6 and 6b each load one reference file under this skill's
-`references/` dir. Resolve the base path **once**, at the start, with a bash
+Phases 1, 3, 5, 6, 6b and 7 each load exactly one reference file under this
+skill's `references/` dir (`land.md` covers phases 7 **and** 8, so phase 8 adds
+no load). Resolve the base path **once**, at the start, with a bash
 step:
 
 ```bash
@@ -69,8 +70,8 @@ substituted in before the call — the Read tool does not expand `${…}`, so a
 literal pass reads nothing.
 Load lazily, one phase at a time: phase 1 `design-spec-template.md`, phase 3
 `blast-radius.md`, phase 5 `implementation-integrity.md`, phase 6
-`code-review-prompt.md`, 6b `security-review-prompt.md`, phase 8 `land.md`;
-`checkpoint.md` only when a phase boundary meets a context boundary.
+`code-review-prompt.md`, 6b `security-review-prompt.md`, phase 7 `land.md`
+(it carries phase 8 as well); `checkpoint.md` only on a session hand-over.
 
 **A Read that fails stops the phase.** Never continue from memory of what the
 reference "probably says" — a reference that did not load is exactly how a
@@ -199,8 +200,11 @@ OpenAPI) in the same change.
 ## 6. Code-review (adversarial)
 Run an independent, adversarial review of the diff — the `code-review` Workflow
 at high effort, or a **fresh reviewer subagent** dispatched with
-`code-review-prompt.md`
-(`Read "$ROOT/skills/task/references/code-review-prompt.md"`).
+`code-review-prompt.md`. Either way, **load the template**
+(`Read "$ROOT/skills/task/references/code-review-prompt.md"`): its *After the
+review comes back* section is the orchestrator's contract — severity → action,
+the split that terminates the loop, one commit per fix, `Reviewed: <sha>` —
+and it applies to whoever produced the findings.
 **Guard the input first:** `git fetch --no-tags origin <integration-branch>`,
 then a non-empty `git diff --stat <base>..HEAD` — a review of an empty or stale
 range comes back "no findings", which reads exactly like a clean diff. Read your
@@ -218,9 +222,11 @@ under *After the review comes back*; it is a contract, not advice.
 
 ## 6b. Security-review (conditional)
 Run an **independent** security pass on the diff (`/security-review`, or a fresh
-subagent dispatched with `security-review-prompt.md`
-(`Read "$ROOT/skills/task/references/security-review-prompt.md"`) —
-never the agent that implemented it, same clean-context rule as phase 6). A
+subagent dispatched with `security-review-prompt.md` — never the agent that
+implemented it, same clean-context rule as phase 6). Load the template either
+way (`Read "$ROOT/skills/task/references/security-review-prompt.md"`): the
+checklist, the severity mapping and the rule that this pass does **not** get
+the spec's *Premortem edges* live there. A
 distinct threat-model lens, not a correctness re-run: STRIDE from the trust
 boundaries the diff touches, plus the **capability diff** — did this change
 start using the network, subprocesses, the filesystem or credentials it did not
@@ -281,16 +287,18 @@ the `landing:` field, and reverting through this same flow.
   prose. Then what shipped (per surface), how it was verified, the MR/PR links,
   follow-ups. For a **bug**: Symptom / Root cause / Introduced by / Fix /
   Prevention now / Prevention follow-up.
-- **Grade the DoD:** `DoD-n → PASS | FAIL | PARTIAL` with the `file:line` or
-  command that shows it. A PASS with nothing to point at is not a PASS; an
-  `external` item closes as `UNVERIFIABLE` with the manual check named.
+- **Grade the DoD:** `DoD-n → PASS | FAIL | PARTIAL | UNVERIFIABLE` with the
+  `file:line` or command that shows it. A PASS with nothing to point at is not a
+  PASS; `UNVERIFIABLE` is only for an `external` item, and only with the manual
+  check and its owner named.
   The verification part is an **evidence block**, not an adjective: numbers
   from one final fresh run made after the last edit, the single command that
   reproduces them, and every skipped check named with its reason — e.g.
   "тесты 47/47 · diff-coverage 31/31 (100%) · мутанты 5/5 killed · CI green
   (secret-scan, migration-guard, unicode-guard, diff-coverage) · review @ 3f2a1c9
-  · security @ skip (нет чувствительных поверхностей) · HEAD @ 3f2a1c9 · commits
-  since review: 0 · node 20.11.1 · live на dev: <url> · repro: `make check` ·
+  · re-reviewed: n/a (no code since review) · security @ skip (нет чувствительных
+  поверхностей) · HEAD @ 3f2a1c9 · node: pin 20.11.1 · actual 20.11.1 (match) ·
+  live на dev: <url> · repro: `make check` ·
   property-тесты: пропущены, в изменении нет инвариантов".
   Never "всё зелёно" — a check nobody ran and nobody mentioned reads exactly
   like a check that passed. Shape and rules in
