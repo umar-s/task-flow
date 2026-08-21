@@ -96,7 +96,9 @@ On any changed file under a migrations dir:
   files) are scanned in full. Layouts that still need the marker when their
   `down` drops something (fail-strict, not a bug): a multi-line
   `dir.down do … end`, `reversible do |direction|`, a one-line
-  `def down; drop_table :t; end`, tabs in `up` vs spaces in `down`. The verdict
+  `def down; drop_table :t; end`, tabs in `up` vs spaces in `down`, and SQL
+  or a comment at column 0 inside the `down` body (a `<<-SQL` heredoc, a
+  template literal) — a dedented line ends the block. The verdict
   fails closed (`exit 2`) when `awk`/`grep` themselves fail — a missing tool is
   not a clean migration.
 

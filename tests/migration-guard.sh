@@ -26,6 +26,7 @@ t() {  # name path expected body
   rm -rf db migrations prisma
 }
 
+run_fixtures() {
 # --- default reversible templates: NO marker needed (drop only in down) ---
 t laravel-default   migrations/2024_a.php 0 'public function up(): void\n{\n  Schema::create("t", fn($t) => $t->id());\n}\npublic function down(): void\n{\n  Schema::dropIfExists("t");\n}'
 t knex-default      migrations/20240101_a.js 0 'exports.up = k => k.schema.createTable("t", t => t.increments());\nexports.down = k => k.schema.dropTable("t");'
@@ -93,6 +94,8 @@ t sequelize-multiline-down migrations/20240105_b.js 0 'module.exports = {\n  up:
 # --- marker ---
 t marker-sql        migrations/0006_a.sql 0 '-- destructive: approved (T-1, archived)\nDROP VIEW v;'
 t marker-rails      db/migrate/006_a.rb 0 '# destructive: approved (T-2)\ndef change\n  drop_table :legacy\nend'
+}
+run_fixtures
 
 # --- infrastructure failures fail closed (rc 2), never pass ---
 mkdir -p "$TMP/badbin"; printf '#!/bin/sh\necho "awk: simulated failure" >&2\nexit 2\n' > "$TMP/badbin/awk"; chmod +x "$TMP/badbin/awk"
@@ -108,20 +111,14 @@ err=$(PATH="$TMP/badgrep:$PATH" bash "$GUARD" --staged 2>&1 >/dev/null) && rc=0 
 if [ "$rc" = 2 ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL broken-grep-fails-closed: rc=%s expected=2\n%s\n' "$rc" "$err" >&2; fi
 git rm -rq --cached . >/dev/null 2>&1 || true; rm -rf migrations
 
-# --- portability: the same verdicts under busybox awk/grep when available ---
+# --- portability: the whole fixture set again under busybox awk/grep when available ---
 if command -v busybox >/dev/null 2>&1 && busybox awk 'BEGIN{}' 2>/dev/null; then
   mkdir -p "$TMP/bb"; ln -sf "$(command -v busybox)" "$TMP/bb/awk"; ln -sf "$(command -v busybox)" "$TMP/bb/grep"
-  for fx in 'knex-default|0|exports.up = k => k.schema.createTable("t");\nexports.down = k => k.schema.dropTable("t");' \
-            'knex-drop-in-up|1|exports.up = k => k.schema.dropTableIfExists("t");\nexports.down = k => {};' \
-            'bypass-up-redefined|1|def up\n  create_table :t\nend\ndef down\n  drop_table :t\nend\ndef up\n  drop_table :users\nend'; do
-    IFS='|' read -r name expect body <<< "$fx"
-    mkdir -p migrations; printf '%b\n' "$body" > migrations/bb.rb; git add -A
-    err=$(PATH="$TMP/bb:$PATH" bash "$GUARD" --staged 2>&1 >/dev/null) && rc=0 || rc=$?
-    if [ "$rc" = "$expect" ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL busybox/%s: rc=%s expected=%s\n%s\n' "$name" "$rc" "$expect" "$err" >&2; fi
-    git rm -rq --cached . >/dev/null 2>&1 || true; rm -rf migrations
-  done
+  before=$fail
+  PATH="$TMP/bb:$PATH" run_fixtures
+  [ "$fail" = "$before" ] || echo "tests/migration-guard: busybox awk/grep verdicts differ from the default tools" >&2
 else
-  echo "tests/migration-guard: busybox not available — portability subset skipped" >&2
+  echo "tests/migration-guard: busybox not available — portability pass skipped" >&2
 fi
 
 echo "tests/migration-guard: $pass passed, $fail failed"
