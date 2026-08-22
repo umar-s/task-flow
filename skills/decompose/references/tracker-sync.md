@@ -181,6 +181,9 @@ writes:
   its stable idempotency key (§6).
 - Every `link` call that would run: task → epic `parent` links and task →
   task `depends` links, listed by `<TASK-ID>` pair and type.
+- Tasks whose fields still carry a `<placeholder: …>`, listed by id: they are
+  pushed as written — this phase never fills a placeholder in — and stay out
+  of dispatch until someone does.
 - A one-line count at the end: how many `create_issue` calls and how many
   `link` calls the real run would make.
 - **Possible duplicates**, when the adapter offers `search_issues`: for each

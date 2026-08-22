@@ -15,5 +15,12 @@ hard SP gate, and no interactive confirm/reject loop — decisions here are
 made by whichever skill or workflow reads this reference, not by a
 conversational back-and-forth with the end user.
 
+Three conventions added in 1.10.0 — the draft's out-of-scope table, the
+revision loop's convergence guard and the optional duplicate search before a
+tracker push — follow the shape of the corresponding conventions in
+`gstack` (`spec`, `plan-ceo-review`, `spec --dedupe`) as recorded in
+`docs/audits/2026-08-21-dmitriy-toolkit-v3-audit.md`; the wording here is
+this plugin's own and no text was taken from that source.
+
 This plugin (`task-flow`) is itself licensed under the MIT License. See the
 `LICENSE` file at the repository root for the full text.

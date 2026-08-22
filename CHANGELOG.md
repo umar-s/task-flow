@@ -83,6 +83,17 @@ implementer, and a tracker push that trusted its own `ok`. The contract of
 - **Phase 0 reads the code before the first question** — and before Phase 1
   when there is none — and cites `path:line`; memory and hand-off notes are
   recall, not authority.
+- **The author is told what Check 2 grades** (`task-schema.md`, loaded in
+  Phase 3): name the artifact, the number, the whole list, the place — so the
+  first check-run is not a wall of WARNINGs about rules nobody stated.
+- **`task` consumes the new lines**: phase 0 takes a `Not in this task:` line
+  and the draft's Out of scope rows naming the task verbatim into the spec's
+  *Not in scope* list — the reviewer's scope-drift check now has its input.
+- The dry-run lists tasks still carrying a `<placeholder: …>`: pushed as
+  written, never filled in by Phase 7.
+- `skills/decompose/NOTICE.md` records that the out-of-scope table, the
+  convergence guard and the duplicate search follow gstack conventions in
+  shape, with this plugin's own wording.
 - `lint.sh`: every new contract pinned to the section, table row or code block
   that carries it (Check 2/5/6 sections, revision loop, the two draft tables,
   the adapter contract block, §3/§5/§8/§9/§10 of `tracker-sync.md`, the

@@ -74,6 +74,14 @@ a user cares about actually changed. A `dod` block missing `truths` is
 incomplete, full stop — this is exactly the gap the QA checklist's
 field-completeness check (BLOCKER) exists to catch.
 
+Write every member so an implementer who has never seen this repository can
+act on it — the same check grades *quality*, not only presence: a goal verb
+or quality adverb with nothing that will exist when it is done (`ensure`,
+`support`, `handle`, `properly`), an adjective with no metric (fast,
+reliable), an open-ended list ("etc.", "…"), a noun that resolves to no path,
+symbol, endpoint or table are all WARNINGs you will get back. Name the
+artifact, the number, the whole list, the place.
+
 ## Worked example
 
 A fully filled task, taken from a hypothetical auth epic. Every field is
