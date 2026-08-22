@@ -36,7 +36,13 @@ dependency-linked tasks with a full **6-field** contract (`name`, `context`,
 ```
 
 `*` optional: Phase 7 only runs after explicit approval of the draft, always
-dry-run-first, and stops gracefully at the draft if no tracker is configured.
+dry-run-first, and stops gracefully at the draft if no tracker is configured —
+and when it does write, it **reads every issue back** and compares it with what
+was sent, because an `ok` from the writing side is a claim, not a check.
+The QA pass judges fields on quality, not just presence: a goal verb with no
+artifact, an adjective with no metric, an open-ended list or a path that does
+not exist are findings, and an identifier nobody could confirm is written as a
+`<placeholder>` rather than invented.
 Story Points use Fibonacci (`1/2/3/5/8/13`) as an **optional annotation, not a
 gate** — splitting is driven by SPIDR/vertical-slices/dependencies. The MD
 draft (`docs/decompose/YYYY-MM-DD-<epic>.md`) is the self-contained primary

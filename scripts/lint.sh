@@ -81,6 +81,91 @@ for f in skills/decompose/SKILL.md skills/decompose/references/task-schema.md \
 done
 tr '\n' ' ' < skills/decompose/SKILL.md | grep -q 'the 8 checks' || err "decompose SKILL.md no longer says 'the 8 checks'"
 grep -q 'The 8 checks' skills/decompose/references/qa-checklist.md || err "qa-checklist.md check count drifted"
+# 1.10.0 — decompose contracts that must not shrink back, each pinned to the
+# section, table row or code block that carries it; a loose word elsewhere in
+# the file is not proof the rule is still there.
+QA=skills/decompose/references/qa-checklist.md
+grep -q '^### Check 2 — Field completeness and quality' "$QA" || err "$QA: Check 2 lost its quality half"
+C1=$(section "$QA" '/^### Check 1 /,/^### Check 2 /')
+printf '%s' "$C1" | grep -q 'The input is part of this check' || err "$QA: Check 1 no longer compares the input against the out-of-scope list — a silent cut is invisible again"
+C2=$(section "$QA" '/^### Check 2 /,/^### Check 3 /')
+printf '%s' "$C2" | grep -q 'Invented identifiers are a BLOCKER' || err "$QA: Check 2 lost the invented-identifier rule"
+printf '%s' "$C2" | grep -q '<placeholder: what it is>' || err "$QA: Check 2 lost the <placeholder: …> form"
+printf '%s' "$C2" | grep -q 'test -e <path>' || err "$QA: Check 2 lost the @-reference check command"
+C5=$(section "$QA" '/^### Check 5 /,/^### Check 6 /')
+printf '%s' "$C5" | grep -q 'The contract has to match' || err "$QA: Check 5 lost the producer→consumer contract rule"
+C6=$(section "$QA" '/^### Check 6 /,/^### Check 7 /')
+printf '%s' "$C6" | grep -q 'form from Check 2 is \*\*not\*\* a hit here' || err "$QA: Check 6 no longer exempts the <placeholder: …> form — Check 2 and Check 6 contradict"
+printf '%s' "$C6" | grep -q 'forged owner' || err "$QA: Check 6 no longer verifies the 'Not in this task:' owner"
+RL=$(section "$QA" '/^## Revision loop/,0')
+printf '%s' "$RL" | grep -q 'Convergence guard' || err "$QA: revision loop lost the convergence guard"
+printf '%s' "$RL" | grep -q '`PASSED` still requires a clean check-run' || err "$QA: the convergence guard no longer says PASSED still needs a clean run"
+printf '%s' "$RL" | grep -q 'repeat: true' || err "$QA: the convergence guard lost its comparison key (repeat: true)"
+printf '%s' "$RL" | grep -q 'or the convergence guard firing earlier' || err "$QA: the escalation shape is not tied to the convergence guard"
+DT=skills/decompose/references/draft-template.md
+grep -q '^## Out of scope' "$DT" || err "$DT lost the Out of scope table"
+grep -q '^## Placeholders' "$DT" || err "$DT lost the Placeholders table"
+grep -q 'Fill \*\*Out of scope\*\*' "$DT" || err "$DT: the how-to list no longer fills Out of scope / Placeholders"
+TS=skills/decompose/references/task-schema.md
+grep -q 'Not in this task: <what> — <TASK-ID> owns it' "$TS" || err "$TS: the context row lost the 'Not in this task:' advisory line"
+grep -q 'risk tier: T1' "$TS" || err "$TS: the context row lost the 'risk tier:' advisory line"
+grep -q '^## Identifiers you could not confirm' "$TS" || err "$TS lost the placeholder rule"
+EP=skills/decompose/references/edge-probe.md
+for r in 'authorization | actor-facing' 'surface states | ui' 'interaction | ui' 'grants | infra' 'secrets | infra' 'environments | infra'; do
+  grep -q "^| $r |" "$EP" || err "$EP: lost the surface row '$r'"
+done
+RF=$(section "$EP" '/^## Relevance filter first/,/^## The eight/')
+for w in 'actor-facing' '`ui`' '`infra`'; do
+  printf '%s' "$RF" | grep -q "$w" || err "$EP: the relevance filter never assigns the surface $w — its rows can never be raised"
+done
+TR=skills/decompose/references/tracker-sync.md
+CB=$(awk '/^## 1\. Adapter contract/,/^## 2\./' "$TR" | awk '/^```/{f=!f;next} f')
+printf '%s\n' "$CB" | grep -q '^read_issue(' || err "$TR: the adapter contract block lost read_issue — a write nobody read back is a claim"
+printf '%s\n' "$CB" | grep -q '^search_issues(' || err "$TR: the adapter contract block lost search_issues"
+printf '%s\n' "$CB" | grep -q '^describe_project(' || err "$TR: the adapter contract block lost describe_project — preflight has nothing to read"
+for m in markdown jira-wiki adf-via-markdown plain; do
+  printf '%s\n' "$CB" | grep -E '^markup:' | grep -q "\"$m\"" || err "$TR: the contract block's markup line lost '$m'"
+done
+grep -q 'through two operations' "$TR" && err "$TR §1 still says 'two operations' — the contract has a read and a search now"
+P3=$(section "$TR" '/^## 3\. Runtime tool discovery/,/^## 4\./')
+printf '%s' "$P3" | grep -q 'names a REST endpoint' || err "$TR §3 lost the REST transport"
+printf '%s' "$P3" | grep -q 'never echoed' || err "$TR §3 lost the token hygiene for the REST transport"
+P5=$(section "$TR" '/^## 5\. Dry-run mode/,/^## 6\./')
+printf '%s' "$P5" | grep -q 'Possible duplicates' || err "$TR §5 lost the possible-duplicates block"
+printf '%s' "$P5" | grep -q 'The preflight summary first' || err "$TR §5: the dry-run no longer prints the preflight summary"
+for r in 'read_issue(<TASK-ID>)' 'search_issues(query)' 'markup'; do
+  grep -q "^| \`$r\` |" "$TR" || err "$TR §7: the YouTrack illustration has no row for $r"
+done
+grep -q 'Source: <draft path>, epic <ID or none>' "$TR" || err "$TR §7: the description mapping lost the Source: line"
+P8=$(section "$TR" '/^## 8\. Partial-failure/,/^## 9\./')
+printf '%s' "$P8" | grep -q 'read-back: 6 match / 1 mismatch' || err "$TR §8 lost the read-back mismatch report shape"
+P9=$(section "$TR" '/^## 9\. Procedure/,/^## 10\./')
+printf '%s' "$P9" | grep -q 'Preflight — one read before any promise' || err "$TR §9 lost the preflight step"
+printf '%s' "$P9" | grep -q 'Read back what you wrote' || err "$TR §9 lost the read-back step"
+printf '%s' "$P9" | grep -q 'Source: <path to the draft>, epic <ID or none>' || err "$TR §9: the write step no longer stamps the Source: line"
+P10=$(section "$TR" '/^## 10\. Return/,0')
+printf '%s' "$P10" | grep -q 'with their URLs' || err "$TR §10 no longer returns URLs next to ids"
+DS=skills/decompose/SKILL.md
+D0=$(section "$DS" '/^## 0\. Ingest/,/^## 1\. /')
+printf '%s' "$D0" | grep -q 'Read the code before the first question' || err "$DS phase 0 lost 'read the code before the first question'"
+printf '%s' "$D0" | grep -q 'recall, not authority' || err "$DS phase 0 lost 'memory is recall, not authority'"
+D1=$(section "$DS" '/^## 1\. Requirements/,/^## 2\. /')
+printf '%s' "$D1" | grep -q 'a fragment in neither list was cut' || err "$DS phase 1 no longer writes the out-of-scope list next to the requirements"
+D3=$(section "$DS" '/^## 3\. Enrich/,/^## 4\. /')
+printf '%s' "$D3" | grep -q 'Never invent an identifier' || err "$DS phase 3 lost the placeholder rule"
+D5=$(section "$DS" '/^## 5\. QA/,/^## 6\. /')
+printf '%s' "$D5" | grep -q 'the repository path' || err "$DS phase 5 no longer hands the checker the repository path — Check 2 cannot run test -e/grep"
+printf '%s' "$D5" | grep -q 'out-of-scope list from Phase 1' || err "$DS phase 5 no longer hands the checker the out-of-scope list"
+printf '%s' "$D5" | grep -q 'two consecutive check-runs return the same set of BLOCKERs' || err "$DS phase 5 does not escalate on the convergence guard"
+D6=$(section "$DS" '/^## 6\. Draft/,/^## 7\. /')
+printf '%s' "$D6" | grep -q 'out-of-scope' || err "$DS phase 6 no longer writes the out-of-scope table"
+printf '%s' "$D6" | grep -q 'placeholders' || err "$DS phase 6 no longer writes the placeholders table"
+D7=$(section "$DS" '/^## 7\. Tracker sync/,/^## Handoff/')
+printf '%s' "$D7" | grep -q 'preflight first' || err "$DS phase 7 lost the preflight"
+printf '%s' "$D7" | grep -q 'read every touched issue back' || err "$DS phase 7 lost the read-back"
+printf '%s' "$D7" | grep -q 'with their URLs' || err "$DS phase 7 no longer returns URLs"
+grep -q 'reads every issue back' README.md || err "README.md: the decompose paragraph no longer says the push reads every issue back"
+grep -q 'перечитывает каждую созданную задачу' README.ru.md || err "README.ru.md: the decompose paragraph no longer says the push reads every issue back"
 
 # 7. No personal absolute paths in tracked files (CLAUDE.md is local and untracked).
 if git grep -nE '/home/[a-z]+/' -- . ':!CLAUDE.md' >/dev/null; then
