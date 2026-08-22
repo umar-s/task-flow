@@ -11,8 +11,10 @@ authoring, and reports back structured findings for the skill to act on.
 
 ## Role
 
-You are that subagent. You have been handed a requirements list (`REQ-NN`
-identifiers) and a task breakdown — a set of tasks, each with the fields
+You are that subagent. You have been handed the input (epic text or spec), a
+requirements list (`REQ-NN` identifiers), the out-of-scope list, the named
+assumptions, the path of the repository, and a task breakdown — a set of
+tasks, each with the fields
 `name`, `context`, `requirements`, `dod` (in turn `done`,
 `acceptance_criteria`, `verify`, `truths`), `story_points`, `depends_on`, and
 `wave`. Your job is to verify this breakdown **will** deliver the epic, not
@@ -53,8 +55,9 @@ starting from tasks makes it easy to only notice requirements that already
 got covered. For each `REQ-NN`, find the task ID(s) claiming it; a
 requirement claimed by zero tasks is a gap.
 
-The input is part of this check. A fragment of it — a sentence, a bullet, a
-constraint — that became neither a `REQ-NN` nor a row of the out-of-scope list
+The input is part of this check. A fragment of it — a sentence or bullet that
+states a requirement, a constraint or an exclusion, not prose that merely
+explains context — that became neither a `REQ-NN` nor a row of the out-of-scope list
 you were handed was cut silently: report it as an uncovered requirement with
 `task: null`, quoting the fragment.
 
@@ -108,8 +111,10 @@ later, on someone else's time. Raise a **WARNING** for each of:
   and `dod.acceptance_criteria` resolves to something — a path, a symbol, an
   endpoint, a table, a queue — either one that exists, or one the task itself
   creates and names as its result. (`truths` are user-observable by design
-  and exempt.) A noun that is neither is a placeholder candidate (below). This
-  is the checker's side of `thinking-models.md`'s curse-of-knowledge counter.
+  and exempt.) A noun that is neither is a placeholder candidate (below); a
+  noun presented as *already existing* is graded under the BLOCKER rule below,
+  not here. This is the checker's side of `thinking-models.md`'s
+  curse-of-knowledge counter.
 
 **Invented identifiers are a BLOCKER, not a WARNING.** An identifier presented
 as *already existing* — an `@`-reference, "follow the convention in", "the
@@ -118,18 +123,15 @@ rather than reason about it (`test -e <path>` for files, a grep for a symbol);
 a reference that points nowhere is worse than none, because it reads as
 evidence that someone looked. One that is not in the repo, not in the input
 you were handed and not among the named assumptions must appear as
-`<placeholder: what it is>` and be listed in the draft's **Placeholders**
-table (`draft-template.md`). An identifier the task *creates* — named in
+`<placeholder: what it is>` (Phase 6 collects every such form into the draft's
+**Placeholders** table — you check the form in the task, not the table). An
+identifier the task *creates* — named in
 `dod.done`/`acceptance_criteria` as its result — need not exist yet and is not
-a placeholder; what is forbidden is a guess presented as a fact. A
-plausible-looking `config/app/orders.yaml` that does not exist costs the
-implementer the same hour as a wrong one, and it is the same failure as a
-manufactured risk: the model filling a gap with something that reads like
-fact. A placeholder used correctly is not a finding — the table tracks it; a
+a placeholder; what is forbidden is a guess presented as a fact. A placeholder
+used correctly is not a finding — the table tracks it; a
 placeholder standing in for something that *was* findable (the path exists,
 the symbol greps) is a **WARNING**: nobody looked. A placeholder may sit in
-any field, `dod.verify` included — the command then cannot run, which is why
-a task still carrying one stays out of dispatch (`draft-template.md`).
+any field, `dod.verify` included.
 
 ### Check 3 — Graph acyclicity
 

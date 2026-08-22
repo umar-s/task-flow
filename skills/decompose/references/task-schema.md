@@ -52,8 +52,7 @@ exist yet by design.) A guessed
 `config/app/orders.yaml` reads like a fact and costs the implementer the hour
 it takes to learn it never existed; a placeholder costs one question. Every
 placeholder is listed in the draft's Placeholders table (`draft-template.md`),
-and the QA checker treats an invented identifier as a BLOCKER (Check 2). This
-is the identifier-level form of the rule that forbids a manufactured risk.
+and the QA checker treats an invented identifier as a BLOCKER (Check 2).
 
 ## `dod`'s four members
 

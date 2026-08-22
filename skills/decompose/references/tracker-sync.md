@@ -25,15 +25,17 @@ ships to every install.
 
 ## 1. Adapter contract (generic, not YouTrack)
 
-Phase 7 talks to exactly one adapter through a small fixed contract: two
-write operations, one read, one optional search, and a declared markup. Any
+Phase 7 talks to exactly one adapter through a small fixed contract: three
+write operations, one read, two optional reads — a search and a project
+description — and a declared markup. Any
 tracker plugged in here — YouTrack, Jira, Linear, GitHub Issues — implements
 the same contract; nothing in this file or in Phase 7's logic may assume
 tracker-specific fields, states, or workflows outside of the illustrative
 "YouTrack adapter" mapping in §7.
 
 ```
-create_issue(summary, description, estimate?, parent?) -> <TASK-ID>
+create_issue(summary, description, estimate?, parent?, issue_type?) -> <TASK-ID>
+update_issue(<TASK-ID>, summary?, description?, estimate?) -> ok
 link(from: <TASK-ID>, to: <TASK-ID>, type: "depends" | "parent") -> ok
 read_issue(<TASK-ID>) -> { summary, description, estimate?, parent?, links[], url? }
 search_issues(query) -> [{ id: <TASK-ID>, summary, url? }]   # optional; query in the tracker's own language
@@ -52,32 +54,32 @@ markup: "markdown" | "jira-wiki" | "adf-via-markdown" | "plain"   # declared, de
   parent-epic membership, task → epic). A tracker missing one of these
   link types natively degrades per §7's fallback rule — it does not block
   the rest of the sync.
+- **`update_issue` is what "update in place" means** (§6) and what the
+  id-rewrite pass (§9 step 6) uses; an adapter without it is create-only, and
+  the dry-run says so.
 - **`read_issue` is what makes a write verifiable.** An `ok` from
   `create_issue`/`link` is a claim by the side that did the writing — the same
-  axiom that makes this plugin's gate deterministic applies here. §9 reads
-  every created issue back and compares it with what was sent. `url?` is what
+  axiom that makes this plugin's gate deterministic applies here (§9 step 7).
+  `url?` is what
   §10 returns next to the id; an adapter without it falls back to the base
   URL the binding names plus the id, and says that it did.
 - **`markup` is declared, not guessed.** Resolution order: a `markup:` line
   in the `CLAUDE.md` tracker binding; else the tracker family the binding
   names (Jira Server/DC → `jira-wiki` — it shows Markdown as literal
   asterisks; Jira Cloud → `adf-via-markdown` through an MCP tool that
-  converts, `plain` over raw REST; YouTrack, Linear, GitHub → `markdown`);
+  converts, `jira-wiki` over REST API v2 — v3 takes only ADF, which this
+  skill does not produce; YouTrack, Linear, GitHub → `markdown`);
   else `markdown`. The dry-run header prints `markup: <value> (from
   <source>)`, and a tracker that renders the result wrong is a finding to fix
   in the binding, not something to paper over per-issue.
 - **`describe_project` is optional, but it is what preflight reads.** Without
-  it the preflight proves only the token and the project: the dry-run then
-  prints `metadata: unknown (adapter has no project read)` and pre-selects
-  the lowest rungs — the `SP: N` line, textual links — instead of promising
-  fields it cannot see.
+  it the preflight proves only the token and the project (§9 step 3, §5).
 - **`search_issues` is optional.** When present, §5's dry-run lists possible
   duplicates and §6's key lookup has something to look with; when absent — or
   when it errors — the dry-run says so and continues. The query is written in
   the tracker's own language (§7 shows YouTrack's): the adapter owns the
   syntax, Phase 7 supplies the words — the task's `name` — and the restriction
-  to open issues in the target project. A duplicate check that blocks the
-  sync would be a worse failure than the duplicate it prevents.
+  to open issues in the target project.
 - **YouTrack is the first supported adapter — an example, not the
   contract.** Nothing about `create_issue`/`link` is YouTrack-shaped; §7
   shows how YouTrack's actual MCP tools satisfy this contract. A second
@@ -118,8 +120,9 @@ into this skill.
 2. If `CLAUDE.md` names a tracker, use **ToolSearch** to locate the
    concrete MCP tools for it this session — e.g. `ToolSearch(query:
    "youtrack create issue")`, `ToolSearch(query: "youtrack link issue")`,
-   `ToolSearch(query: "youtrack get issue")`, `ToolSearch(query: "youtrack
-   search issues")`, `ToolSearch(query: "youtrack project fields")`. Tool
+   `ToolSearch(query: "youtrack update issue")`, `ToolSearch(query:
+   "youtrack get issue")`, `ToolSearch(query: "youtrack search issues")`,
+   `ToolSearch(query: "youtrack project fields")`. Tool
    names vary per MCP
    server build and version, so search for the capability rather than
    assume a literal tool name.
@@ -137,7 +140,8 @@ into this skill.
    that echoes the request is truncated before it is printed), that REST API
    is a valid transport for the same adapter contract: the operations are the
    same, only the calls differ. The call itself: `curl -sS --fail-with-body`
-   (an HTTP error must be a non-zero exit, never a silent `ok`), no `-v`,
+   (curl ≥ 7.76; `--fail` on older curl — the body is lost, the exit code is
+   not; an HTTP error must be a non-zero exit, never a silent `ok`), no `-v`,
    and `${NAME:?}` so an unset variable stops the run naming the *variable*.
    Keep the same rails — preflight, dry-run, idempotency key, read-back — and
    let the tracker's own bulk facility do the work where it has one (YouTrack's
@@ -173,8 +177,11 @@ writes:
 
 - The preflight summary first (§9 step 3): the project/epic id, `markup:
   <value> (from <source>)`, the issue types, fields and link types found — or
-  `metadata: unknown (adapter has no project read)` — and the estimate rung
-  that will be used, so the plan below promises only what exists.
+  `metadata: unknown (adapter has no project read)` — the issue type tasks
+  will be created as (the binding's, else the project's default), the
+  estimate rung that will be used, and, when the adapter has no
+  `search_issues`, the line `idempotency: unavailable — a re-run will create
+  duplicates` (§6); so the plan below promises only what exists.
 - Every task's `summary` (from `name`), its full rendered `description`
   (from `context` + `requirements` + `dod` including `truths`, per §7),
   its resolved `estimate` value and which fallback rung produced it, and
@@ -228,7 +235,8 @@ in §8.
 
 **The lookup needs a search.** Matching by key means querying the tracker for
 `decompose-id:<draft-slug>#<n>` — through `search_issues` when the adapter
-has it. A hit counts only after `read_issue` shows the exact key line in the
+has it, across every state, not only open issues (a closed task from an
+earlier run is still that task). A hit counts only after `read_issue` shows the exact key line in the
 description (or the custom field): a fuzzy hit without it is not a match and
 must never be updated. An adapter with no search has no way to find an
 earlier run's issues — a re-run is then **not** idempotent, and the dry-run
@@ -264,10 +272,10 @@ types on most trackers. If the resolved tracker's adapter has no native
 plain textual note in the dependent task's `description` (e.g. "Depends
 on: `<TASK-ID>`") and log that the degradation happened — never silently
 drop a dependency because the tracker lacks a first-class link for it. The
-same rule covers `"parent"`: no native parent/sub-issue relation (GitHub
-Issues without sub-issues, a Jira project where the parent is a field the
-tool cannot set) → a `Parent: <EPIC-ID>` line in the task's description,
-logged.
+same rule covers `"parent"`: no native parent/sub-issue relation (a Jira
+project where the parent is a field the tool cannot set, a tracker with no
+parent relation at all) → a `Parent: <EPIC-ID>` line in the task's
+description, logged.
 
 ### Illustrative YouTrack adapter
 
@@ -282,8 +290,9 @@ illustrative only.
 | `create_issue(summary, description, estimate?, parent?)` | An issue-create MCP tool with `project`, `summary`, `description`; `estimate` written to a project's **Estimation** field if configured, else the `SP: N` description fallback. |
 | `link(from, to, "depends")` | YouTrack's native "depends on" / "is required for" issue-link command. |
 | `link(from, to, "parent")` | YouTrack's native "subtask of" / epic-link command. |
-| `read_issue(<TASK-ID>)` | An issue-read MCP tool, or REST `GET /api/issues/{id}?fields=idReadable,summary,description,links(direction,linkType(name),issues(idReadable)),customFields(name,value(name))` — links and the Estimation field come back in the same read. |
-| `search_issues(query)` | YouTrack's own query language through an issue-search tool: `project: <KEY> #Unresolved summary: <words>`; the dry-run shows at most three hits per task. |
+| `read_issue(<TASK-ID>)` | An issue-read MCP tool, or REST `GET /api/issues/{id}?fields=idReadable,summary,description,links(direction,linkType(name),issues(idReadable)),customFields(name,value(name,presentation))` — links and the Estimation field (a period value reads back as `presentation`) come back in the same read. |
+| `update_issue(<TASK-ID>, …)` | The same issue tool with the id, or REST `POST /api/issues/{id}` with the changed fields; links and estimate through `/api/commands`. |
+| `search_issues(query)` | YouTrack's own query language through an issue-search tool: duplicates `project: <KEY> #Unresolved summary: {<words>}` (braces keep a multi-word phrase together); the §6 key lookup `project: <KEY> description: {decompose-id:<slug>#<n>}` with no state filter. The dry-run shows at most three duplicate hits per task. |
 | `markup` | `markdown` — YouTrack renders Markdown natively; nothing to convert. |
 
 ## 8. Partial-failure handling
@@ -311,7 +320,8 @@ concrete ids already made, not just the counts.
 Because every created issue already carries the stable `decompose-id:...`
 key (§6), simply re-running Phase 7 after fixing the underlying problem
 (granting the missing link type, waiting out the rate limit) is safe and
-idempotent: the first 4 tasks are found by key and left alone (or
+idempotent — when the adapter has a search to find the key with (§6): the
+first 4 tasks are found by key and left alone (or
 updated in place if their draft content changed), and only the remaining
 3 get created. The user never has to manually diff the tracker against
 the draft to find the orphaned subset.
@@ -326,7 +336,9 @@ read-back: 6 match / 1 mismatch
 It is a partial failure even though every `create_issue` returned `ok`: the
 tracker accepted the write and then dropped part of it (a workflow rule, a
 required field, a permission). Fix the cause and re-run — the idempotency key
-finds the issue and updates it in place.
+finds the issue and updates it in place. An `unverifiable` field (§9 step 7)
+is listed in the same block; it does not block step 9, and §10's return names
+it.
 
 ## 9. Procedure Phase 7 runs, in order
 
@@ -342,9 +354,11 @@ finds the issue and updates it in place.
    link types. What cannot be read is not promised: a dry-run that offers an
    estimate rung or a link type this project does not have is a plan that
    cannot execute, so drop to §7's fallback rung *now* and say so in the
-   dry-run, not after the first write fails. Write permission is proven only
-   by a write — which is why step 6 reads the first issue back before creating
-   the rest.
+   dry-run, not after the first write fails. The issue type tasks will be
+   created as — the binding's, else the project's default — is printed with
+   it. Write permission is proven only by a write (step 6); when there is
+   neither a parent epic to read nor `describe_project`, that first write and
+   its read-back *are* the preflight.
 4. Render the full create/link plan (every summary, description,
    estimate + which fallback rung, link, and idempotency key) and print
    it as a **dry-run** (§5). Do not write anything yet.
@@ -354,14 +368,14 @@ finds the issue and updates it in place.
 6. On confirmation, re-run the same plan with writes enabled: for each
    task, look up its `decompose-id:...` key first (§6) — update in place
    if found, `create_issue` if not — then issue its `parent` link and any
-   `depends` links. Each issue's description carries the draft it came from:
-   `Source: <path to the draft>, epic <ID or none>` (§7). Read the **first**
-   created issue back before creating the second: a dropped field or a
+   `depends` links. Read the **first** created issue back before creating the second: a dropped field or a
    missing permission shows up on issue one, not on issue twelve. Draft ids
    (`T1`, `T4`) that a
    description mentions — in `context`, in a `Not in this task:` line, in a
    textual `Depends on:` fallback — are rewritten to the tracker's ids once
-   every issue exists: a second, update-only pass, read back like the first.
+   every issue exists: a second, update-only pass (`update_issue`) that runs
+   before step 7, so step 7 reads the final text; the `decompose-id:` line is
+   never rewritten.
 7. **Read back what you wrote.** After the last create/link, `read_issue`
    every id this run touched and compare the fields you sent: `summary`
    equal; `description` contains the key line, the `Source:` line and, on
@@ -369,15 +383,12 @@ finds the issue and updates it in place.
    `estimate` numerically equal on rungs 1–2; `parent` equal; `links` the set
    of (type, id) pairs the plan issued, a degraded one by its `Depends on:` /
    `Parent:` line. Anything that differs, or an id that reads back empty, is a
-   **partial failure** reported per §8 with the exact field: "created, but the
-   estimate did not stick" is a state a human can act on; "ok" is not. A
-   tracker that silently drops a field (a workflow rule, a required field, a
-   permission) is exactly what this step exists to catch. A match is **shown,
-   not declared**: the report lists, per issue and per field, the value sent
-   and the value read (`estimate: sent 5 / read 5`); the `create_issue`
-   response is not a read-back — the read is a separate call after the last
-   write. A field the adapter cannot read (`links` on a tool that does not
-   return them) is reported as `unverifiable`, never as a match.
+   **partial failure** reported per §8 with the exact field. A match is
+   **shown, not declared**: the report lists, per issue and per field, the
+   value sent and the value read (`estimate: sent 5 / read 5`); the
+   `create_issue` response is not a read-back — the read is a separate call
+   after the last write. A field the adapter cannot read (`links` on a tool
+   that does not return them) is reported as `unverifiable`, never as a match.
 8. On any failure mid-way, stop and report per §8 — step 7 still runs over
    every id touched so far. Do not continue creating later tasks past a
    failed one, since later `depends_on` entries may reference the task that

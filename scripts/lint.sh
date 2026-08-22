@@ -81,38 +81,54 @@ for f in skills/decompose/SKILL.md skills/decompose/references/task-schema.md \
 done
 tr '\n' ' ' < skills/decompose/SKILL.md | grep -q 'the 8 checks' || err "decompose SKILL.md no longer says 'the 8 checks'"
 grep -q 'The 8 checks' skills/decompose/references/qa-checklist.md || err "qa-checklist.md check count drifted"
-# 1.10.0 — decompose contracts that must not shrink back, each pinned to the
-# section, table row or code block that carries it; a loose word elsewhere in
-# the file is not proof the rule is still there.
+# 1.10.0 — decompose contracts that must not shrink back. Each is pinned to the
+# section, table row or code block that carries it AND to its load-bearing
+# phrase, read flattened (a rewrap must not drop a rule silently); a loose word
+# elsewhere in the file is not proof the rule is still there.
 QA=skills/decompose/references/qa-checklist.md
+[ "$(grep -cE '^### Check [0-9]+ ' "$QA")" -eq 8 ] || err "$QA: the number of '### Check N' sections is not 8"
 grep -q '^### Check 2 — Field completeness and quality' "$QA" || err "$QA: Check 2 lost its quality half"
 C1=$(section "$QA" '/^### Check 1 /,/^### Check 2 /')
-printf '%s' "$C1" | grep -q 'The input is part of this check' || err "$QA: Check 1 no longer compares the input against the out-of-scope list — a silent cut is invisible again"
+printf '%s' "$C1" | grep -q 'report it as an uncovered requirement with `task: null`' || err "$QA: Check 1 no longer turns a silently cut input fragment into a BLOCKER"
 C2=$(section "$QA" '/^### Check 2 /,/^### Check 3 /')
 printf '%s' "$C2" | grep -q 'Invented identifiers are a BLOCKER' || err "$QA: Check 2 lost the invented-identifier rule"
 printf '%s' "$C2" | grep -q '<placeholder: what it is>' || err "$QA: Check 2 lost the <placeholder: …> form"
 printf '%s' "$C2" | grep -q 'test -e <path>' || err "$QA: Check 2 lost the @-reference check command"
+printf '%s' "$C2" | grep -q 'An identifier the task \*creates\*' || err "$QA: Check 2 no longer distinguishes an identifier the task creates from an invented one"
 C5=$(section "$QA" '/^### Check 5 /,/^### Check 6 /')
 printf '%s' "$C5" | grep -q 'The contract has to match' || err "$QA: Check 5 lost the producer→consumer contract rule"
+printf '%s' "$C5" | grep -q 'and \*\*BLOCKER\*\* when the producer' || err "$QA: Check 5's severity line lost the contract-mismatch BLOCKER"
 C6=$(section "$QA" '/^### Check 6 /,/^### Check 7 /')
 printf '%s' "$C6" | grep -q 'form from Check 2 is \*\*not\*\* a hit here' || err "$QA: Check 6 no longer exempts the <placeholder: …> form — Check 2 and Check 6 contradict"
-printf '%s' "$C6" | grep -q 'forged owner' || err "$QA: Check 6 no longer verifies the 'Not in this task:' owner"
+printf '%s' "$C6" | grep -q 'forged owner — \*\*BLOCKER\*\*' || err "$QA: Check 6 no longer verifies the 'Not in this task:' owner as a BLOCKER"
+OC=$(section "$QA" '/^## Output contract/,/^## Revision loop/')
+for s in requirement-coverage field-completeness graph-acyclicity atomicity key-links scope-reduction mece wave-parallelism; do
+  printf '%s' "$OC" | grep -q "\`$s\`" || err "$QA: the output contract lost the check slug '$s'"
+done
+printf '%s' "$OC" | grep -q 'repeat: true' || err "$QA: the output contract lost the repeat flag"
 RL=$(section "$QA" '/^## Revision loop/,0')
 printf '%s' "$RL" | grep -q 'Convergence guard' || err "$QA: revision loop lost the convergence guard"
+printf '%s' "$RL" | grep -q 'When every BLOCKER of a check-run is a repeat' || err "$QA: the convergence guard lost its trigger (every BLOCKER a repeat)"
+printf '%s' "$RL" | grep -q 'stops and escalates to the user' || err "$QA: the convergence guard no longer escalates"
 printf '%s' "$RL" | grep -q '`PASSED` still requires a clean check-run' || err "$QA: the convergence guard no longer says PASSED still needs a clean run"
-printf '%s' "$RL" | grep -q 'repeat: true' || err "$QA: the convergence guard lost its comparison key (repeat: true)"
 printf '%s' "$RL" | grep -q 'or the convergence guard firing earlier' || err "$QA: the escalation shape is not tied to the convergence guard"
 DT=skills/decompose/references/draft-template.md
 grep -q '^## Out of scope' "$DT" || err "$DT lost the Out of scope table"
+grep -q '^| From the input | Decision | Why |' "$DT" || err "$DT: the Out of scope table lost its columns"
 grep -q '^## Placeholders' "$DT" || err "$DT lost the Placeholders table"
-grep -q 'Fill \*\*Out of scope\*\*' "$DT" || err "$DT: the how-to list no longer fills Out of scope / Placeholders"
+grep -q '^| Placeholder | Stands for | Carried by | Confirmed by |' "$DT" || err "$DT: the Placeholders table lost its columns"
+grep -q '^\*\*Checked against:\*\*' "$DT" || err "$DT: the header lost the 'Checked against:' line"
+HT=$(section "$DT" '/^## How to fill this in/,/^````markdown/')
+printf '%s' "$HT" | grep -q 'Fill \*\*Out of scope\*\*' || err "$DT: the how-to list no longer fills Out of scope / Placeholders"
 TS=skills/decompose/references/task-schema.md
-grep -q 'Not in this task: <what> — <TASK-ID> owns it' "$TS" || err "$TS: the context row lost the 'Not in this task:' advisory line"
-grep -q 'risk tier: T1' "$TS" || err "$TS: the context row lost the 'risk tier:' advisory line"
-grep -q '^## Identifiers you could not confirm' "$TS" || err "$TS lost the placeholder rule"
+grep -E '^\| \*\*context\*\* \|' "$TS" | grep -q 'Not in this task: <what> — <TASK-ID> owns it' || err "$TS: the context row lost the 'Not in this task:' advisory line"
+grep -E '^\| \*\*context\*\* \|' "$TS" | grep -q 'risk tier: T1' || err "$TS: the context row lost the 'risk tier:' advisory line"
+PH=$(section "$TS" '/^## Identifiers you could not confirm/,/^## `dod`/')
+printf '%s' "$PH" | grep -q '<placeholder: what it is>' || err "$TS: the placeholder section lost the form"
+printf '%s' "$PH" | grep -q 'never as a plausible name' || err "$TS: the placeholder section lost the rule"
 EP=skills/decompose/references/edge-probe.md
 for r in 'authorization | actor-facing' 'surface states | ui' 'interaction | ui' 'grants | infra' 'secrets | infra' 'environments | infra'; do
-  grep -q "^| $r |" "$EP" || err "$EP: lost the surface row '$r'"
+  grep -qE "^\| $r \| .{30,} \|$" "$EP" || err "$EP: lost the surface row '$r' (or its probe question)"
 done
 RF=$(section "$EP" '/^## Relevance filter first/,/^## The eight/')
 for w in 'actor-facing' '`ui`' '`infra`'; do
@@ -120,9 +136,9 @@ for w in 'actor-facing' '`ui`' '`infra`'; do
 done
 TR=skills/decompose/references/tracker-sync.md
 CB=$(awk '/^## 1\. Adapter contract/,/^## 2\./' "$TR" | awk '/^```/{f=!f;next} f')
-printf '%s\n' "$CB" | grep -q '^read_issue(' || err "$TR: the adapter contract block lost read_issue — a write nobody read back is a claim"
-printf '%s\n' "$CB" | grep -q '^search_issues(' || err "$TR: the adapter contract block lost search_issues"
-printf '%s\n' "$CB" | grep -q '^describe_project(' || err "$TR: the adapter contract block lost describe_project — preflight has nothing to read"
+for op in create_issue update_issue link read_issue search_issues describe_project; do
+  printf '%s\n' "$CB" | grep -q "^$op(" || err "$TR: the adapter contract block lost $op"
+done
 for m in markdown jira-wiki adf-via-markdown plain; do
   printf '%s\n' "$CB" | grep -E '^markup:' | grep -q "\"$m\"" || err "$TR: the contract block's markup line lost '$m'"
 done
@@ -133,16 +149,23 @@ printf '%s' "$P3" | grep -q 'never echoed' || err "$TR §3 lost the token hygien
 P5=$(section "$TR" '/^## 5\. Dry-run mode/,/^## 6\./')
 printf '%s' "$P5" | grep -q 'Possible duplicates' || err "$TR §5 lost the possible-duplicates block"
 printf '%s' "$P5" | grep -q 'The preflight summary first' || err "$TR §5: the dry-run no longer prints the preflight summary"
-for r in 'read_issue(<TASK-ID>)' 'search_issues(query)' 'markup'; do
+printf '%s' "$P5" | grep -q 'idempotency: unavailable' || err "$TR §5: the dry-run no longer warns that a re-run without a search is not idempotent"
+P6=$(section "$TR" '/^## 6\. Stable idempotency key/,/^## 7\./')
+printf '%s' "$P6" | grep -q 'a re-run is then \*\*not\*\* idempotent' || err "$TR §6 no longer admits that a re-run without a search is not idempotent"
+printf '%s' "$P6" | grep -q 'exact key line' || err "$TR §6: a fuzzy search hit may pass as a key match again"
+for r in 'read_issue(<TASK-ID>)' 'search_issues(query)' 'markup' 'update_issue(<TASK-ID>, …)'; do
   grep -q "^| \`$r\` |" "$TR" || err "$TR §7: the YouTrack illustration has no row for $r"
 done
-grep -q 'Source: <draft path>, epic <ID or none>' "$TR" || err "$TR §7: the description mapping lost the Source: line"
+grep -E '^\| `context` \+ `requirements`' "$TR" | grep -q 'Source: <draft path>, epic <ID or none>' || err "$TR §7: the description mapping lost the Source: line"
 P8=$(section "$TR" '/^## 8\. Partial-failure/,/^## 9\./')
-printf '%s' "$P8" | grep -q 'read-back: 6 match / 1 mismatch' || err "$TR §8 lost the read-back mismatch report shape"
+printf '%s' "$P8" | grep -qE 'read-back: [0-9]+ match / [0-9]+ mismatch' || err "$TR §8 lost the read-back mismatch report shape"
 P9=$(section "$TR" '/^## 9\. Procedure/,/^## 10\./')
 printf '%s' "$P9" | grep -q 'Preflight — one read before any promise' || err "$TR §9 lost the preflight step"
 printf '%s' "$P9" | grep -q 'Read back what you wrote' || err "$TR §9 lost the read-back step"
-printf '%s' "$P9" | grep -q 'Source: <path to the draft>, epic <ID or none>' || err "$TR §9: the write step no longer stamps the Source: line"
+printf '%s' "$P9" | grep -q 'shown, not declared' || err "$TR §9: the read-back no longer has to show sent and read values"
+printf '%s' "$P9" | grep -q '`estimate` numerically equal' || err "$TR §9 lost the read-back predicate"
+printf '%s' "$P9" | grep -q 'never as a match' || err "$TR §9: an unreadable field may pass as a match again"
+printf '%s' "$P9" | grep -q 'line is never rewritten' || err "$TR §9: the id-rewrite pass may clobber the idempotency key again"
 P10=$(section "$TR" '/^## 10\. Return/,0')
 printf '%s' "$P10" | grep -q 'with their URLs' || err "$TR §10 no longer returns URLs next to ids"
 DS=skills/decompose/SKILL.md
@@ -156,16 +179,17 @@ printf '%s' "$D3" | grep -q 'Never invent an identifier' || err "$DS phase 3 los
 D5=$(section "$DS" '/^## 5\. QA/,/^## 6\. /')
 printf '%s' "$D5" | grep -q 'the repository path' || err "$DS phase 5 no longer hands the checker the repository path — Check 2 cannot run test -e/grep"
 printf '%s' "$D5" | grep -q 'out-of-scope list from Phase 1' || err "$DS phase 5 no longer hands the checker the out-of-scope list"
-printf '%s' "$D5" | grep -q 'two consecutive check-runs return the same set of BLOCKERs' || err "$DS phase 5 does not escalate on the convergence guard"
+printf '%s' "$D5" | grep -q 'BLOCKERs are all repeats' || err "$DS phase 5 does not escalate on the convergence guard"
 D6=$(section "$DS" '/^## 6\. Draft/,/^## 7\. /')
-printf '%s' "$D6" | grep -q 'out-of-scope' || err "$DS phase 6 no longer writes the out-of-scope table"
-printf '%s' "$D6" | grep -q 'placeholders' || err "$DS phase 6 no longer writes the placeholders table"
+printf '%s' "$D6" | grep -q "out-of-scope\*\* table (Phase 1's list, rendered)" || err "$DS phase 6 no longer renders Phase 1's out-of-scope list"
+printf '%s' "$D6" | grep -q 'out of dispatch until' || err "$DS phase 6 no longer keeps a placeholder-carrying task out of dispatch"
 D7=$(section "$DS" '/^## 7\. Tracker sync/,/^## Handoff/')
 printf '%s' "$D7" | grep -q 'preflight first' || err "$DS phase 7 lost the preflight"
 printf '%s' "$D7" | grep -q 'read every touched issue back' || err "$DS phase 7 lost the read-back"
 printf '%s' "$D7" | grep -q 'with their URLs' || err "$DS phase 7 no longer returns URLs"
-grep -q 'reads every issue back' README.md || err "README.md: the decompose paragraph no longer says the push reads every issue back"
-grep -q 'перечитывает каждую созданную задачу' README.ru.md || err "README.ru.md: the decompose paragraph no longer says the push reads every issue back"
+flat skills/task/SKILL.md | grep -q '`Not in this task:` line from the same source' || err "task/SKILL.md phase 0 no longer consumes the decompose 'Not in this task:' line"
+flat README.md | grep -q 'reads every issue back' || err "README.md: the decompose paragraph no longer says the push reads every issue back"
+flat README.ru.md | grep -q 'перечитывает каждую затронутую задачу' || err "README.ru.md: the decompose paragraph no longer says the push reads every issue back"
 
 # 7. No personal absolute paths in tracked files (CLAUDE.md is local and untracked).
 if git grep -nE '/home/[a-z]+/' -- . ':!CLAUDE.md' >/dev/null; then
@@ -335,9 +359,9 @@ for w in 'Stop condition' 'Compatibility window' 'Rollback'; do
   grep -q "$w" "$DST" || err "$DST: Reversibility lost '$w'"
 done
 flat "$DST" | grep -q 'What does \*\*not\*\* count' || err "$DST lost the rejection criteria that stop a rollback plan from being fiction"
-flat skills/task/references/checkpoint.md | grep -q 'validate before you trust' || err "checkpoint.md lost the resume validation"'
+flat skills/task/references/checkpoint.md | grep -q 'validate before you trust' || err "checkpoint.md lost the resume validation"
 grep -q 'Reviewed:' skills/task/references/code-review-prompt.md || err "code-review-prompt.md: the verdict must carry 'Reviewed: <sha>'"
-grep -q 'review @' skills/task/SKILL.md || err "task/SKILL.md evidence block lost the 'review @ <sha>' field"
+grep -q 'review @' skills/task/references/land.md || err "land.md's evidence block lost the 'review @ <sha>' field"
 grep -q 'DoD-n' skills/task/SKILL.md || err "task/SKILL.md lost the DoD-n grading rule"
 grep -qE 'DoD-n .*PASS' skills/task/references/code-review-prompt.md || err "code-review-prompt.md lost the DoD-n grading"
 grep -q 'only moves up' skills/task/SKILL.md || err "task/SKILL.md lost the 'a tier only moves up' rule"

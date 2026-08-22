@@ -42,6 +42,9 @@ implementer, and a tracker push that trusted its own `ok`. The contract of
 - **QA Check 6** verifies a `Not in this task: <what> — <TASK-ID> owns it`
   line like a follow-on: the named task exists and covers `<what>`, or the
   line is a scope reduction with a forged owner.
+- **Output contract** names the eight check slugs explicitly and the
+  `repeat: true` flag; `task-schema.md` gained the section *Identifiers you
+  could not confirm* and the advisory lines in its worked example.
 - **Convergence guard** in the revision loop: the checker is handed the
   previous run's findings on every re-check and marks a restated defect
   `repeat: true`; a run whose BLOCKERs are all repeats escalates to the user
@@ -59,7 +62,8 @@ implementer, and a tracker push that trusted its own `ok`. The contract of
   `surface states` and `interaction` (ui), `grants`, `secrets`, `environments`
   (infra) — and the relevance filter classifies surfaces alongside data
   shapes, so the rows can actually be raised.
-- **Tracker adapter** (`tracker-sync.md`): `read_issue` — a write is
+- **Tracker adapter** (`tracker-sync.md`): `update_issue` — what "update in
+  place" and the id-rewrite pass actually call; `read_issue` — a write is
   verifiable only if it is read back — with a per-field read-back predicate, a
   *shown, not declared* match (`estimate: sent 5 / read 5`), `unverifiable`
   for what the adapter cannot read, and a mismatch report shape in §8; the
@@ -98,18 +102,20 @@ implementer, and a tracker push that trusted its own `ok`. The contract of
   that carries it (Check 2/5/6 sections, revision loop, the two draft tables,
   the adapter contract block, §3/§5/§8/§9/§10 of `tracker-sync.md`, the
   YouTrack rows, the surface rows *and* the filter that raises them, the SKILL
-  phases, the README paragraph); six negative controls were run against a
+  phases, the README paragraph); ten negative controls were run against a
   mutated copy before the release.
 
 ### Changed
+- `scripts/lint.sh`: a stray quote after the checkpoint.md check (1.9.0) had
+  been swallowing the next line — the `Reviewed:` invariant never ran. Fixed.
 - `tracker-sync.md` §1 no longer describes the adapter as "two operations";
   §3 step 3 stops only when neither an MCP nor a REST endpoint exists; §9 is
   renumbered 1–9 with preflight as step 3 and read-back as step 7.
 - Phase 7 of the SKILL names the REST transport, the preflight, the
   duplicates, the read-back and the URLs; the Project bindings section says
   what a consuming `CLAUDE.md` may declare for it.
-- Weight, measured by `wc -w`: `SKILL.md` 2329 → WC_SKILL words (WC_SKILL_PCT);
-  the five touched references 7616 → WC_REFS (WC_REFS_PCT), where the method
+- Weight, measured by `wc -w`: `SKILL.md` 2329 → 2827 words (+21 %);
+  the five touched references 7616 → 11026 (+45 %), where the method
   lives.
 - `README.md` / `README.ru.md`: the `decompose` paragraph names the read-back
   and the quality half of Check 2.

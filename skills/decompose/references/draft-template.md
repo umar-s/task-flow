@@ -30,9 +30,10 @@ enters the picture, and only after user approval.
 
 1. Copy the fenced block below verbatim into
    `docs/decompose/YYYY-MM-DD-<epic>.md`.
-2. Fill the epic header: title, one/two-sentence goal, the SP rollup (sum
-   every task's `story_points`), and the wave count (count of distinct
-   `wave` values across all tasks).
+2. Fill the epic header: title, one/two-sentence goal, the `Checked
+   against:` paths from Phase 0, the SP rollup (sum every task's
+   `story_points`), the wave count (count of distinct `wave` values across
+   all tasks), and the open-question and placeholder counts.
 3. Add one row to the task table per task.
 4. Add one card per task, in table order — every card carries all 6 author
    fields; `wave` does **not** appear on a card, only in the table and the
@@ -44,9 +45,7 @@ enters the picture, and only after user approval.
 7. Fill **Out of scope** (what the epic deliberately excludes *and* what was
    cut from the input while slicing) and **Placeholders** (every
    `<placeholder: …>` any card uses — what it stands for, which tasks carry
-   it, who confirms it). A task whose card still carries a placeholder is
-   handled like one under a blocking open question: out of dispatch until the
-   table says what the real value is.
+   it, who confirms it).
 8. Fill **Risks and mitigations** and **Open questions**. Both sections are
    part of the artifact, not decoration: a risk with no early signal is a
    wish, and an open question with no named blocked tasks cannot be acted on.

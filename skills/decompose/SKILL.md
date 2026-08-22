@@ -111,9 +111,7 @@ Build the traceability seed here — every `REQ-NN` must map to at least one
 task by the time Phase 2 finishes; a requirement with no owning task by
 Phase 5's QA pass is a BLOCKER, not a detail to fix later. Whatever in the
 input does **not** become a `REQ-NN` is written down now as out of scope
-(fragment → decision · why): Phase 5 hands that list to the checker next to
-the requirements and Phase 6 renders it — a fragment in neither list was cut
-silently.
+(fragment → decision · why) — a fragment in neither list was cut silently.
 
 ## 2. Decompose
 Break the requirements into tasks **dependency-first, not sequence-first**:
@@ -157,14 +155,13 @@ incomplete, not optionally short. `story_points` is a Fibonacci estimate
 (`1/2/3/5/8/13`) and is an **optional annotation, not a gate** — don't let it
 drive any decision made back in Phase 2.
 
-**Never invent an identifier.** A path, table, env var, host, queue or command
-you could not find in the repo, the docs or the input — and did not confirm
-with the user — is written as `<placeholder: what it is>` and listed in the
-draft's **Placeholders** table (Phase 6); a plausible name that reads like a
-fact is the same failure as a manufactured risk. `context` may end with the
-two advisory lines `task-schema.md` allows — `risk tier: …` and
-`Not in this task: … — <TASK-ID> owns it` — both inside the field, never a
-seventh one.
+**Never invent an identifier.** What you could not find in the repo, the docs
+or the input — and the user did not confirm (a confirmation is recorded as a
+named assumption, which is what the checker sees) — is written as
+`<placeholder: what it is>` per `task-schema.md` and listed in the draft's
+**Placeholders** table (Phase 6). `context` may end with the two advisory
+lines `task-schema.md` allows — `Not in this task: … — <TASK-ID> owns it`,
+then `risk tier: …` last — inside the field, never a seventh one.
 
 ## 4. Graph & waves
 Build the `depends_on` graph across all tasks and check it's acyclic — a
@@ -192,7 +189,8 @@ its full text as that subagent's brief, along with the `REQ-NN` list, the
 out-of-scope list from Phase 1, the input itself (epic text or spec path), the
 named assumptions so far, the repository path (Check 2 runs `test -e`/grep
 there), and the full task breakdown (all 6 author fields + computed `wave`
-per task). The subagent runs the 8 checks (requirement coverage, field completeness, graph acyclicity,
+per task). The subagent runs the 8 checks (requirement coverage, field
+completeness and quality, graph acyclicity,
 atomicity, key-links, no silent scope reduction, MECE, wave parallelism
 safety) and reports BLOCKER/WARNING findings.
 
@@ -205,14 +203,12 @@ verifying run behind it. Escalate to the user per `references/qa-checklist.md`'s
 non-convergence rule (list open BLOCKERs, flag UNVERIFIED fixes, read
 persistent non-convergence as a likely-underspecified epic/requirements)
 rather than forcing more automatic passes — when BLOCKERs still remain on the
-check-run after the 3rd fix-round, **or earlier, as soon as two consecutive
-check-runs return the same set of BLOCKERs** (hand the checker the previous
-run's findings on every re-check; it marks a restated defect `repeat: true`,
-and a run whose BLOCKERs are all repeats is that signal): the fix is not
-working or the checker disagrees with it, and a third round of the same
-argument is theatre. WARNINGs alone never block the exit — but they are not
-dropped either: fix them, or carry each onto the card it concerns so the
-approver sees it.
+check-run after the 3rd fix-round, **or earlier, as soon as a check-run's
+BLOCKERs are all repeats of the previous run's** (hand the checker the
+previous run's findings on every re-check; it marks a restated defect
+`repeat: true`). WARNINGs alone never block the
+exit — but they are not dropped either: fix them, or carry each into the
+draft's Open questions, naming the task, so the approver sees it.
 
 ## 6. Draft
 Load `references/draft-template.md` and write the epic header, task table,
@@ -266,17 +262,17 @@ is configured or reachable in this session, stop gracefully at the draft —
 that is the expected shape of a fresh install, not an error.
 
 If a tracker is reachable: **preflight first** — one read of the target
-project/epic that proves the token and tells the plan what it may promise
-(issue types, fields, link types, estimate scale) — then **default to
+project/epic that proves the token and tells the plan what it may promise —
+then **default to
 dry-run**: render and print the full create/link plan (every summary,
 description, estimate + fallback rung, link, stable idempotency key, possible
 duplicates if the adapter can search) with **zero writes**, and get the
 user's confirmation on that plan. Only after confirmation, re-run the same
 plan with writes enabled (create-or-update by idempotency key, then `parent`
 and `depends` links), then **read every touched issue back** and compare it
-with what was sent — an `ok` from the writing side is a claim, not a check; a
-field that did not stick is a partial failure, not a success. On any mid-way
-failure, stop and report — do not keep creating tasks past a failed one.
+with what was sent — an `ok` from the writing side is a claim, not a check.
+On any mid-way failure, stop and report — do not keep creating tasks past a
+failed one.
 
 Return the list of created/updated `<TASK-ID>`s with their URLs (or, if
 Phase 7 didn't run, the draft path and the provisional `<TASK-ID>`s used in
