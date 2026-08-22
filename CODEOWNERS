@@ -1,8 +1,11 @@
 # The gate payload and the checks that guard this repo's own rules are owned
 # by the maintainer: a change there needs their review (dogfooding the
 # `ci-gate` CODEOWNERS rule — see templates/ci-gate/CODEOWNERS).
-# Enforcement (required code-owner review on `main`) is a repo setting, not
-# this file.
+# Enforcement is a repo setting, not this file. Chosen 2026-08-22: branch
+# protection on `main` with required status checks (lint, secret-scan),
+# enforce_admins and no force-push — WITHOUT required code-owner review, because
+# a solo repo cannot approve its own PRs and a rule that blocks every PR gets
+# removed. Flip `require_code_owner_reviews` on the day a second reviewer exists.
 /templates/ci-gate/   @umar-s
 /scripts/             @umar-s
 /tests/               @umar-s
