@@ -9,6 +9,22 @@ below is tagged `vX.Y.Z` in git. Installs track the default branch (the
 marketplace entry pins no ref), so a release tag marks history rather than a
 download.
 
+## [1.9.1] — 2026-08-22
+
+### Fixed
+- **`task` — when the post-review counting runs.** `implementation-integrity.md`
+  §6 now says the "what changed since the review" commands run on the same
+  `HEAD` the final fresh run was taken from — after the integration merge, not
+  before it. Counting first and merging afterwards produced a true-looking `0`
+  about a state that never shipped. (The last confirmed finding of the 1.9.0
+  review; it landed after the tag, and `release-check` flagged the drift on CI
+  — this release is that bump.)
+
+### Added
+- `README.md` / `README.ru.md`: a **Skill routing** snippet for the consuming
+  project's `CLAUDE.md` — the skills' own descriptions compete with dozens of
+  others in a session; a routing table is what makes the model reach for them.
+
 ## [1.9.0] — 2026-08-22
 
 `task` — the third item of the donor-audit plan
@@ -530,6 +546,7 @@ Donor audit of the `hybrid-plan` / `hybrid-review` skill set —
   tool-agnostic migration-guard and protected-branch rules into any repo —
   GitLab and GitHub CI, pre-commit hooks, failing closed.
 
+[1.9.1]: https://github.com/umar-s/task-flow/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/umar-s/task-flow/compare/v1.8.1...v1.9.0
 [1.8.1]: https://github.com/umar-s/task-flow/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/umar-s/task-flow/compare/v1.7.1...v1.8.0
