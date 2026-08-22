@@ -178,6 +178,9 @@ What phase 7 and phase 8 report must be:
   `re-reviewed: yes`. If the merge had conflicts, the resolution is your code:
   `git show --remerge-diff <merge-sha>` shows what you actually decided, and it
   counts. Never a bare number that reads as if someone had judged it.
+  **Run these on the same HEAD the final fresh run was taken from** — after the
+  integration merge, not before it. Counting first and merging afterwards
+  produces a true-looking `0` about a state that never shipped.
 - **Led by the terminal status.** The close comment and the skill's answer both
   start with one of `DONE | DONE_WITH_CONCERNS | BLOCKED | MERGED_NOT_LIVE |
   ABANDONED` plus a one-line reason, followed by the `DoD-n → PASS | FAIL |
