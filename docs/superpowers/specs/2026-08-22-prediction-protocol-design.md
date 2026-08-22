@@ -2,7 +2,7 @@
 
 **Дата:** 2026-08-22 (v2 — после премортема, см. ниже)
 **Автор:** Sergei (umar-s) + Claude
-**Статус:** design-spec v2 → реализовано (1.0.0); §12 — что изменило ревью черновика
+**Статус:** design-spec v2 → реализовано (1.0.0; контракт loop-foundry — loop-foundry 1.1.0 + плагин 1.0.2, см. конец §7); §12 — что изменило ревью черновика
 **Источники:** `~/tmp/task-flow/prediction-protocol.md` (постановка владельца),
 статья «ARC-AGI-3 is a skill issue» / `pbshgthm/arc-skill`,
 `docs/audits/2026-08-21-dmitriy-toolkit-v3-audit.md` §7 (связь с аудитом), §4 O4/O7,
@@ -307,6 +307,24 @@ off` в сессии и выключение плагина глобально. 
 долей INCONCLUSIVE; halt — состояние `halted` в сессии (хук) плюс
 `predict status` с exit-кодом для `gates.sh`. Никакого флага режима между
 плагинами: режим хук читает из stdin.
+
+*Реализовано 2026-08-22 — loop-foundry 1.1.0 (`references/predictions.md`) +
+prediction-protocol 1.0.2.* Ревью-панель реализации (13 агентов, 41 находка,
+28 выжили) поправила контракт в трёх местах: (1) `predict report --json` —
+накопительный итог журнала лупа (один файл `loops/evidence/<loop>.md` на все
+тики), поэтому runner снимает его **до и после** executor'а, а `journal.py`
+пишет оба снимка и разность `delta` — счётчики тика; (2) verifier идёт под
+своей сессией (`predict on <loop>-verify`) — иначе он мог бы выстрелить
+открытый receipt executor'а, любая запись в его журнале = FAIL; (3) `ack`,
+`withdraw`, `off` под `--loop` — действия оператора: плагин 1.0.2 отказывает
+им внутри Claude-сессии (`CLAUDE_CODE_SESSION_ID`), runner эскалирует тик по
+`delta.miss/withdrawn/bypass > 0` независимо от того, что executor сделал
+после. Плюс: GAPS-канарейка через `claude -p` (selftest доказывает скрипт
+хука, не его регистрацию — доказательство платформы `gate_seen`), `--also`
+из spec §4, `gate_denies` из stream-json, HALT-маркер с uuid, ack на хосте
+runner'а от runner-пользователя, prune не трогает halted-сессии. В плагине
+попутно: `ungated` был недостижим (close-without-gate писался только в
+state), state-guard ловил упоминание пути в содержимом файла.
 
 **`co-rar`:** из 1.0 убран; несравнимое машинно — INCONCLUSIVE.
 

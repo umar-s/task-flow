@@ -162,6 +162,29 @@ routing-контракт).
 - `tests/platform-probe.sh` как релизный тест: 6/6 строк таблицы платформы.
 - Вес: `claude plugin details` — ~320 токенов always-on, ~3k на вызов.
 
+## Реализация контракта loop-foundry (1.1.0, 2026-08-22)
+
+Панель по диффу loop-foundry (3 угла — верность контракту против кода
+плагина, эксплуатация runner'а, консистентность доктрины; по 3 рефутера на
+угол, критик полноты): 41 находка, 28 выжили голосование 2/3, 6 от критика;
+13 отвергнутых — в основном дубли и «это дефект плагина, не loop-foundry».
+Принято всё выжившее; три находки ушли в плагин (1.0.2): `ungated`
+недостижим, `ack`/`withdraw`/`off` доступны executor'у, state-guard
+срабатывает на содержимое. Acceptance контракта через установленный плагин
+(три прогона): `predict on --loop` под `PP_SESSION`; хук с чужим
+`session_id` ключуется по `PP_SESSION`; receipt → gate → `fired` → `close` →
+MISS при реальном one-way действии (force-push в локальный bare origin) →
+`status` rc 1 → `delta {miss:1, destructive_miss:1}`; verifier-сессия
+`<loop>-verify` получает deny; старт следующего тика накопительный с нулевой
+дельтой; `ack` оператора из обычного shell снимает halt и пишет
+`REFUTED.md`; реальный `claude -p --session-id`: хук ставит `gate: seen` в
+том же состоянии, executor получает отказ на `predict ack` («operator's
+act»), deny извлекается из `--output-format stream-json`. Негативные
+контроли нового `scripts/lint.sh` loop-foundry: 11/11 поломок пойманы
+(decoy-STOP, удаление reference из списка, смягчение «advisory only», дрейф
+порога, рост файла, bump без CHANGELOG, …). Побочно найдено и исправлено в
+плагине 1.0.1: лишняя строка `0` в выводе `predict on`.
+
 ## Что не проверялось
 
 - Поведение `permissionDecision: ask` в **интерактивной** сессии (виден ли
