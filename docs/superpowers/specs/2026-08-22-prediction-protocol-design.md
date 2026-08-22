@@ -2,12 +2,13 @@
 
 **Дата:** 2026-08-22 (v2 — после премортема, см. ниже)
 **Автор:** Sergei (umar-s) + Claude
-**Статус:** design-spec v2 → реализация (отдельный плагин линейки devpowers)
+**Статус:** design-spec v2 → реализовано (1.0.0); §12 — что изменило ревью черновика
 **Источники:** `~/tmp/task-flow/prediction-protocol.md` (постановка владельца),
 статья «ARC-AGI-3 is a skill issue» / `pbshgthm/arc-skill`,
 `docs/audits/2026-08-21-dmitriy-toolkit-v3-audit.md` §7 (связь с аудитом), §4 O4/O7,
 `docs/premortem/2026-08-22-prediction-protocol-premortem.md` (панель по v1 этого
-документа — 60 находок, 20 выживших; что и почему изменилось — в §11)
+документа — 60 находок, 20 выживших — §11; ревью-панель по черновику кода —
+74 находки, 60 выживших — §12)
 **Затрагивает:** новый плагин + routing в `task-flow:task` (1.11.0) и контракт
 для `loop-foundry`
 
@@ -55,9 +56,12 @@ plugins/prediction-protocol/
   skills/prediction-protocol/references/
       journal.md                             # грамматика записи и утверждений, REFUTED, строка report
       hook-engineering.md                    # чеклист хуков (из §7 аудита + §5 здесь)
-  hooks/hooks.json                           # PreToolUse, matcher "Bash", timeout 15
+  hooks/hooks.json                           # PreToolUse "Bash" (timeout 15) + PreToolUse Edit|Write guard + PostToolUse fired + SessionStart env
   hooks/predict-gate.sh                      # тонкий гейт: stdin → классификатор → состояние сессии → решение
-  bin/predict                                # CLI: on | off | open | close | ack | retry | withdraw | report | lint | classify | selftest
+  hooks/predict-fired.sh                     # PostToolUse: receipt помечается исполненным, когда команда реально выполнилась
+  hooks/predict-state-guard.sh               # Edit/Write в каталог состояния — deny
+  hooks/session-env.sh                       # SessionStart: export PREDICT=<plugin>/bin/predict через CLAUDE_ENV_FILE
+  bin/predict                                # CLI: on | off | status | open | close | ack | retry | withdraw | report | lint | classify | selftest
   lib/classify.sh                            # классификатор команд (один файл, source из хука и CLI)
   tests/                                     # корпуса must-deny / must-pass, негативные контроли, platform-probe
 ```
@@ -66,10 +70,11 @@ plugins/prediction-protocol/
 сессиям; `task-flow` подключает её routing-строками, не меняя ядра — та же
 форма, что сработала у донора (canonical skill + routing).
 
-**Платформа:** Linux/macOS, инструмент `Bash`. `PowerShell` и MCP-инструменты
-вне области 1.0 — заявлено в SKILL.md и README, не подразумевается. Хук и CLI —
-portable bash без сетевых вызовов; парсер stdin — `python3`, затем `jq`, иначе
-deny с причиной «нет парсера».
+**Платформа:** Linux (macOS в 1.0 не тестировался — заявлено), инструмент
+`Bash`. `PowerShell` и MCP-инструменты вне области 1.0 — заявлено в SKILL.md и
+README, не подразумевается. Хук и CLI — portable bash без сетевых вызовов;
+парсер stdin — `python3`, затем `jq`, иначе deny с причиной «нет парсера»;
+дедлайн — GNU `timeout`, `gtimeout`, иначе bash-watchdog.
 
 ## 3. Протокол и грамматика
 
@@ -402,3 +407,60 @@ off` в сессии и выключение плагина глобально. 
 - Режим от loop-foundry → режим из stdin/окружения; один журнал лупа.
 - §10 проверял только «отказал» → матрица из 12 строк, включая must-pass и
   пути ошибок.
+
+## 12. Что изменило ревью черновика (1.0.0, до релиза)
+
+Ревью-панель в чистом контексте по замороженной копии кода (6 измерений → 3
+рефутера → критик; 74 находки, 60 выживших, 12 спорных; запись — в премортеме,
+раздел «Ревью-панель по черновику»). Поправки к §3–§6 и §10, как реализовано:
+
+- **Deny по двум каналам.** Платформа пропускает команду при невалидном JSON;
+  control-байт (`\x1b`) в команде делал deny-JSON невалидным. Теперь каждый
+  байт < 0x20 экранируется, а deny печатает JSON на stdout **и** причину на
+  stderr с `exit 2` — дефект одного канала не становится разрешением.
+- **Outer-обёртка самодостаточна.** Отсутствующий `lib/common.sh` давал
+  `exit 1` = пропуск. Обёртка отвечает deny, не имея ничего, кроме bash;
+  префильтр словаря на чистом bash решает «нерелевантно → молчание» без
+  единой внешней утилиты; без `timeout` работает bash-watchdog; без
+  `python3`/`jq` на one-way команде — deny, не `ask`.
+- **Один receipt в полёте — по-настоящему.** Цикл обрывался на первом
+  совпадении и не видел потреблённый receipt дальше по списку; теперь два
+  прохода. Добавлен PostToolUse-хук `fired`: `close` отказывает receipt'у,
+  действие которого не выполнилось (отклонённый `ask`, deny соседнего хука).
+- **Классификатор.** Глобальные опции перед глаголом (`git -C`, `kubectl -n`,
+  `aws --profile`), слипшиеся флаги (`psql -tAc`, `curl -sX`), quote-aware
+  разбиение (`;` внутри `-c '…'`, коммит-сообщения), тела heredoc
+  выбрасываются, `$(…)` извлекается без потери хвоста, `then/do/&`,
+  stdin-fed shell'ы и интерпретаторы — opaque-exec, `--help` только по
+  позиции, dry-run проходят, read-only глаголы облаков/k8s не гейтятся;
+  вызовы самого `predict` никогда не классифицируются (иначе
+  `predict open --action 'a && systemctl restart b'` отказывал сам себе);
+  класс `state-tamper` для записей в каталог состояния.
+- **`--observe` — read-only по построению:** CLI классифицирует команду
+  измерения и отказывает one-way (иначе `close` был негейченным каналом
+  исполнения). Секретная форма в любом поле — отказ при `open`; `$VAR`
+  хранится как написано.
+- **Halt — свойство состояния:** снимается только `ack` (MISS) или
+  `retry`/`withdraw` (INCONCLUSIVE); HIT и повторный `predict on` его не
+  снимают; `retry`/`withdraw` на MISS запрещены; `retry --observe` —
+  легальный путь починки измерения.
+- **Журнал:** id = `<sha8(session)>-<seq>` (именованные сессии runner'ов не
+  пересекаются), `ack --where` обязателен (4-я колонка REFUTED.md — по чему
+  фильтрует фаза 0), строка `gated:` в записи и `U ungated` в `report`,
+  `lint=` и `gate: seen <utc>` (liveness-штамп хука) в строке `report`,
+  `close` и `report` запускают lint, мутации под `flock`, точное совпадение
+  id в переписи заголовков, `awk` получает текст через `ENVIRON`.
+- **Грейдинг по §3 строго:** ненулевой exit измерения при утверждении о
+  stdout — INCONCLUSIVE; `http=000` — INCONCLUSIVE; обе попытки при MISS
+  записываются.
+- **Handshake headless-runner'а:** один `PP_SESSION` вокруг `predict on` и
+  `claude -p --session-id <uuid>`; хук предпочитает `PP_SESSION` из окружения.
+- **Поставка:** `claude plugin validate plugins/prediction-protocol`; CI по
+  образцу линейки (`permissions: contents: read`, пин checkout по SHA,
+  gitleaks по digest над диапазоном изменения).
+
+Отвергнуто: пин тега в каталоге (конвенция линейки), обязательный
+`--baseline`, парсинг DoD-таблицы `task` плагином, исключение
+`docs/evidence/` из диффа ревью, macOS-job в CI (нет машины — заявлено как
+«не тестировалось»).
+

@@ -48,7 +48,9 @@ without a rejected alternative is a preference, not a decision.
 - **Rollback:** the exact way back — command, who runs it, how long it takes.
   "Revert the MR" is only true when no data has moved.
 - **Stop condition:** the signal that says roll back rather than push forward,
-  named in advance (error rate, queue depth, a failing invariant query).
+  named in advance (error rate, queue depth, a failing invariant query); under
+  the prediction protocol it is the falsifier of the deploy receipt — written
+  once, here.
 - **Compatibility window:** while old and new code run together — which
   requests, jobs, or messages see which shape, and what breaks if a client
   stays on the old one.
@@ -68,7 +70,7 @@ verifiability, and the class decides what "done" may mean:
 | # | Definition of done | Class | How it is checked |
 |---|---|---|---|
 | DoD-1 | … | `diff` | the code itself: `path:line` |
-| DoD-2 | … | `live` | a command or user path, run after deploy |
+| DoD-2 | … | `live` | a command or user path, run after deploy — under the prediction protocol, the `predict <id>` that measured it |
 | DoD-3 | … | `external` | outside this repo (DNS, a provider, another team) — the manual check and who does it |
 
 An item nobody can verify is a question for the ticket, not an assumption you

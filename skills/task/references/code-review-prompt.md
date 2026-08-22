@@ -113,7 +113,9 @@ revision checked out? Use a temporary worktree
 Do not dispatch subagents: this review is one independent pair of eyes on the
 diff, and a relayed opinion is not one. Do not open `.env` files or other
 secret stores unless the dispatch explicitly authorized it — a secret in the
-diff is a finding you can raise from the diff alone.
+diff is a finding you can raise from the diff alone. If the prediction gate
+denies a command of yours, that is a finding to report (a one-way action
+inside a review), never a receipt to write.
 
 ## Process
 

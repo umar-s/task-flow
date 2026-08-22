@@ -30,6 +30,12 @@ gh pr merge <id> --squash|--merge|--rebase        # method from the project bind
 glab mr merge <id> --squash|--merge|--rebase
 ```
 
+Under the prediction protocol the merge is a receipt whose observable this
+section already names: `"$PREDICT" open --action '<the merge command>'
+--hypothesis '<why it lands>' --observe 'gh pr view <id> --json state -q
+.state' --expect 'stdout==MERGED'` (GitLab: `glab mr view <id> --output json
+| jq -r .state` → `stdout==merged`), then the merge, then `close`.
+
 **If the merge command exits non-zero, do not run it again.** A server-side
 merge that succeeded while the local cleanup failed is a known class, and a
 second merge on a re-created branch is how you get a duplicated history or a
@@ -64,6 +70,10 @@ retry to fire.
 - **Deploying by hand** is an outward-facing action: confirm unless the project
   durably authorised it, and never invent the command — it comes from the
   Deploy binding, or you stop and say the binding is missing.
+- **Under the prediction protocol** the deploy is a receipt: observe the
+  health check (`curl -s -o /dev/null -w '%{http_code}' <health URL>` →
+  `http=200`) or the deploy-status command from the binding; the spec's
+  Reversibility stop condition is that receipt's falsifier, written once.
 
 ## 3. How deep to verify
 
@@ -121,6 +131,14 @@ verdict: fix it, or say in the evidence block that the text went out unscanned.
 No `ci/scan-text.sh` in the repo means the gate predates it — note that rather
 than skip silently.
 
+Under the prediction protocol the journal is a deliverable of the close: after
+the last receipt (the deploy's) is closed, stage `docs/evidence/<TASK-ID>.md`
+and `docs/evidence/REFUTED.md` **by path** and land them the way the binding
+lands docs — a docs-only commit on the integration branch where that is
+allowed, otherwise a follow-up PR with auto-merge — and cite that commit or
+PR next to the `predictions:` line. A journal left uncommitted is a journal
+the next session never reads.
+
 Shape (the rules behind each part are in `implementation-integrity.md` §6):
 
 ```
@@ -138,6 +156,8 @@ review @ 3f2a1c9 · re-reviewed: n/a (merge only) · security @ skip (нет
 чувствительных поверхностей) · HEAD @ 9c1b7d2 · node: pin 20.11.1 · actual
 20.11.1 (match) · live на dev: <url> · repro: `make check` · property-тесты:
 пропущены, в изменении нет инвариантов
+predict-gate: active v1.0.0 · predictions: 3 HIT / 0 MISS / 0 INCONCLUSIVE /
+0 bypass / 0 open · scope=destructive 2/0/0 · n=3 · rate=insufficient (n<20)
 
 MR: <url> · follow-ups: DEV-512
 ```
@@ -150,7 +170,10 @@ migration that failed halfway, the MR falling out of a merge queue.
 
 **Never stop for** (decide and note it): which merge method the binding names,
 a poll timeout you can extend once with a reason, a formatting-only difference
-in the MR body, a deploy log line that predates this deploy window.
+in the MR body, a deploy log line that predates this deploy window, a
+**prediction-gate deny** (a missing receipt, not permission denied: write it
+and re-issue the same command once) or a **halt after a MISS** (the protocol
+working: `predict ack` with the refuted belief, then continue).
 
 ## 7. Cleanup
 

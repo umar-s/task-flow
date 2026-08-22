@@ -191,6 +191,26 @@ flat skills/task/SKILL.md | grep -q '`Not in this task:` line from the same sour
 flat README.md | grep -q 'reads every issue back' || err "README.md: the decompose paragraph no longer says the push reads every issue back"
 flat README.ru.md | grep -q 'перечитывает каждую затронутую задачу' || err "README.ru.md: the decompose paragraph no longer says the push reads every issue back"
 
+# 1.11.0 — prediction-protocol routing is conditional and lands where the
+# one-way actions happen (phase 0 ledger, phase 5 on, phase 7 advisory, phase 8
+# report, land.md merge/deploy); the reviewers never write receipts.
+TS=skills/task/SKILL.md; LD=skills/task/references/land.md
+grep -q 'docs/evidence/REFUTED.md' "$TS" || err "task/SKILL.md phase 0 lost the REFUTED.md read"
+grep -q '"${PREDICT:?}" on <TASK-ID>' "$TS" || err "task/SKILL.md phase 5 lost predict on"
+grep -q 'predict-gate: absent (PREDICT unset)' "$TS" || err "task/SKILL.md lost the conditional absent line"
+grep -q -- '--scope advisory' "$TS" || err "task/SKILL.md phase 7 lost the advisory cycle"
+grep -q '"$PREDICT" report' "$TS" || err "task/SKILL.md phase 8 lost predict report"
+grep -q 'never a hand-counted one' "$TS" || err "task/SKILL.md lost 'counted by the tool'"
+grep -q 'One-way wrappers' "$TS" || err "task/SKILL.md bindings lost one-way wrappers"
+grep -q 'stdout==MERGED' "$LD" || err "land.md §1 lost the merge receipt"
+grep -q 'http=200' "$LD" || err "land.md §2 lost the deploy receipt"
+grep -q 'prediction-gate deny' "$LD" || err "land.md §6 lost 'a deny is not permission denied'"
+grep -q 'predictions: ' "$LD" || err "land.md §5 shape lost the predictions line"
+grep -q 'never a receipt to write' skills/task/references/code-review-prompt.md || err "code-review-prompt lost the gate-deny rule"
+grep -q 'a receipt to write' skills/task/references/security-review-prompt.md || err "security-review-prompt lost the gate-deny rule"
+grep -q 'predict <id>' skills/task/references/design-spec-template.md || err "design-spec-template lost the predict id citation"
+{ grep -q 'predict-gate: absent' README.md && grep -q 'predict-gate: absent' README.ru.md; } || err "README pair lost the prediction-protocol paragraph"
+
 # 7. No personal absolute paths in tracked files (CLAUDE.md is local and untracked).
 if git grep -nE '/home/[a-z]+/' -- . ':!CLAUDE.md' >/dev/null; then
   err "personal absolute path in tracked files:"

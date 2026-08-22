@@ -138,6 +138,8 @@ the checklist below only guards against blind spots.
    minted and who can influence it, not where the author says it comes from.
 4. Never suggest disabling a security control as a fix.
 5. Acknowledge good security practices you see.
+6. A prediction-gate deny on a command of yours is a finding to report, never
+   a receipt to write — this review is read-only.
 
 ## Output format (respond in Russian; keep code/paths/terms as-is)
 

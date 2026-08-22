@@ -9,6 +9,37 @@ below is tagged `vX.Y.Z` in git. Installs track the default branch (the
 marketplace entry pins no ref), so a release tag marks history rather than a
 download.
 
+## [1.11.0] — 2026-08-22
+
+`task` — routing for the `prediction-protocol` plugin (conditional; the flow
+runs unchanged without it). Design and premortem:
+`docs/superpowers/specs/2026-08-22-prediction-protocol-design.md`,
+`docs/premortem/2026-08-22-prediction-protocol-premortem.md`.
+
+### Added
+- Phase 5 preamble: `"${PREDICT:?}" on <TASK-ID> --also …` puts the session
+  under the prediction gate and prints `predict-gate: active v… (selftest: …)`;
+  an unset `PREDICT` is written as `predict-gate: absent (PREDICT unset)` —
+  established by the variable, not asserted (fixed discipline). State-changing
+  implementation steps become receipts; a MISS halts one-way actions until
+  `ack`.
+- Phase 0: `docs/evidence/REFUTED.md` is read and its relevant rows go into
+  the spec's Context pack.
+- Phase 7: every `live` DoD item is an advisory cycle written before the
+  check; phase 8 grades it by citing `predict <id>`.
+- Phase 8: the `predictions:` line comes from `"$PREDICT" report` verbatim,
+  admissible only next to `predict-gate: active`; journal and `REFUTED.md`
+  are committed with the close.
+- `land.md`: merge (§1, `stdout==MERGED`) and deploy (§2, `http=200`) as
+  receipts whose observables the file already named; §5 shape carries the
+  line; §6 — a prediction-gate deny and a MISS halt are on the "never stop
+  for" list.
+- Review prompts (6/6b): a gate deny is a finding to report, never a receipt
+  to write. `design-spec-template.md`: the stop condition is the deploy
+  receipt's falsifier; a `live` row cites its `predict <id>`.
+- Project bindings: optional **One-way wrappers** for `predict on --also`.
+- `lint.sh`: fifteen pins for the above; README pair paragraph.
+
 ## [1.10.0] — 2026-08-22
 
 `decompose` — the fourth item of the donor-audit plan
@@ -657,6 +688,7 @@ Donor audit of the `hybrid-plan` / `hybrid-review` skill set —
   tool-agnostic migration-guard and protected-branch rules into any repo —
   GitLab and GitHub CI, pre-commit hooks, failing closed.
 
+[1.11.0]: https://github.com/umar-s/task-flow/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/umar-s/task-flow/compare/v1.9.1...v1.10.0
 [1.9.1]: https://github.com/umar-s/task-flow/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/umar-s/task-flow/compare/v1.8.1...v1.9.0
