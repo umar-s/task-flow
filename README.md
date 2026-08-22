@@ -76,6 +76,14 @@ Invoke with `/task DEV-475` (or "прогони через наш flow"). The di
 fixed; concrete tracker/VCS/build commands are resolved from the project's
 `CLAUDE.md`.
 
+With the `prediction-protocol` plugin installed, `task` puts the session under
+the prediction gate at the start of phase 5 (`predict-gate: active`), turns
+every state-changing step — migrations on dev, merge, deploy, each `live` DoD
+item — into a receipt graded by the tool, reads `docs/evidence/REFUTED.md` in
+phase 0, and carries the `predictions:` line into the evidence block. Without
+the plugin the same lines print `predict-gate: absent` and the flow runs as
+before.
+
 ### `ci-gate` — scaffold the deterministic merge gate
 Drops a portable, non-gameable gate into any repo — the floor under the
 blast-radius categories tests and LLM review miss:
