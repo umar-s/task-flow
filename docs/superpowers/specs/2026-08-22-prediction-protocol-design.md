@@ -2,7 +2,7 @@
 
 **Дата:** 2026-08-22 (v2 — после премортема, см. ниже)
 **Автор:** Sergei (umar-s) + Claude
-**Статус:** design-spec v2 → реализовано (1.0.0; контракт loop-foundry — loop-foundry 1.1.0 + плагин 1.0.2, см. конец §7); §12 — что изменило ревью черновика
+**Статус:** design-spec v2 → реализовано (1.0.0; контракт loop-foundry — loop-foundry 1.1.0 + плагин 1.0.2, см. конец §7; делегированная сессия — плагин 1.0.3, строка таблицы решений); §12 — что изменило ревью черновика
 **Источники:** `~/tmp/task-flow/prediction-protocol.md` (постановка владельца),
 статья «ARC-AGI-3 is a skill issue» / `pbshgthm/arc-skill`,
 `docs/audits/2026-08-21-dmitriy-toolkit-v3-audit.md` §7 (связь с аудитом), §4 O4/O7,
@@ -212,6 +212,7 @@ one-way команда — deny «close <id> first»: один receipt в пол
 | контекст | вне области (`predict on` не было) | в области, receipt нет | в области, receipt совпал |
 |---|---|---|---|
 | интерактив (`CLAUDE_CODE_ENTRYPOINT=cli`, нет `agent_id`) | **`ask`** — O7 аудита: вопрос человеку на необратимом, в причине — что такое `predict on` | **`deny`** + рецепт: версия, путь к `predict`, одна строка `predict open …` с уже подставленной командой | **`ask`** с гипотезой/наблюдаемым/falsifier в причине — клик человека остаётся; хук никогда не отвечает `allow` |
+| делегированная сессия — auto-режим, `dontAsk`, `bypassPermissions` (плагин 1.0.3: последний маркер `permissionMode` в транскрипте сессии + поле stdin; auto в stdin приходит как `default`) | exit 0, stdout пуст — решает классификатор платформы: `ask` хука останавливает человека и в auto-режиме (наблюдение 2.1.239), что для автономной задачи — стоп на каждом force-push | `deny` + рецепт — свидетель нужен, человек нет | exit 0, stdout пуст |
 | субагент (`agent_id` в stdin) | `ask` (всплывает владельцу) | `deny` «report this as a finding, do not write a receipt» — ревьюер read-only | `deny` — субагент не открывает one-way дверь, это делает оркестратор |
 | headless (`ENTRYPOINT≠cli`, `-p`) | exit 0, stdout пуст — решают permissions runner'а (`loop-foundry` security §4 и так запрещает необратимое в deliver) | `deny` + рецепт | exit 0, stdout пуст (`ask` в headless = блокировка, проверено) |
 
