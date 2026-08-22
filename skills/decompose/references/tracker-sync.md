@@ -219,8 +219,10 @@ decompose-id:<draft-slug>#<n>
 - `<draft-slug>` is the MD draft's own slug (the `<epic>` portion of
   `docs/decompose/YYYY-MM-DD-<epic>.md`), so keys from two different
   decompositions never collide.
-- `<n>` is the task's position/id within that draft (e.g. matching its
-  `<TASK-ID>` in the draft, `T1`, `T2`, ...).
+- `<n>` is the task's **position** within that draft (`#1`, `#2`, …) — a
+  number, never the draft id (`T1`): the id-rewrite pass (§9 step 6) replaces
+  draft ids everywhere else, and a key that contained one would stop matching
+  after its own rewrite.
 - The marker goes into a custom field if the tracker's adapter exposes
   one for it, otherwise as a plain line inside `description`.
 
