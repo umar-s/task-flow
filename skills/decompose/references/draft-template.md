@@ -30,9 +30,10 @@ enters the picture, and only after user approval.
 
 1. Copy the fenced block below verbatim into
    `docs/decompose/YYYY-MM-DD-<epic>.md`.
-2. Fill the epic header: title, one/two-sentence goal, the SP rollup (sum
-   every task's `story_points`), and the wave count (count of distinct
-   `wave` values across all tasks).
+2. Fill the epic header: title, one/two-sentence goal, the `Checked
+   against:` paths from Phase 0, the SP rollup (sum every task's
+   `story_points`), the wave count (count of distinct `wave` values across
+   all tasks), and the open-question and placeholder counts.
 3. Add one row to the task table per task.
 4. Add one card per task, in table order — every card carries all 6 author
    fields; `wave` does **not** appear on a card, only in the table and the
@@ -41,7 +42,11 @@ enters the picture, and only after user approval.
 6. Fill the traceability table with one row per `REQ-NN` from Phase 1 — a
    row with an empty `Tasks` cell is the same defect the QA subagent's
    Check 1 (requirement coverage) would flag as a BLOCKER.
-7. Fill **Risks and mitigations** and **Open questions**. Both sections are
+7. Fill **Out of scope** (what the epic deliberately excludes *and* what was
+   cut from the input while slicing) and **Placeholders** (every
+   `<placeholder: …>` any card uses — what it stands for, which tasks carry
+   it, who confirms it).
+8. Fill **Risks and mitigations** and **Open questions**. Both sections are
    part of the artifact, not decoration: a risk with no early signal is a
    wish, and an open question with no named blocked tasks cannot be acted on.
    A question marked `blocking` must be resolved before the user approves the
@@ -56,9 +61,11 @@ inner ` ```mermaid ` fence survives untouched when you copy it out.
 # <Epic title — verb + object, not a bare noun phrase>
 
 **Goal:** <one or two sentences: what this epic delivers and for whom>
+**Checked against:** <the paths read in Phase 0 — what "the current state" claims below were verified on>
 **Story points (rollup):** <sum of every task's story_points below>
 **Waves:** <count of distinct wave values across every task below>
 **Open questions:** <count marked blocking> blocking / <total count> — see below
+**Placeholders:** <count of distinct `<placeholder: …>` across all cards> — see below
 
 ## Tasks
 
@@ -82,7 +89,8 @@ not on the card, because it's computed in Phase 4, not authored.
 - **name:** <verb + object, identical to the table and the heading above>
 - **context:** <why this task exists; `@`-references to the code, decisions,
   or conventions it must follow; related task IDs and what each provides or
-  consumes from this one>
+  consumes from this one — optionally ending with `Not in this task: … —
+  <TASK-ID> owns it` and, last, `risk tier: T1|T2|T3 — why`>
 - **requirements:** [REQ-NN, ...] <!-- non-empty, always -->
 - **dod:**
   - **done:** <observable state that means this task is finished>
@@ -132,6 +140,28 @@ graph TD
      cell is an uncovered requirement (qa-checklist.md Check 1, BLOCKER).
      Two tasks may legitimately share a REQ (Check 7 — MECE) as long as the
      split is deliberate and stated in each task's context. -->
+
+## Out of scope
+
+| From the input | Decision | Why |
+|---|---|---|
+| <quote or paraphrase the fragment> | not in this epic \| follow-up: <issue id outside this epic, or "not yet filed"> \| cut while slicing | <the reason, in one line> |
+<!-- Two kinds belong here: what was deliberately excluded, and what was cut
+     out of the source text while slicing. This is the artifact the reviewer
+     uses to catch scope creep in both directions — an implementer who "just
+     also" hardens something, and a slice that quietly lost half the input.
+     A follow-up is never a task of this epic (that is coverage, not
+     exclusion). `None` only when the input was fully covered. -->
+
+## Placeholders
+
+| Placeholder | Stands for | Carried by | Confirmed by |
+|---|---|---|---|
+| `<placeholder: config path of the orders service>` | <what the implementer needs in order to fill it> | `<TASK-ID-2>` | <who answers, or where the answer lives> |
+<!-- One row per distinct `<placeholder: …>` used in any card above: an
+     identifier nobody could confirm is written as a placeholder, never
+     invented (qa-checklist.md Check 2, BLOCKER for an invented one). `None`
+     when no card carries one. -->
 
 ## Risks and mitigations
 

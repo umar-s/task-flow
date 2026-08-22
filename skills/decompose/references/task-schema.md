@@ -35,12 +35,24 @@ wrongly promotes `truths` and `wave` to author-field status).
 | Field | Contains | Origin |
 |---|---|---|
 | **name** | Action-oriented task name: verb + object, not a bare noun phrase (e.g. "Implement POST /login endpoint", not "Login"). | GSD `<name>` |
-| **context** | Why the task exists, `@`-references to the code/decisions/conventions it must follow, and pointers to related tasks. May end with one advisory line — `risk tier: T1\|T2\|T3 — <one sentence why>` — a second opinion for whoever runs `task` on it; it is **not** a seventh field and never a gate: `task` still declares its own tier and may only move it up. | GSD `<context>` / `<read_first>` |
+| **context** | Why the task exists, `@`-references to the code/decisions/conventions it must follow, and pointers to related tasks. May end with up to two advisory lines, in this order: `Not in this task: <what> — <TASK-ID> owns it` when a neighbouring task holds an adjacent scope, then `risk tier: T1\|T2\|T3 — <one sentence why>` last (a second opinion for whoever runs `task` on it — **not** a seventh field and never a gate: `task` declares its own tier and may only move it up). | GSD `<context>` / `<read_first>` |
 | **requirements** | The `REQ-NN` identifier(s) this task covers. Must be non-empty — every task traces back to at least one requirement. | GSD `requirements` |
 | **dod** | Definition of Done — a 4-member block: `done`, `acceptance_criteria`, `verify`, `truths`. See below. | GSD `<done>` / `<acceptance_criteria>` / `<verify>` + `must_haves.truths` |
 | **story_points** | Fibonacci estimate — `1`, `2`, `3`, `5`, `8`, or `13`. **Optional annotation, not a gate.** `story_points` > 8 is a WARNING to reconsider the task's boundaries, never an automatic re-split trigger — splitting is driven by SPIDR / vertical slices / dependencies, not by this number. | Added in this plugin — GSD's estimation model has no equivalent. |
 | **depends_on** | List of prerequisite task IDs. May be empty for a task with no predecessors, but the field itself is always present. | GSD `depends_on`, extended from per-plan to per-task |
 | **wave** | Parallelism wave number. **Computed from the `depends_on` graph in Phase 4 — not an author field.** Never hand-written during decomposition; it's derived once the full dependency graph is known. | GSD `wave` |
+
+## Identifiers you could not confirm
+
+A path, table, env var, host, queue or command that is not in the repo, the
+docs or the input — and was not confirmed with the user — is written as
+`<placeholder: what it is>`, never as a plausible name. (An identifier the
+task itself creates — named in `dod` as its result — is not this: it does not
+exist yet by design.) A guessed
+`config/app/orders.yaml` reads like a fact and costs the implementer the hour
+it takes to learn it never existed; a placeholder costs one question. Every
+placeholder is listed in the draft's Placeholders table (`draft-template.md`),
+and the QA checker treats an invented identifier as a BLOCKER (Check 2).
 
 ## `dod`'s four members
 
@@ -61,6 +73,14 @@ a user cares about actually changed. A `dod` block missing `truths` is
 incomplete, full stop — this is exactly the gap the QA checklist's
 field-completeness check (BLOCKER) exists to catch.
 
+Write every member so an implementer who has never seen this repository can
+act on it — the same check grades *quality*, not only presence: a goal verb
+or quality adverb with nothing that will exist when it is done (`ensure`,
+`support`, `handle`, `properly`), an adjective with no metric (fast,
+reliable), an open-ended list ("etc.", "…"), a noun that resolves to no path,
+symbol, endpoint or table are all WARNINGs you will get back. Name the
+artifact, the number, the whole list, the place.
+
 ## Worked example
 
 A fully filled task, taken from a hypothetical auth epic. Every field is
@@ -78,6 +98,8 @@ mid-range, and `dod` carries all four members including `truths`.
   session-refresh endpoint (@src/api/session/refresh.ts). Related: T1 (User
   model — provides `User.verifyPassword()`), T4 (dashboard route guard,
   depends on this task's cookie).
+  Not in this task: logout — T5 owns it.
+  risk tier: T2 — a session cookie, but no migration and no money.
 - **requirements:** [REQ-02]
 - **dod:**
   - **done:** Valid credentials return `200` with a `Set-Cookie: session=<jwt>`

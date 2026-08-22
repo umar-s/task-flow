@@ -9,6 +9,117 @@ below is tagged `vX.Y.Z` in git. Installs track the default branch (the
 marketplace entry pins no ref), so a release tag marks history rather than a
 download.
 
+## [1.10.0] — 2026-08-22
+
+`decompose` — the fourth item of the donor-audit plan
+(`docs/audits/2026-08-21-dmitriy-toolkit-v3-audit.md` §3.2 C1–C14, §4 O5 author
+side; design in `docs/superpowers/specs/2026-08-22-task-flow-1-10-0-design.md`,
+premortem panel over it in
+`docs/premortem/2026-08-22-decompose-1-10-0-premortem.md`). Two classes of
+hole: a task that *looks* specified but cannot be executed by an unfamiliar
+implementer, and a tracker push that trusted its own `ok`. The contract of
+**6 author fields**, 4 `dod` members and **8 checks** is unchanged.
+
+### Added
+- **QA Check 2 is "Field completeness and quality"** (the counter stays 8):
+  a goal verb or quality adverb with no artifact, a subjective adjective with
+  no metric, an open-ended list, a noun nobody can locate are WARNINGs; an
+  **identifier presented as existing that does not resolve** (`@`-reference,
+  "the existing table" — checked with `test -e` / grep in the repository the
+  checker is now handed, not reasoned about) is a BLOCKER: anything not in the
+  repo, the input or the named assumptions is written as
+  `<placeholder: what it is>` and tracked in the draft's new **Placeholders**
+  table. An identifier the task *creates* is not a placeholder; Check 6
+  exempts the `<placeholder: …>` form from its scope-reduction markers, and
+  Phases 2/3 of the SKILL say the same from the author's side.
+- **QA Check 1** now takes the input and the out-of-scope list: a fragment
+  that became neither a `REQ-NN` nor an out-of-scope row was cut silently —
+  BLOCKER with `task: null`. Phase 1 writes the out-of-scope list when the
+  requirements are extracted; Phase 5 hands it to the checker with the input,
+  the named assumptions and the repository path.
+- **QA Check 5** checks that the producer → consumer contract *matches* (name,
+  shape, fields, status codes), not only that a consumer exists — BLOCKER.
+- **QA Check 6** verifies a `Not in this task: <what> — <TASK-ID> owns it`
+  line like a follow-on: the named task exists and covers `<what>`, or the
+  line is a scope reduction with a forged owner.
+- **Output contract** names the eight check slugs explicitly and the
+  `repeat: true` flag; `task-schema.md` gained the section *Identifiers you
+  could not confirm* and the advisory lines in its worked example.
+- **Convergence guard** in the revision loop: the checker is handed the
+  previous run's findings on every re-check and marks a restated defect
+  `repeat: true`; a run whose BLOCKERs are all repeats escalates to the user
+  at once (with what the last fix-round changed), instead of a third round.
+  `PASSED` still needs a clean check-run; WARNINGs are fixed or carried onto
+  the card, never dropped.
+- **Draft template**: `## Out of scope` (deliberately excluded *and* cut
+  while slicing; a follow-up is never a task of this epic) and
+  `## Placeholders` tables, header counts, a `Checked against:` line naming
+  the code Phase 0 read; `context` may end with `Not in this task: …` and,
+  last, the 1.9.0 `risk tier:` line — two advisory lines inside the field, not
+  a seventh one. A task still carrying a placeholder is handled like one
+  under a blocking open question: out of dispatch until the value is in.
+- **Edge-probe**: six surface rows — `authorization` (actor-facing),
+  `surface states` and `interaction` (ui), `grants`, `secrets`, `environments`
+  (infra) — and the relevance filter classifies surfaces alongside data
+  shapes, so the rows can actually be raised.
+- **Tracker adapter** (`tracker-sync.md`): `update_issue` — what "update in
+  place" and the id-rewrite pass actually call; `read_issue` — a write is
+  verifiable only if it is read back — with a per-field read-back predicate, a
+  *shown, not declared* match (`estimate: sent 5 / read 5`), `unverifiable`
+  for what the adapter cannot read, and a mismatch report shape in §8; the
+  **first** created issue is read back before the second, and draft ids a
+  description mentions are rewritten to tracker ids in an update-only pass;
+  a preflight before the dry-run (one read proves token and project;
+  optional `describe_project` supplies issue types, field *types*, link
+  types — what cannot be read is not promised, `metadata: unknown` is printed
+  instead); optional `search_issues` (the tracker's own query language)
+  feeding a *possible duplicates* block that never blocks and the idempotency
+  lookup — which is now honest: without a search a re-run is not idempotent
+  and the dry-run says so, and a hit counts only after `read_issue` shows
+  the exact key; a declared `markup` with a resolution order (binding →
+  tracker family → `markdown`, printed as `markup: <value> (from <source>)`);
+  REST as a transport when `CLAUDE.md` names an endpoint and the *name* of
+  the token variable (`"$NAME"` only inside the call, `--fail-with-body`, no
+  `-v`, `${NAME:?}`); a `parent` fallback next to the `depends` one; a
+  `Source: <draft path>, epic <ID or none>` line in every description; URLs
+  next to ids in the return. The YouTrack illustration gained the matching
+  rows.
+- **Phase 0 reads the code before the first question** — and before Phase 1
+  when there is none — and cites `path:line`; memory and hand-off notes are
+  recall, not authority.
+- **The author is told what Check 2 grades** (`task-schema.md`, loaded in
+  Phase 3): name the artifact, the number, the whole list, the place — so the
+  first check-run is not a wall of WARNINGs about rules nobody stated.
+- **`task` consumes the new lines**: phase 0 takes a `Not in this task:` line
+  and the draft's Out of scope rows naming the task verbatim into the spec's
+  *Not in scope* list — the reviewer's scope-drift check now has its input.
+- The dry-run lists tasks still carrying a `<placeholder: …>`: pushed as
+  written, never filled in by Phase 7.
+- `skills/decompose/NOTICE.md` records that the out-of-scope table, the
+  convergence guard and the duplicate search follow gstack conventions in
+  shape, with this plugin's own wording.
+- `lint.sh`: every new contract pinned to the section, table row or code block
+  that carries it (Check 2/5/6 sections, revision loop, the two draft tables,
+  the adapter contract block, §3/§5/§8/§9/§10 of `tracker-sync.md`, the
+  YouTrack rows, the surface rows *and* the filter that raises them, the SKILL
+  phases, the README paragraph); twenty negative controls were run against
+  mutated copies before the release.
+
+### Changed
+- `scripts/lint.sh`: a stray quote after the checkpoint.md check (1.9.0) had
+  been swallowing the next line — the `Reviewed:` invariant never ran. Fixed.
+- `tracker-sync.md` §1 no longer describes the adapter as "two operations";
+  §3 step 3 stops only when neither an MCP nor a REST endpoint exists; §9 is
+  renumbered 1–9 with preflight as step 3 and read-back as step 7.
+- Phase 7 of the SKILL names the REST transport, the preflight, the
+  duplicates, the read-back and the URLs; the Project bindings section says
+  what a consuming `CLAUDE.md` may declare for it.
+- Weight, measured by `wc -w`: `SKILL.md` 2329 → 2827 words (+21 %);
+  the five touched references 7616 → 11026 (+45 %), where the method
+  lives.
+- `README.md` / `README.ru.md`: the `decompose` paragraph names the read-back
+  and the quality half of Check 2.
+
 ## [1.9.1] — 2026-08-22
 
 ### Fixed
@@ -546,6 +657,7 @@ Donor audit of the `hybrid-plan` / `hybrid-review` skill set —
   tool-agnostic migration-guard and protected-branch rules into any repo —
   GitLab and GitHub CI, pre-commit hooks, failing closed.
 
+[1.10.0]: https://github.com/umar-s/task-flow/compare/v1.9.1...v1.10.0
 [1.9.1]: https://github.com/umar-s/task-flow/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/umar-s/task-flow/compare/v1.8.1...v1.9.0
 [1.8.1]: https://github.com/umar-s/task-flow/compare/v1.8.0...v1.8.1

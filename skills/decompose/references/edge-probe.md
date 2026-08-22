@@ -19,11 +19,14 @@ dismissal) rather than a defect nobody was watching for.
 
 ## Relevance filter first
 
-Don't run all eight categories against every requirement — most won't apply, and a
-probe that produces mostly "not applicable" noise gets ignored. Instead:
+Don't run every category below against every requirement — most won't apply, and
+a probe that produces mostly "not applicable" noise gets ignored. Instead:
 
-1. Classify each requirement by its dominant shape: `numeric-range`, `collection`,
-   `text`, `stateful`, or `io`. A requirement can carry more than one shape.
+1. Classify each requirement by its dominant data shape — `numeric-range`,
+   `collection`, `text`, `stateful`, or `io` — and, separately, by the surface it
+   exposes, if any: `actor-facing` (someone with a role calls it), `ui` (a screen
+   someone interacts with), `infra` (grants, secrets, environments). A
+   requirement can carry more than one shape and more than one surface.
 2. Only raise the categories below whose applicable-shapes column matches. A
    requirement that is purely textual doesn't get asked about numeric overflow; a
    stateless read doesn't get asked about idempotency.
@@ -32,7 +35,7 @@ This keeps every raised category meaningfully connected to the requirement in
 front of you, so an unresolved category is a real gap, not a checkbox nobody
 expected to matter.
 
-## The eight categories
+## The eight data-shape categories
 
 | category | applicable shapes | probe question |
 |---|---|---|
@@ -44,6 +47,22 @@ expected to matter.
 | precision / overflow | numeric-range | Where could rounding, truncation, or overflow occur, and which convention governs ties (up, down, to-even)? |
 | idempotency | stateful | Does running the same operation a second time, against otherwise unchanged state, produce the same result as running it once? |
 | concurrency | stateful, io | If the operation is interrupted partway, or two instances run at the same time, what is still guaranteed? |
+
+### The six surface rows
+
+Raised by the surface half of the same filter and resolved the same way (next
+section). They exist because a requirement's data shape says nothing about who
+may call it, what a screen shows while it waits, or which environment holds the
+secret.
+
+| category | applicable shapes | probe question |
+|---|---|---|
+| authorization | actor-facing | Who may call this, and what does someone without the right see — 403, hidden, or read-only? Say which, per role. |
+| surface states | ui | What is shown while loading, when there is nothing, when it fails, and when it succeeds? (i18n and adaptivity only if the project declares them.) |
+| interaction | ui | Double submit, leaving the page mid-operation, an expired session, the same screen open in two tabs — what happens? |
+| grants | infra | Who × on what × in which environment — named, not "the usual permissions". |
+| secrets | infra | Which secret, under which name, in which environment, and who puts it there? |
+| environments | infra | Which environments this touches, in what order, and who creates the missing one. |
 
 ## Resolving what gets raised
 
@@ -72,13 +91,16 @@ gets an explicit answer, even if that answer is "doesn't apply, because...".
 Requirement: "Assign each newly created support ticket to an available agent,
 round-robin across the team." Classified shape: `stateful` (assignment changes
 persistent state) plus a touch of `collection` (rotating across a team list).
+Surface: `actor-facing` (agents and supervisors both reach the assignment).
 
 Raised categories: `idempotency` (creating the same ticket twice — does retry
 duplicate an assignment?), `concurrency` (two tickets arriving at once — do they
 ever land on the same agent, or race past each other?), `empty / degenerate` (what
 happens when the team has zero available agents?), and `ordering / stability`
-(does round-robin position persist correctly if the team roster changes mid-cycle?).
+(does round-robin position persist correctly if the team roster changes mid-cycle?),
+and `authorization` (may an agent reassign a ticket to someone else, or only a
+supervisor — and what does the agent see when they try?).
 
-Each of those four gets addressed, dismissed with a reason, or explicitly left open
+Each of those five gets addressed, dismissed with a reason, or explicitly left open
 before this requirement is handed to decomposition — at which point an addressed
 edge becomes one more line in the resulting task's `dod`.

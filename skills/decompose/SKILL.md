@@ -69,8 +69,11 @@ context spent on the reference that's actually in play.
 ## Project bindings — resolve these from CLAUDE.md before starting
 
 - **Tracker** (optional) — how to create an issue/epic, link `parent` and
-  `depends` relations, and which fields map to `story_points`/estimate. Absent
-  entirely on a fresh install — that's fine, see Phase 7.
+  `depends` relations, and which fields map to `story_points`/estimate; for
+  Phase 7 it may also say how to read an issue back and search, which markup
+  the description takes, or — with no MCP — a REST base URL plus the **name**
+  of the token variable. Absent entirely on a fresh install — that's fine, see
+  Phase 7.
 - **Draft location** — where decomposition drafts live; default
   `docs/decompose/YYYY-MM-DD-<epic>.md` if the project states no override.
 - **Project context sources** — where requirements/specs/prior decisions
@@ -80,8 +83,16 @@ context spent on the reference that's actually in play.
 ## 0. Ingest & scope
 Read the project context first: `CLAUDE.md`, project memory, and whichever
 existing docs/specs are relevant to the input. If the input is an existing
-tracker epic or a spec path, read it in full before anything else. If
-requirements are genuinely missing or too vague to decompose (a bare
+tracker epic or a spec path, read it in full before anything else.
+
+**Read the code before the first question — and before Phase 1 even when
+there is no question.** Grep and read the part of the repository the input
+touches, so a question cites `path:line` and "the current state" is a checked
+fact rather than the ticket's retelling of it — or states that the input
+touches no existing code, which is itself a checked fact; the draft header's
+`Checked against:` line names what was read. Memory and hand-off notes are
+*recall, not authority*: anything dated gets re-checked against the live code
+before it shapes a task. If requirements are genuinely missing or too vague to decompose (a bare
 one-line ask), extract them — goal, why, for whom, what "done" means — then
 run each extracted requirement through the edge-case categories in
 `references/edge-probe.md` (load it now, per the resolved `$ROOT`). Keep
@@ -98,7 +109,9 @@ Turn what Phase 0 gathered into a numbered `REQ-NN` list: each requirement
 user-centric, testable, and atomic (one requirement, one testable claim).
 Build the traceability seed here — every `REQ-NN` must map to at least one
 task by the time Phase 2 finishes; a requirement with no owning task by
-Phase 5's QA pass is a BLOCKER, not a detail to fix later.
+Phase 5's QA pass is a BLOCKER, not a detail to fix later. Whatever in the
+input does **not** become a `REQ-NN` is written down now as out of scope
+(fragment → decision · why) — a fragment in neither list was cut silently.
 
 ## 2. Decompose
 Break the requirements into tasks **dependency-first, not sequence-first**:
@@ -122,7 +135,9 @@ one task only when the consumer set is small enough to name in full.
 **Scope-reduction prohibition:** a task description carrying "v1,"
 "placeholder," "stub," or "basic version for now" is not a smaller task —
 it's a hidden requirement gap. Split it into an explicit follow-up task
-instead of quietly shrinking the DoD.
+instead of quietly shrinking the DoD. (An identifier written as
+`<placeholder: what it is>` because nobody could confirm it — Phase 3 — is
+not this: nothing was shrunk.)
 
 **Splitting is driven by SPIDR / vertical slices / dependencies — never by
 story points.** Size (Phase 3's `story_points`) is computed *after* a task
@@ -139,6 +154,14 @@ user-observable facts) — all four required; a `dod` missing `truths` is
 incomplete, not optionally short. `story_points` is a Fibonacci estimate
 (`1/2/3/5/8/13`) and is an **optional annotation, not a gate** — don't let it
 drive any decision made back in Phase 2.
+
+**Never invent an identifier.** What you could not find in the repo, the docs
+or the input — and the user did not confirm (a confirmation is recorded as a
+named assumption, which is what the checker sees) — is written as
+`<placeholder: what it is>` per `task-schema.md` and listed in the draft's
+**Placeholders** table (Phase 6). `context` may end with the two advisory
+lines `task-schema.md` allows — `Not in this task: … — <TASK-ID> owns it`,
+then `risk tier: …` last — inside the field, never a seventh one.
 
 ## 4. Graph & waves
 Build the `depends_on` graph across all tasks and check it's acyclic — a
@@ -162,9 +185,12 @@ output" and "cannot safely run beside it."
 Dispatch an **independent** subagent, via the Agent tool, in a **fresh
 context** — it must not have seen Phases 0-4 run, so it has no attachment to
 the breakdown it's grading. Load `references/qa-checklist.md` now and hand
-its full text as that subagent's brief, along with the `REQ-NN` list and the
-full task breakdown (all 6 author fields + computed `wave` per task). The subagent runs the 8
-checks (requirement coverage, field completeness, graph acyclicity,
+its full text as that subagent's brief, along with the `REQ-NN` list, the
+out-of-scope list from Phase 1, the input itself (epic text or spec path), the
+named assumptions so far, the repository path (Check 2 runs `test -e`/grep
+there), and the full task breakdown (all 6 author fields + computed `wave`
+per task). The subagent runs the 8 checks (requirement coverage, field
+completeness and quality, graph acyclicity,
 atomicity, key-links, no silent scope reduction, MECE, wave parallelism
 safety) and reports BLOCKER/WARNING findings.
 
@@ -173,16 +199,24 @@ finding traces to) and re-check with the same subagent. **Loop until a
 check-run returns zero BLOCKERs — that clean run is the only exit; never stop
 on a cycle count.** Cap the *fix-rounds* at **3** as a runaway backstop, but a
 check-run always follows the last fix-round, so no fix ships without a
-verifying run behind it. If BLOCKERs still remain on the check-run after the
-3rd fix-round, escalate to the user per `references/qa-checklist.md`'s
+verifying run behind it. Escalate to the user per `references/qa-checklist.md`'s
 non-convergence rule (list open BLOCKERs, flag UNVERIFIED fixes, read
 persistent non-convergence as a likely-underspecified epic/requirements)
-rather than forcing more automatic passes. WARNINGs alone never block the exit.
+rather than forcing more automatic passes — when BLOCKERs still remain on the
+check-run after the 3rd fix-round, **or earlier, as soon as a check-run's
+BLOCKERs are all repeats of the previous run's** (hand the checker the
+previous run's findings on every re-check; it marks a restated defect
+`repeat: true`). WARNINGs alone never block the
+exit — but they are not dropped either: fix them, or carry each into the
+draft's Open questions, naming the task, so the approver sees it.
 
 ## 6. Draft
 Load `references/draft-template.md` and write the epic header, task table,
-one card per task (all 6 author fields; `wave` shows only in the table/graph, not on a
-card), the dependency graph (mermaid), the traceability table, and the
+one card per task (all 6 author fields; `wave` shows only in the table/graph,
+not on a card), the dependency graph (mermaid), the traceability table, the
+**out-of-scope** table (Phase 1's list, rendered), the **placeholders** table
+(a task still carrying a `<placeholder: …>` is handled like a task under a
+blocking open question: out of dispatch until the value is in), and the
 **risks** and **open questions** sections into
 `docs/decompose/YYYY-MM-DD-<epic>.md` (or the project's configured draft
 location). This MD file is the **self-contained primary artifact** — even if
@@ -221,20 +255,28 @@ breakdowns: skip the offer silently.
 ## 7. Tracker sync (optional)
 Only after Phase 6's explicit approval. Load `references/tracker-sync.md`
 and follow it exactly: resolve the tracker binding from `CLAUDE.md`,
-discover the concrete MCP tools via ToolSearch (never hardcode a tool name), and if no tracker is
-configured or reachable in this session, stop gracefully at the draft — that
-is the expected shape of a fresh install, not an error.
+discover the concrete MCP tools via ToolSearch (never hardcode a tool name) —
+or, when there is no MCP but the binding names a REST endpoint and the
+**name** of the token variable, use that as the transport — and if no tracker
+is configured or reachable in this session, stop gracefully at the draft —
+that is the expected shape of a fresh install, not an error.
 
-If a tracker is reachable: **default to dry-run** — render and print the
-full create/link plan (every summary, description, estimate + fallback rung,
-link, and stable idempotency key) with **zero writes**, and get the user's
-confirmation on that plan. Only after confirmation, re-run the same plan
-with writes enabled (create-or-update by idempotency key, then `parent` and
-`depends` links). On any mid-way failure, stop and report — do not keep
-creating tasks past a failed one.
+If a tracker is reachable: **preflight first** — one read of the target
+project/epic that proves the token and tells the plan what it may promise —
+then **default to
+dry-run**: render and print the full create/link plan (every summary,
+description, estimate + fallback rung, link, stable idempotency key, possible
+duplicates if the adapter can search) with **zero writes**, and get the
+user's confirmation on that plan. Only after confirmation, re-run the same
+plan with writes enabled (create-or-update by idempotency key, then `parent`
+and `depends` links), then **read every touched issue back** and compare it
+with what was sent — an `ok` from the writing side is a claim, not a check.
+On any mid-way failure, stop and report — do not keep creating tasks past a
+failed one.
 
-Return the list of created/updated `<TASK-ID>`s (or, if Phase 7 didn't run,
-the draft path and the `<TASK-ID>` placeholders used in it).
+Return the list of created/updated `<TASK-ID>`s with their URLs (or, if
+Phase 7 didn't run, the draft path and the provisional `<TASK-ID>`s used in
+it).
 
 ## Handoff
 Each produced `<TASK-ID>` is executed end-to-end, one at a time, by
@@ -260,6 +302,7 @@ not this skill's job.
 - Phase 7 never writes to a tracker without an explicit dry-run the user
   confirmed first, and never assumes a tracker's id-prefix shape anywhere in
   this skill's own contracts.
-- Report honestly: if QA hit the fix-round cap with BLOCKERs still open
-  (non-convergence), or a tracker push partially failed, say so with the
+- Report honestly: if QA stopped on the fix-round cap or the convergence
+  guard with BLOCKERs still open, or a tracker push partially failed
+  (including a read-back that did not match what was sent), say so with the
   actual findings/output.

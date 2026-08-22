@@ -88,14 +88,17 @@
 
 | Файл | Изменение |
 |---|---|
-| `skills/decompose/SKILL.md` | §0 (C1), §6 (C2), §9 (C9/C10), одна строка про `risk tier` |
-| `references/draft-template.md` | секция `## Out of scope` |
-| `references/task-schema.md` | C3, C6, `risk tier` (сделано в 1.9.0) |
-| `references/qa-checklist.md` | Check 2 (C5, C6), Check 5 (C7), revision loop (C8) |
-| `references/edge-probe.md` | C4 |
-| `references/tracker-sync.md` | C9–C14 |
-| `scripts/lint.sh` | инварианты: «8 checks» не изменился, словарь markup, наличие read-back в §9 |
+| `skills/decompose/SKILL.md` | фаза 0 (C1), фаза 1 (out-of-scope пишется вместе с REQ), фаза 3 (C6 + две advisory-строки, O5), фаза 5 (бриф чекера, convergence guard), фаза 6 (C2, плейсхолдеры), фаза 7 (REST, preflight, read-back, URL), Project bindings |
+| `references/draft-template.md` | `## Out of scope`, `## Placeholders`, `Checked against:`, слот advisory-строк в карточке |
+| `references/task-schema.md` | C3 (строка + worked example), C6 (секция «Identifiers you could not confirm»), авторская сторона C5, `risk tier` (1.9.0) |
+| `references/qa-checklist.md` | Check 1 (вход + out-of-scope), Check 2 (C5, C6), Check 5 (C7), Check 6 (исключение плейсхолдера, владелец `Not in this task:`), output contract (слаги, `repeat`), revision loop (C8) |
+| `references/edge-probe.md` | C4 + surface в relevance filter |
+| `references/tracker-sync.md` | C9–C14; §1 контракт (`read_issue`, `search_issues`, `describe_project`, `markup`), §3 REST, §5 dry-run, §6 lookup по ключу, §7 маппинг + YouTrack, §8 форма read-back, §9 шаги 1–9, §10 URL |
+| `skills/task/SKILL.md` | фаза 0: `Not in this task:` и строки Out of scope → *Not in scope* спеки |
+| `scripts/lint.sh` | инварианты, привязанные к секциям/строкам/code-block (не word-grep) |
 | `README.md` / `README.ru.md` | lockstep |
+
+*Таблица приведена к фактическим местам после премортема (в первой редакции стояло «§9» в SKILL.md, которого там нет).*
 
 ## 4. Не делаем
 

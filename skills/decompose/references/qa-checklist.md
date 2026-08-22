@@ -11,8 +11,10 @@ authoring, and reports back structured findings for the skill to act on.
 
 ## Role
 
-You are that subagent. You have been handed a requirements list (`REQ-NN`
-identifiers) and a task breakdown — a set of tasks, each with the fields
+You are that subagent. You have been handed the input (epic text or spec), a
+requirements list (`REQ-NN` identifiers), the out-of-scope list, the named
+assumptions, the path of the repository, and a task breakdown — a set of
+tasks, each with the fields
 `name`, `context`, `requirements`, `dod` (in turn `done`,
 `acceptance_criteria`, `verify`, `truths`), `story_points`, `depends_on`, and
 `wave`. Your job is to verify this breakdown **will** deliver the epic, not
@@ -53,6 +55,12 @@ starting from tasks makes it easy to only notice requirements that already
 got covered. For each `REQ-NN`, find the task ID(s) claiming it; a
 requirement claimed by zero tasks is a gap.
 
+The input is part of this check. A fragment of it — a sentence or bullet that
+states a requirement, a constraint or an exclusion, not prose that merely
+explains context — that became neither a `REQ-NN` nor a row of the out-of-scope list
+you were handed was cut silently: report it as an uncovered requirement with
+`task: null`, quoting the fragment.
+
 **Severity: BLOCKER** (an uncovered requirement means the epic does not
 ship what it promises).
 
@@ -60,7 +68,7 @@ Watch for a single vague task absorbing several requirements at once
 ("implement auth" covering login, logout, and session refresh) — that's a
 coverage claim, not actual coverage, and belongs in Check 7 (MECE) too.
 
-### Check 2 — Field completeness
+### Check 2 — Field completeness and quality
 
 Every task carries all **6 author fields** — `name`, `context`,
 `requirements`, `dod`, `story_points`, `depends_on` — and inside `dod`, all
@@ -83,6 +91,47 @@ Do not accept a field that's merely present-but-empty as satisfying this
 check where the schema requires non-empty content (e.g. `requirements` must
 be non-empty per `task-schema.md`; an empty list is the same defect as a
 missing field).
+
+**Present is not the same as executable.** A field an unfamiliar implementer
+cannot act on is a defect of the same kind as a missing one — it just fails
+later, on someone else's time. Raise a **WARNING** for each of:
+
+- **A goal verb or a quality adverb with no artifact** — `ensure`, `support`,
+  `handle`, `improve`, `properly`, `correctly`, or any synonym; the list is
+  illustrative, the test is whether something nameable exists when it is
+  done. "Ensure orders are handled correctly" has no observable end state;
+  "`POST /orders` returns 422 with `{field, code}` for a missing `sku`" does.
+- **A subjective adjective with no metric**: fast, reliable, clean, robust,
+  user-friendly. Either the number and how it is measured, or the word goes.
+- **An open-ended list** — an "etc." / "and so on" / "…" tail in whatever
+  language the ticket is written in ("и т.д." in a Russian one) — in
+  `requirements` or `dod`: whoever implements it will pick a different tail
+  than whoever reviews it.
+- **A noun nobody can locate.** Every domain noun in `context`, `dod.done`
+  and `dod.acceptance_criteria` resolves to something — a path, a symbol, an
+  endpoint, a table, a queue — either one that exists, or one the task itself
+  creates and names as its result. (`truths` are user-observable by design
+  and exempt.) A noun that is neither is a placeholder candidate (below); a
+  noun presented as *already existing* is graded under the BLOCKER rule below,
+  not here. This is the checker's side of `thinking-models.md`'s
+  curse-of-knowledge counter.
+
+**Invented identifiers are a BLOCKER, not a WARNING.** An identifier presented
+as *already existing* — an `@`-reference, "follow the convention in", "the
+existing table" — must resolve: you have the repository, so run the check
+rather than reason about it (`test -e <path>` for files, a grep for a symbol);
+a reference that points nowhere is worse than none, because it reads as
+evidence that someone looked. One that is not in the repo, not in the input
+you were handed and not among the named assumptions must appear as
+`<placeholder: what it is>` (Phase 6 collects every such form into the draft's
+**Placeholders** table — you check the form in the task, not the table). An
+identifier the task *creates* — named in
+`dod.done`/`acceptance_criteria` as its result — need not exist yet and is not
+a placeholder; what is forbidden is a guess presented as a fact. A placeholder
+used correctly is not a finding — the table tracks it; a
+placeholder standing in for something that *was* findable (the path exists,
+the symbol greps) is a **WARNING**: nobody looked. A placeholder may sit in
+any field, `dod.verify` included.
 
 ### Check 3 — Graph acyclicity
 
@@ -147,10 +196,18 @@ and does that consumer's `depends_on` actually name the producer? A
 consumer that never declares the dependency it silently relies on is itself
 a Check 3 finding as well as a Check 5 one.
 
+**The contract has to match, not just exist.** The artifact as the producer's
+`dod.done` names it — the name, the shape, the fields, the status codes — must
+be the artifact the consumer's `context` expects. A producer that delivers
+`{id, total}` and a consumer that reads `{orderId, amount}` are two tasks that
+both pass in isolation and fail together; that mismatch is a **BLOCKER**, not
+a naming quibble.
+
 **Severity: WARNING** by default (isolated artifact, wiring likely just
 missing from this task's description); escalate to **BLOCKER** when the
 missing wiring means a `REQ-NN` from Check 1 cannot actually be exercised
-end-to-end without it.
+end-to-end without it, and **BLOCKER** when the producer's `dod.done` and the
+consumer's `context` name a different artifact shape.
 
 ### Check 6 — No silent scope reduction
 
@@ -158,7 +215,14 @@ Scan every task's `name`, `context`, and `dod` text for scope-reduction
 language: `"v1"`, `"v2"`, `"simplified"`, `"for now"`, `"placeholder"`,
 `"stub"`, `"basic version"`, `"minimal"`, `"future enhancement"`, `"not
 wired"`, `"not connected"`, `"skip for now"`, `"too complex"` used to justify
-dropping scope rather than describing genuine follow-on work.
+dropping scope rather than describing genuine follow-on work. The
+`<placeholder: what it is>` form from Check 2 is **not** a hit here: it marks
+an identifier nobody could confirm, not a deliverable that was shrunk. The
+bare word "placeholder" describing the *deliverable* ("a placeholder page",
+"placeholder logic") still is. A `Not in this task: <what> — <TASK-ID> owns
+it` line in `context` is checked like a follow-on: the named task exists in
+the breakdown and its `requirements`/`dod` actually cover `<what>`; otherwise
+the line is a scope reduction with a forged owner — **BLOCKER**.
 
 For each hit, cross-reference against the `REQ-NN` the task claims to cover:
 does the task, as written, deliver what that requirement actually asks for,
@@ -232,6 +296,11 @@ issues:
     severity: "BLOCKER"
     description: "dod is missing the truths member"
     fix_hint: "Add truths: goal-backward, user-observable facts this task now makes true"
+  - task: "T2"
+    check: "field-completeness"
+    severity: "WARNING"
+    description: "dod.done says 'orders are handled correctly' — no artifact, no observable end state"
+    fix_hint: "Name what exists when it is done: the endpoint, the status code, the row, the file"
   - task: "T5"
     check: "atomicity"
     severity: "WARNING"
@@ -241,10 +310,14 @@ issues:
 
 `task` is the task ID the finding belongs to (or `null` for an epic-level
 finding, e.g. an uncovered `REQ-NN` with no claiming task at all). `check`
-is one of the eight names above. `severity` is `BLOCKER` or `WARNING`,
+is the slug of one of the eight checks above, not its heading:
+`requirement-coverage`, `field-completeness`, `graph-acyclicity`,
+`atomicity`, `key-links`, `scope-reduction`, `mece`, `wave-parallelism`. `severity` is `BLOCKER` or `WARNING`,
 never anything else. `description` states the defect found; `fix_hint`
 states what would resolve it — concrete enough that the next revision pass
-doesn't have to re-derive what you meant.
+doesn't have to re-derive what you meant. `repeat: true` appears only on a
+re-check, on a finding that restates one from the previous run you were
+handed (convergence guard, below).
 
 ## Revision loop
 
@@ -255,6 +328,15 @@ and its BLOCKERs are addressed). It runs:
 1. Do a check-run.
 2. Zero BLOCKERs → **PASSED**. This is the only clean exit.
 3. BLOCKERs present → a fix-round addresses them, then go back to step 1.
+
+**Convergence guard.** On every re-check you are handed the previous run's
+`issues`; mark each finding that is the same defect as before — same task,
+same check, and the fix did not change what you objected to — with
+`repeat: true`. When every BLOCKER of a check-run is a repeat, the fix is not
+working or the reviewer disagrees with it: the orchestrator stops and
+escalates to the user with both runs' findings, because a third round of the
+same argument is how a review loop turns into theatre. This narrows the loop,
+it does not loosen it: `PASSED` still requires a clean check-run.
 
 **Run until a clean check-run, not until a cycle count.** The exit condition
 is a check-run that comes back with no BLOCKER — keep going until you get
@@ -271,12 +353,15 @@ fix is *verified* once a check-run performed after it found no BLOCKER
 against it; a fix with no check-run after it is **UNVERIFIED**.
 
 **On non-convergence** — BLOCKERs still present on the check-run that follows
-the 3rd fix-round — stop and escalate to the user; do not silently accept.
+the 3rd fix-round, or the convergence guard firing earlier — stop and escalate
+to the user; do not silently accept.
 The escalation MUST:
 
 1. List the still-open BLOCKERs (current `ISSUES FOUND`).
 2. Flag as `UNVERIFIED` any fix no check-run has cleared since it was applied,
-   naming each one.
+   naming each one. On a convergence-guard stop, also quote what the last
+   fix-round changed in each task the BLOCKERs still name — an unchanged task
+   is a fix that was never applied.
 3. **Read non-convergence as a signal, not just a failure.** Three fix-rounds
    that keep surfacing fresh BLOCKERs usually means the **input is
    underspecified** — a missing requirement, an ambiguous epic, an undecided

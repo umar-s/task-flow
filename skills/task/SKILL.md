@@ -110,7 +110,9 @@ and both premortems, but not the implementation you have already written. A T1
 that becomes T2/T3 gets its spec file at that moment. Say in one line what
 triggered it. Never down, never quietly. A `risk tier:` note from `decompose` is a **floor,
 not a ceiling** — the tier is `max(your declaration, that hint)`, and a
-disagreement is worth one sentence.
+disagreement is worth one sentence. A `Not in this task:` line from the same
+source, and the draft's Out of scope rows that name this task, go verbatim
+into the spec's *Not in scope* list (phase 1).
 - **T1 trivial** — copy, config value, comment, one surface; no data, auth,
   migration or external call. Phase 1 is three sentences in the ticket; phases
   2 and 4 may legitimately conclude "no failure mode beyond X" in a line each.
