@@ -102,8 +102,8 @@ implementer, and a tracker push that trusted its own `ok`. The contract of
   that carries it (Check 2/5/6 sections, revision loop, the two draft tables,
   the adapter contract block, §3/§5/§8/§9/§10 of `tracker-sync.md`, the
   YouTrack rows, the surface rows *and* the filter that raises them, the SKILL
-  phases, the README paragraph); ten negative controls were run against a
-  mutated copy before the release.
+  phases, the README paragraph); twenty negative controls were run against
+  mutated copies before the release.
 
 ### Changed
 - `scripts/lint.sh`: a stray quote after the checkpoint.md check (1.9.0) had
