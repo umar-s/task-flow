@@ -131,6 +131,14 @@ verdict: fix it, or say in the evidence block that the text went out unscanned.
 No `ci/scan-text.sh` in the repo means the gate predates it — note that rather
 than skip silently.
 
+Under the prediction protocol the journal is a deliverable of the close: after
+the last receipt (the deploy's) is closed, stage `docs/evidence/<TASK-ID>.md`
+and `docs/evidence/REFUTED.md` **by path** and land them the way the binding
+lands docs — a docs-only commit on the integration branch where that is
+allowed, otherwise a follow-up PR with auto-merge — and cite that commit or
+PR next to the `predictions:` line. A journal left uncommitted is a journal
+the next session never reads.
+
 Shape (the rules behind each part are in `implementation-integrity.md` §6):
 
 ```

@@ -205,18 +205,21 @@ and report it as a comparison (`pin · actual · match`) — numbers produced on
 another runtime are not evidence. Which files carry the pin, and what a
 mismatch means, is in `implementation-integrity.md` §6.
 
-**Then put the session under the prediction protocol** (the
-`prediction-protocol` plugin; conditional, never assumed):
+Branch off the integration branch (`fix/…` or `feature/…`, one branch per task).
+
+**Then, inside that checkout, put the session under the prediction protocol**
+(the `prediction-protocol` plugin; conditional, never assumed):
 `"${PREDICT:?}" on <TASK-ID> --also '<each one-way wrapper from the bindings>'`
 prints `predict-gate: active v… (selftest: …)`; an unset `PREDICT` means the
 plugin is not installed — write `predict-gate: absent (PREDICT unset)` and
-continue, the flow does not depend on it. Under the protocol every
-state-changing step of the implementation (a migration on dev, a seed, a
-restart) is a receipt — `open` → the action → `close` — and a MISS halts
-one-way actions until `ack` names the belief that was wrong. The gate
-denying a command is a missing receipt, not permission denied.
+continue, the flow does not depend on it. The journal root is fixed where
+`on` ran, so run it in the branch's own checkout, never in a parent tree.
+Under the protocol every state-changing step of the implementation (a
+migration on dev, a seed, a restart) is a receipt — `open` → the action →
+`close` — and a MISS halts one-way actions until `ack --refuted … --where …`
+names the belief that was wrong and where it held. The gate denying a
+command is a missing receipt, not permission denied.
 
-Branch off the integration branch (`fix/…` or `feature/…`, one branch per task).
 Implement to the DoD. Write tests **at the seam chosen in phase 3** that encode
 the DoD and the premortem edge cases. Run the project's **test +
 static-analysis + lint** to green. Keep spec-adjacent docs (API reference,
