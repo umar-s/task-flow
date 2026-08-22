@@ -123,6 +123,21 @@ Then drive the pipeline: `/decompose` an epic into tasks, `/task DEV-475` each
 one through the quality flow, `/ci-gate` once per repo to scaffold the merge
 gate they all land behind.
 
+## Skill routing (paste into the consuming project's `CLAUDE.md`)
+
+The skills' own `description`s compete with dozens of others in a session; a
+routing table in the project's `CLAUDE.md` is what makes the model reach for
+them on its own:
+
+```markdown
+## Skill routing
+- A ticket / task id (`DEV-475`, `#123`, "сделай задачу …") → `/task`
+- An epic, a feature description or a spec to slice into tasks → `/decompose`
+- "add the CI gate", "secret scan", "migration guard", a new repo → `/ci-gate`
+- Unsure whether a skill applies → invoke it; declining inside the skill is
+  cheaper than a flow run without it.
+```
+
 ## Design notes
 - The gate is deterministic on purpose: an LLM reviewer optimizes for "green",
   not "correct", and shares blind spots with the implementer. Secrets and
