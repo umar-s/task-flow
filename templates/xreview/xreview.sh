@@ -43,6 +43,7 @@ Environment:
                         (memory plugins replay the author's session — default 1)
   XREVIEW_TIMEOUT=<s>   reviewer wall-clock limit (default 1800)
   XREVIEW_CODEX_PROFILE=<name>  add `-p <name>` to codex exec
+  XREVIEW_KEEP_ENV='<VAR> …'    session-family variables to pass through anyway
   XREVIEW_ALLOW='<rule>;<rule>' extra --allowedTools rules for claude, e.g. 'Bash(make test)'
   XREVIEW_CODEX_BIN / XREVIEW_CLAUDE_BIN  CLI paths (default: codex / claude on PATH)
   XREVIEW_PROMPTS=<dir> brief templates (default: the plugin's skills/task/references)
@@ -77,6 +78,7 @@ case "$KIND" in code|security) ;; *) die "--kind must be code or security" ;; es
 [ -n "$BASE_REF" ] || die "--base is required (the integration ref, fetched: e.g. origin/develop)"
 ISOLATE="${XREVIEW_ISOLATE:-1}"
 TIMEOUT="${XREVIEW_TIMEOUT:-1800}"
+case "$EFFORT" in ''|minimal|low|medium|high|xhigh|max) ;; *) die "--effort must be one of minimal low medium high xhigh max" ;; esac
 case "$TIMEOUT" in ''|*[!0-9]*) die "XREVIEW_TIMEOUT must be whole seconds" ;; esac
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -183,13 +185,18 @@ if [ "$BRIEF_ONLY" = 1 ]; then cat "$TMP/brief"; exit 0; fi
 
 # The reviewer inherits no session identity: a nested harness otherwise sees
 # the author's session ids, plugin paths and the parent's messaging channel.
-SCRUB=(-u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID
-  -u CLAUDE_CODE_BRIDGE_SESSION_ID -u CLAUDE_CODE_CHILD_SESSION -u CLAUDE_CODE_EXECPATH
-  -u CLAUDE_CODE_MESSAGING_SOCKET -u CLAUDE_CODE_MESSAGING_TOKEN -u CLAUDE_CODE_SESSION_ATTENDED
-  -u CLAUDE_CODE_SSE_PORT -u CLAUDE_EFFORT -u CLAUDE_PID -u CLAUDE_PLUGIN_ROOT
-  -u CLAUDE_PLUGIN_DATA -u CLAUDE_ENV_FILE -u CLAUDE_PROJECT_DIR -u CODEX_SESSION_ID
-  -u CODEX_THREAD_ID -u PLUGIN_ROOT -u PLUGIN_DATA -u PP_SESSION -u PP_ENTRYPOINT
-  -u PP_HARNESS -u PREDICT)
+# Removed by family, so a variable a newer harness adds is covered too; kept:
+# the variables that select or carry the reviewer's own authentication, and
+# whatever XREVIEW_KEEP_ENV names.
+SCRUB=()
+while IFS= read -r v; do
+  case " ${XREVIEW_KEEP_ENV:-} " in *" $v "*) continue ;; esac
+  case "$v" in
+    CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_USE_*|CLAUDE_CODE_SKIP_*_AUTH|CLAUDE_CODE_CLIENT_*) continue ;;
+    CLAUDECODE|CLAUDE_CODE_*|CLAUDE_PLUGIN_*|CLAUDE_ENV_FILE|CLAUDE_PROJECT_DIR|CLAUDE_EFFORT|CLAUDE_PID) SCRUB+=(-u "$v") ;;
+    CODEX_SESSION_ID|CODEX_THREAD_ID|CODEX_CI|CODEX_SANDBOX*|PLUGIN_ROOT|PLUGIN_DATA|PP_*|PREDICT) SCRUB+=(-u "$v") ;;
+  esac
+done < <(compgen -e)
 TO=(); command -v timeout >/dev/null && TO=(timeout "$TIMEOUT")
 SEEN_MODEL="${MODEL:-default}"
 ISOLATION="off (XREVIEW_ISOLATE=0)"
@@ -227,11 +234,11 @@ fi
 printf '%s: %s reviews %s..%s (%s brief, isolation %s)\n' "$me" "$BY" "${BASE_SHA:0:7}" "${HEAD_SHA:0:7}" "$KIND" "$ISOLATION" >&2
 rrc=0
 if [ "$BY" = codex ]; then
-  env "${SCRUB[@]}" ${TO[@]+"${TO[@]}"} "$BIN" "${ARGS[@]}" < "$TMP/brief" > "$TMP/stdout" 2> "$TMP/stderr" || rrc=$?
+  env ${SCRUB[@]+"${SCRUB[@]}"} ${TO[@]+"${TO[@]}"} "$BIN" "${ARGS[@]}" < "$TMP/brief" > "$TMP/stdout" 2> "$TMP/stderr" || rrc=$?
   m="$(sed -nE 's/^model: ([^[:space:]]+).*/\1/p' "$TMP/stderr" | head -n 1)"
   [ -z "$m" ] || SEEN_MODEL="$m"
 else
-  env "${SCRUB[@]}" ${TO[@]+"${TO[@]}"} "$BIN" "${ARGS[@]}" < "$TMP/brief" > "$TMP/last.md" 2> "$TMP/stderr" || rrc=$?
+  env ${SCRUB[@]+"${SCRUB[@]}"} ${TO[@]+"${TO[@]}"} "$BIN" "${ARGS[@]}" < "$TMP/brief" > "$TMP/last.md" 2> "$TMP/stderr" || rrc=$?
 fi
 if [ "$rrc" != 0 ] || [ ! -s "$TMP/last.md" ]; then
   printf '%s: reviewer %s exited %s%s — no review happened. Last stderr lines:\n' "$me" "$BIN" "$rrc" \

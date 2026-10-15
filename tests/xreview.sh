@@ -173,6 +173,17 @@ for v in CLAUDECODE CLAUDE_CODE_SESSION_ID CLAUDE_CODE_MESSAGING_TOKEN PP_SESSIO
   grep -q "^$v=" "$STUB_LOG/env" && bad "the reviewer inherited $v" || ok
 done
 grep -q '^HOME=' "$STUB_LOG/env" && ok || bad "scrub removed HOME (auth lives there)"
+run 0 scrub-families "STUB_ANSWER=$YES" CLAUDE_CODE_REVIEW_SENTINEL=a CLAUDE_PLUGIN_REVIEW_SENTINEL=a PP_ANY=a CODEX_THREAD_ID=a CODEX_SANDBOX_NETWORK_DISABLED=1 CLAUDE_CODE_OAUTH_TOKEN=keep CLAUDE_CODE_USE_BEDROCK=1 CODEX_HOME=/keep -- --by claude --task T-1 --base main
+for v in CLAUDE_CODE_REVIEW_SENTINEL CLAUDE_PLUGIN_REVIEW_SENTINEL PP_ANY CODEX_THREAD_ID CODEX_SANDBOX_NETWORK_DISABLED; do
+  grep -q "^$v=" "$STUB_LOG/env" && bad "the reviewer inherited $v (a family member, not a listed name)" || ok
+done
+for v in CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CODE_USE_BEDROCK CODEX_HOME; do
+  grep -q "^$v=" "$STUB_LOG/env" && ok || bad "scrub removed $v (the reviewer's own auth / provider selection)"
+done
+run 0 keep-env "STUB_ANSWER=$YES" CLAUDE_CODE_REVIEW_SENTINEL=a "XREVIEW_KEEP_ENV=CLAUDE_CODE_REVIEW_SENTINEL" -- --by codex --task T-1 --base main
+grep -q '^CLAUDE_CODE_REVIEW_SENTINEL=' "$STUB_LOG/env" && ok || bad "XREVIEW_KEEP_ENV did not keep the named variable"
+run 2 bad-effort "STUB_ANSWER=$YES" -- --by codex --task T-1 --base main --effort 'high" sandbox_mode="danger-full-access'
+[ ! -e "$STUB_LOG/argv" ] && ok || bad "an unvalidated --effort reached the reviewer CLI"
 run 0 claude-flags "STUB_ANSWER=$YES" -- --by claude --task T-1 --base main --model opus
 A="$STUB_LOG/argv"
 for f in -p --setting-sources project,local --permission-mode dontAsk --tools Read,Grep,Glob,Bash --no-session-persistence --model opus 'Bash(git diff *)'; do

@@ -258,7 +258,7 @@ if grep -nE '\|\| true|2>/dev/null' templates/xreview/*.sh | grep -v 'lint: allo
   grep -nE '\|\| true|2>/dev/null' templates/xreview/*.sh | grep -v 'lint: allow' >&2
 fi
 for w in 'exec -s read-only' '--ignore-user-config' '--setting-sources project,local' '--permission-mode dontAsk' \
-         'CLAUDE_CODE_MESSAGING_TOKEN' 'CLAUDE_CODE_SESSION_ID' 'PP_SESSION' 'CODEX_SESSION_ID' 'empty range'; do
+         'compgen -e' 'CLAUDE_CODE_*|CLAUDE_PLUGIN_*' 'PP_*' 'CODEX_SESSION_ID' 'empty range'; do
   grep -qF -- "$w" "$XS" || err "$XS lost '$w'"
 done
 grep -qE -- '--tools "Read,Grep,Glob,Bash"' "$XS" || err "$XS: the claude reviewer's tool set is not read-only"
