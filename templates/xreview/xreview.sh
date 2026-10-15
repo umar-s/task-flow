@@ -240,30 +240,47 @@ if [ "$rrc" != 0 ] || [ ! -s "$TMP/last.md" ]; then
   exit 2
 fi
 
-# Verdict. A verdict attaches to the commit it saw.
+# Verdict. A verdict attaches to the commit it saw. Parsing is strict: every
+# field must be the whole value on its line and agree with itself — an echoed
+# placeholder, a longer word or a longer sha is "unreadable", never clean.
 verdict="unreadable"; out=2; why=""
-reviewed="$(grep -oE 'Reviewed:[*[:space:]`]*[0-9a-f]{7,40}' "$TMP/last.md" | tail -n 1 | grep -oE '[0-9a-f]{7,40}$' || true)"  # lint: allow (no match = no verdict, handled below)
-if [ -z "$reviewed" ]; then
+shas="$(awk '{
+  line = $0
+  while ((i = index(line, "Reviewed:")) > 0) {
+    rest = substr(line, i + 9); sub(/^[*` \t]*/, "", rest)
+    if (match(rest, /^[0-9a-f]+/) && substr(rest, RLENGTH + 1, 1) !~ /[0-9A-Za-z_]/) print substr(rest, 1, RLENGTH)
+    else print "BAD"
+    line = substr(line, i + 9)
+  }
+}' "$TMP/last.md" | sort -u)"
+nshas="$(printf '%s' "$shas" | grep -c . || true)"  # lint: allow (an empty list counts as 0)
+if [ "$nshas" = 0 ]; then
   why="no 'Reviewed: <sha>' line"
-elif [ "${HEAD_SHA#"$reviewed"}" = "$HEAD_SHA" ]; then
-  why="the report says Reviewed: $reviewed, the range head is $HEAD_SHA"
+elif [ "$nshas" != 1 ] || [ "$shas" = BAD ]; then
+  why="the 'Reviewed:' field is not one clean sha ($(printf '%s' "$shas" | tr '\n' ' '))"
+elif [ "${#shas}" -lt 7 ] || [ "${#shas}" -gt 40 ] || [ "${HEAD_SHA#"$shas"}" = "$HEAD_SHA" ]; then
+  why="the report says Reviewed: $shas, the range head is $HEAD_SHA"
 elif [ "$KIND" = code ]; then
-  r="$(grep -ioE 'Ready to merge\?[*[:space:]]*\[?(Yes|No|With fixes)' "$TMP/last.md" | tail -n 1 | grep -ioE '(Yes|No|With fixes)$' || true)"  # lint: allow (no match = unreadable, handled below)
-  case "$(printf '%s' "$r" | tr '[:upper:]' '[:lower:]')" in
+  vals="$(awk '{
+    line = $0; i = index(line, "Ready to merge?"); if (!i) next
+    v = substr(line, i + 15); sub(/^[* \t]*/, "", v); sub(/[*. \t]*$/, "", v)
+    print tolower(v)
+  }' "$TMP/last.md" | sort -u)"
+  case "$vals" in
     yes) verdict="ready to merge"; out=0 ;;
     no) verdict="not ready"; out=1 ;;
     "with fixes") verdict="ready with fixes"; out=1 ;;
-    *) why="no 'Ready to merge? Yes|No|With fixes' line" ;;
+    "") why="no 'Ready to merge? Yes|No|With fixes' line" ;;
+    *) why="the verdict line is not exactly Yes, No or With fixes ($(printf '%s' "$vals" | tr '\n' '/'))" ;;
   esac
 else
-  s="$(grep -m 1 -oE 'Critical:[*[:space:]]*[0-9]+[*[:space:]]*\|[*[:space:]]*High:[*[:space:]]*[0-9]+' "$TMP/last.md" || true)"  # lint: allow (no match = unreadable, handled below)
-  if [ -n "$s" ]; then
-    c="$(printf '%s' "$s" | sed -nE 's/^Critical:[*[:space:]]*([0-9]+).*/\1/p')"
-    h="$(printf '%s' "$s" | sed -nE 's/.*High:[*[:space:]]*([0-9]+)$/\1/p')"
-    if [ $((c + h)) -gt 0 ]; then verdict="Critical $c / High $h"; out=1; else verdict="Critical 0 / High 0"; out=0; fi
-  else
-    why="no 'Critical: N | High: N' summary line"
-  fi
+  sums="$(tr -d '*' < "$TMP/last.md" | sed -nE 's/^[[:space:]]*Critical:[[:space:]]*([0-9]+)[[:space:]]*\|[[:space:]]*High:[[:space:]]*([0-9]+)[[:space:]]*\|[[:space:]]*Medium:[[:space:]]*[0-9]+[[:space:]]*\|[[:space:]]*Low:[[:space:]]*[0-9]+[[:space:]]*$/\1 \2/p' | sort -u)"
+  case "$(printf '%s' "$sums" | grep -c . || true)" in  # lint: allow (an empty list counts as 0)
+    1) c="${sums% *}"; h="${sums#* }"
+       if [ $((c + h)) -gt 0 ]; then verdict="Critical $c / High $h"; out=1; else verdict="Critical 0 / High 0"; out=0; fi ;;
+    0) why="no 'Critical: N | High: N | Medium: N | Low: N' summary line" ;;
+    *) why="summary lines disagree ($(printf '%s' "$sums" | tr '\n' '/'))" ;;
+  esac
 fi
 [ "$out" != 2 ] || verdict="unreadable: $why"
 

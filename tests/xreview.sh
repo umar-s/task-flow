@@ -92,6 +92,22 @@ SEC_HIGH=$(answer sechigh "### Summary
 **Reviewed:** $SHORT")
 SEC_NOSUM=$(answer secnosum "Всё хорошо.
 **Reviewed:** $SHORT")
+ECHOED=$(answer echoed "**Reviewed:** $SHORT
+**Ready to merge?** [Yes | No | With fixes]")
+LONGER_WORD=$(answer longerword "**Reviewed:** $SHORT
+**Ready to merge?** Yesterday")
+LONGER_SHA=$(answer longersha "**Reviewed:** ${HEAD_SHA}deadbeef
+**Ready to merge?** Yes")
+TWO_VERDICTS=$(answer twoverdicts "**Reviewed:** $SHORT
+**Ready to merge?** Yes
+**Ready to merge?** No")
+TWO_SHAS=$(answer twoshas "**Reviewed:** $SHORT
+Reviewed: 0123456
+**Ready to merge?** Yes")
+DOTTED=$(answer dotted "**Reviewed:** $SHORT.
+**Ready to merge?** With fixes.")
+SEC_ECHOED=$(answer secechoed "Critical: N | High: N | Medium: N | Low: N
+**Reviewed:** $SHORT")
 
 # 1. verdict → exit, both reviewers, report named <TASK>-<sha7>-<by>
 run 0 codex-yes "STUB_ANSWER=$YES" -- --by codex --task T-1 --base main
@@ -108,6 +124,15 @@ run 2 translated-labels "STUB_ANSWER=$TRANSLATED" -- --by codex --task T-1 --bas
 grep -q 'unreadable' "$R/docs/reviews/T-1-$SHORT-codex.md" && ok || bad "an unreadable verdict is not recorded as unreadable in the report"
 run 2 other-sha "STUB_ANSWER=$OTHER_SHA" -- --by codex --task T-1 --base main
 run 2 no-reviewed-line "STUB_ANSWER=$NO_SHA" -- --by claude --task T-1 --base main
+# 2b. strict fields: an echoed placeholder, a longer word, a longer sha or two
+#     disagreeing lines are unreadable; trailing punctuation is not
+run 2 echoed-placeholder "STUB_ANSWER=$ECHOED" -- --by codex --task T-1 --base main
+run 2 longer-word "STUB_ANSWER=$LONGER_WORD" -- --by codex --task T-1 --base main
+run 2 longer-sha "STUB_ANSWER=$LONGER_SHA" -- --by codex --task T-1 --base main
+run 2 two-verdicts "STUB_ANSWER=$TWO_VERDICTS" -- --by codex --task T-1 --base main
+run 2 two-shas "STUB_ANSWER=$TWO_SHAS" -- --by codex --task T-1 --base main
+run 1 trailing-dots "STUB_ANSWER=$DOTTED" -- --by codex --task T-1 --base main
+run 2 security-echoed-summary "STUB_ANSWER=$SEC_ECHOED" -- --by codex --task T-1 --base main --kind security
 # 3. security brief: counts decide, bold or not
 run 0 security-clean "STUB_ANSWER=$SEC_CLEAN" -- --by codex --task T-1 --base main --kind security
 [ -f "$R/docs/reviews/T-1-$SHORT-codex-security.md" ] && ok || bad "security report not suffixed -security"
