@@ -21,7 +21,7 @@ Before merging:
 - **Green means the gate jobs ran and passed** (phase 8 rule). Name them.
 - **The final fresh run happened on the merged state**, not on your branch
   alone: merge/rebase the integration branch in first (per the project's
-  CLAUDE.md). A conflict resolution is a new edit — it goes back through a
+  instruction file). A conflict resolution is a new edit — it goes back through a
   delta review before it lands.
 
 Merging:
@@ -152,7 +152,8 @@ DoD-4 → PARTIAL (принято <risk owner> на MR, follow-up DEV-512)
 
 тесты 47/47 · diff-coverage 31/31 (100%) · мутанты 5/5 killed ·
 CI green (secret-scan, migration-guard, unicode-guard, diff-coverage) ·
-review @ 3f2a1c9 · re-reviewed: n/a (merge only) · security @ skip (нет
+review @ 3f2a1c9 (codex, docs/reviews/DEV-475-3f2a1c9-codex.md) ·
+re-reviewed: n/a (merge only) · security @ skip (нет
 чувствительных поверхностей) · HEAD @ 9c1b7d2 · node: pin 20.11.1 · actual
 20.11.1 (match) · live на dev: <url> · repro: `make check` · property-тесты:
 пропущены, в изменении нет инвариантов

@@ -3,7 +3,7 @@
 Loaded in phase 1. The spec is what the premortems attack, what the reviewer
 compares the diff against, and what survives a `/compact`. Write it at the one
 path phase 0 named — `<artifact-dir>/<TASK-ID>.spec.md`, where `<artifact-dir>`
-is the project's artifact directory (its `CLAUDE.md` names it, else
+is the project's artifact directory (its instruction file names it, else
 `docs/specs/`) — then confirm it will survive a checkout: `git ls-files --error-unmatch <path>` or
 `git check-ignore -v <path>` — an ignored spec is a spec you will lose.
 
@@ -37,7 +37,7 @@ This is also the reviewer's map of what you *did not* read.
 
 ## 4. Decisions & assumptions
 Each decision: what you chose, what you rejected, and the fact that decided it
-(a measurement, a constraint from the project's CLAUDE.md, a line of code).
+(a measurement, a constraint from the project's instruction file, a line of code).
 Assumptions are marked as such, with what would falsify each one. A decision
 without a rejected alternative is a preference, not a decision.
 
