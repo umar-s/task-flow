@@ -186,9 +186,42 @@ run 2 bad-effort "STUB_ANSWER=$YES" -- --by codex --task T-1 --base main --effor
 [ ! -e "$STUB_LOG/argv" ] && ok || bad "an unvalidated --effort reached the reviewer CLI"
 run 0 claude-flags "STUB_ANSWER=$YES" -- --by claude --task T-1 --base main --model opus
 A="$STUB_LOG/argv"
-for f in -p --setting-sources project,local --permission-mode dontAsk --tools Read,Grep,Glob,Bash --no-session-persistence --model opus 'Bash(git diff *)'; do
+for f in -p --setting-sources project,local --permission-mode dontAsk --tools Read,Grep,Glob --no-session-persistence --model opus; do
   grep -qxF -- "$f" "$A" && ok || bad "claude argv lacks $f"
 done
+grep -q '^Bash' "$A" && bad "the claude reviewer has a shell by default (git diff --output writes)" || ok
+grep -q '^## Range material' "$STUB_LOG/brief" && ok || bad "the claude brief lacks the attached range material"
+grep -q '^+two$' "$STUB_LOG/brief" && ok || bad "the attached range material lacks the diff"
+grep -q 'feat: second line' "$STUB_LOG/brief" && ok || bad "the attached range material lacks the log"
+run 0 claude-allow "STUB_ANSWER=$YES" "XREVIEW_ALLOW=Bash(make test)" -- --by claude --task T-1 --base main
+grep -A1 -xF -- --tools "$STUB_LOG/argv" | tail -n 1 | grep -qx 'Read,Grep,Glob,Bash' && ok || bad "XREVIEW_ALLOW did not grant the shell"
+grep -qxF 'Bash(make test)' "$STUB_LOG/argv" && ok || bad "XREVIEW_ALLOW rule missing from --allowedTools"
+grep -q '^Bash(git' "$STUB_LOG/argv" && bad "XREVIEW_ALLOW brought back the git allowlist" || ok
+run 2 claude-diff-cap "STUB_ANSWER=$YES" XREVIEW_MAX_DIFF_BYTES=10 -- --by claude --task T-1 --base main
+[ ! -e "$STUB_LOG/argv" ] && ok || bad "an over-cap diff was dispatched (truncated review)"
+run 0 codex-no-material "STUB_ANSWER=$YES" -- --by codex --task T-1 --base main
+grep -q '^## Range material' "$STUB_LOG/brief" && bad "the codex brief got range material (it has its own read-only shell)" || ok
+# the claude reviewer reads the checkout: another head is refused; codex runs git itself
+git -C "$R" switch -qc two; printf 'three\n' >> "$R/app.txt"; git -C "$R" commit -qam 'feat: third line'
+run 2 claude-other-head "STUB_ANSWER=$YES" -- --by claude --task T-1 --base main --head feature
+run 0 codex-other-head "STUB_ANSWER=$YES" -- --by codex --task T-1 --base main --head feature
+# a fence in the material is longer than any backtick run inside it
+printf '%s\n' '```````' > "$R/fence.md"; git -C "$R" add fence.md; git -C "$R" commit -qm 'docs: backticks'
+TWO_SHA=$(git -C "$R" rev-parse HEAD)
+answer two "**Reviewed:** $TWO_SHA
+**Ready to merge?** Yes" > /dev/null
+run 0 claude-fence "STUB_ANSWER=$TMP/two.md" -- --by claude --task T-1 --base main
+grep -qE '^`{8,}text$' "$STUB_LOG/brief" && ok || bad "the material fence is not longer than the 7-backtick run inside it"
+# 6b material leaves out the spec's own diff when the spec is in the range
+git -C "$R" add docs/specs/T-1.spec.md; git -C "$R" commit -qm 'docs: spec'
+SPEC_SHA=$(git -C "$R" rev-parse HEAD)
+answer spec "Critical: 0 | High: 0 | Medium: 0 | Low: 0
+**Reviewed:** $SPEC_SHA" > /dev/null
+run 0 claude-security-spec "STUB_ANSWER=$TMP/spec.md" -- --by claude --task T-1 --base main --kind security
+grep -q 'EDGE-MARKER-42' "$STUB_LOG/brief" && bad "the 6b material carries the spec's premortem edges through its diff" || ok
+grep -q 'fence.md' "$STUB_LOG/brief" && ok || bad "the 6b material lost the rest of the diff"
+git -C "$R" switch -q feature
+git -C "$R" show two:docs/specs/T-1.spec.md > "$R/docs/specs/T-1.spec.md"   # committed on the side branch; untracked again here
 grep -qxE '(Edit|Write|MultiEdit|NotebookEdit|Agent)' "$A" && bad "claude reviewer gets a write or dispatch tool" || ok
 grep -A1 -xF -- --tools "$A" | tail -n 1 | grep -qE 'Edit|Write|Agent' && bad "--tools offers a write or dispatch tool" || ok
 run 0 not-isolated "STUB_ANSWER=$YES" XREVIEW_ISOLATE=0 -- --by codex --task T-1 --base main

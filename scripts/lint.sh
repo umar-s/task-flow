@@ -261,7 +261,8 @@ for w in 'exec -s read-only' '--ignore-user-config' '--setting-sources project,l
          'compgen -e' 'CLAUDE_CODE_*|CLAUDE_PLUGIN_*' 'PP_*' 'CODEX_SESSION_ID' 'empty range'; do
   grep -qF -- "$w" "$XS" || err "$XS lost '$w'"
 done
-grep -qE -- '--tools "Read,Grep,Glob,Bash"' "$XS" || err "$XS: the claude reviewer's tool set is not read-only"
+grep -q '^  TOOLS="Read,Grep,Glob"$' "$XS" || err "$XS: the claude reviewer's default tool set is not Read,Grep,Glob"
+grep -q 'Bash(git' "$XS" && err "$XS allowlists git commands for the claude reviewer again (git diff --output writes)"
 CSD=templates/ci-gate/gitlab/codex-security.gitlab-ci.yml; CSS=templates/ci-gate/gitlab/codex-security.shell.gitlab-ci.yml
 for f in "$CSD" "$CSS"; do
   [ -f "$f" ] || { err "$f missing"; continue; }

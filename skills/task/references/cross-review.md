@@ -50,6 +50,10 @@ What the script does, in order — each step that cannot complete exits `2`:
    commit subjects unless `--what-changed <file>` gives the factual summary.
    Insertion is literal and single-pass; nothing from the spec is executed.
 3. Runs the reviewer read-only and isolated (below), with the brief on stdin.
+   For Claude Code the brief also carries the range material — `git diff
+   --stat`, `git log`, `git status --short` and the full diff, run at dispatch
+   time (6b leaves out the spec's own diff) — and the checkout must be at the
+   head under review, because that reviewer has no shell.
 4. Reads the verdict: `Reviewed: <sha>` must name the range head, and the
    verdict line must parse. A translated label, another sha or no verdict is
    `2` — an unread verdict is never a clean one.
@@ -62,10 +66,13 @@ What the script does, in order — each step that cannot complete exits `2`:
 | Reviewer | How |
 |---|---|
 | Codex | `codex exec -s read-only --ephemeral` — the sandbox refuses writes and network for every command the model runs |
-| Claude Code | `claude -p --tools Read,Grep,Glob,Bash --permission-mode dontAsk --allowedTools <read-only git commands>` — Edit, Write and Agent do not exist in the session, and any command outside the allowlist is denied, not asked |
+| Claude Code | `claude -p --tools Read,Grep,Glob --permission-mode dontAsk` — no shell at all: an allowlisted git command is not read-only (`git diff --output=<file>` writes, and git accepts abbreviated long options), so the range material is attached instead; Edit, Write and Agent do not exist in the session |
 
-`XREVIEW_ALLOW='Bash(make test)'` adds a rule when the reviewer should run
-the project's test command; the template allows tests that modify nothing.
+`XREVIEW_ALLOW='Bash(make test)'` gives the Claude reviewer a shell for
+exactly those rules, when it should run the project's test command — a
+capability the owner grants: the read-only guarantee then rests on the
+command allowed. A diff above `XREVIEW_MAX_DIFF_BYTES` (2 MB) is refused,
+not truncated: split the review.
 
 **Isolated from the author's memory, by default.** A reviewer CLI started
 normally loads the user's plugins, and memory plugins replay the project's
