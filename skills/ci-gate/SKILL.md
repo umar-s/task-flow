@@ -16,9 +16,16 @@ description: >-
 
 # ci-gate — scaffold the deterministic merge gate
 
-The template payload lives at **`${CLAUDE_PLUGIN_ROOT}/templates/ci-gate/`**.
+The template payload lives at **`$ROOT/templates/ci-gate/`**, with `$ROOT`
+resolved once by a bash step (the Read tool does not expand `${…}`):
+
+```bash
+ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "<this SKILL.md's own path>")/../.." && pwd)}"
+echo "$ROOT/templates/ci-gate"
+```
+
 Always read files from there — never assume a `~/.claude/...` path (the plugin is
-installed in its own directory on each host).
+installed in its own directory on each host, and in each harness).
 
 This gate is the deterministic, non-gameable half of the quality flow. It covers
 the blast-radius categories that unit tests and an LLM `/security-review` miss:
@@ -26,6 +33,17 @@ secrets in the diff, mutated/deleted migrations, unmarked destructive DDL,
 invisible code points in added lines, and force-push into a protected branch.
 It does **not** replace review — it sits under it, and out of reach of the MR
 it judges (the gate files are under required code-owner review).
+
+## Harness — Claude Code or Codex
+- **Invoke:** `/task-flow:ci-gate` (Claude Code) · `$task-flow:ci-gate` (Codex).
+- **Instruction file:** the project's `AGENTS.md` or `CLAUDE.md` (with what it
+  imports) — where the gate owner and the runner executor may already be named.
+- **`$ROOT`:** Codex never sets `CLAUDE_PLUGIN_ROOT` in the model's shell; the
+  fallback above (this SKILL.md's own path) is the path there.
+- **Codex sandbox:** the network is off in `workspace-write`; with no
+  `gitleaks` on `PATH`, step 6's `--selftest` has to fetch the pinned scanner
+  and exits `2` there — approve running it outside the sandbox; never read
+  that `2` as a pass.
 
 ## Steps
 
@@ -42,15 +60,15 @@ it judges (the gate files are under required code-owner review).
    type + the shell runner's tag). GitHub hosted runners have docker — use
    `github/gate.yml` as-is.
 
-2. **Copy the payload** from `${CLAUDE_PLUGIN_ROOT}/templates/ci-gate/`:
+2. **Copy the payload** from `$ROOT/templates/ci-gate/`:
    - the whole `ci/` directory → `<repo>/ci/` (copy it wholesale — the scripts
      call each other; `ci/README.md` documents what each one is)
    - `.gitleaks.toml`, `.pre-commit-config.yaml` → repo root; `CODEOWNERS` →
      the location the platform reads **first** if one is already in use
      (GitHub: `.github/`, then root, then `docs/`; GitLab: root, then
      `.gitlab/`, then `docs/`) — a second file in a lower-priority place owns
-     nothing. Replace `@OWNER` with the gate's owner (from the project
-     `CLAUDE.md`, else **ask**): the one identity the MR under check must not be.
+     nothing. Replace `@OWNER` with the gate's owner (from the project's
+     instruction file, else **ask**): the one identity the MR under check must not be.
    - **GitLab (docker/k8s):** `gitlab/ci-gate.gitlab-ci.yml` →
      `<repo>/ci/ci-gate.gitlab-ci.yml`, then add
      `include: [ { local: 'ci/ci-gate.gitlab-ci.yml' } ]` to the project
@@ -165,6 +183,36 @@ it judges (the gate files are under required code-owner review).
    Be precise about what this buys — it proves one known-bad input reaches the
    failure path. It does not prove the checker recognises every violation of
    the rule it stands for.
+
+7. **Second security pass (optional) — Codex Security on merge requests.**
+   This is a model, **not a gate**: an LLM scan of the MR diff, a third
+   independent look at the trust boundaries after the task skill's 6b. It
+   never enters the deterministic floor above — `task` phase 8's "green
+   includes the gate" does not count it, and it does not replace 6b. Offer it
+   on GitLab when MRs between two protected branches of the same project are
+   the merge path:
+   - docker/k8s executor → `gitlab/codex-security.gitlab-ci.yml`, shell
+     executor → `gitlab/codex-security.shell.gitlab-ci.yml` (same
+     `GATE_RUNNER_TAG`; the host needs Node 22.13+/24/26, Python 3.10+, git) →
+     `<repo>/ci/`, plus its `include:` — merged, like the gate's.
+   - **Credentials are the owner's decision, never the agent's:**
+     `CODEX_SECURITY_API_KEY` — a Platform API key with Codex Security access
+     (separate billing), masked + hidden + protected, environment scope
+     `codex-security/openai`; or, shell runner on a private self-hosted GitLab
+     only, `CODEX_SECURITY_AUTH=chatgpt` with the runner user logged in
+     (`codex-security login --device-auth` — its `~/.codex/auth.json` is a
+     password). Never put either in the repository.
+   - Knobs: `CODEX_SECURITY_FAIL_ON` (default `high` — without a threshold the
+     scanner never exits 1 and the gate job is green on any finding),
+     `CODEX_SECURITY_EFFORT` (default `low`, the recommended MR-diff effort),
+     `CODEX_SECURITY_MAX_COST` (estimated USD — a guardrail, not a billing cap).
+   - Exit codes, restored by the `codex-security-gate` job: `0` complete and
+     clean · `1` findings at or above the threshold · `2` incomplete coverage
+     or an error — `2` blocks too. SARIF reaches the MR security widget on
+     GitLab Ultimate 19.2+; on lower tiers the artifact is still kept and the
+     gate job still decides.
+   - Ubuntu 23.10+ runners: the scanner's bundled `codex` sandbox (bwrap)
+     needs an AppArmor profile for that binary, or every scan exits `2`.
 
 ## Scan strategy (already wired in the CI files)
 - **Secret-scan is incremental:** MR/PR → the MR's commit range; default-branch
