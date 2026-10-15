@@ -1,0 +1,12 @@
+# .codex/config.toml — the project layer of Codex's config. Codex loads it only
+# for a project you trusted; personal settings (model, auth, network) stay in
+# ~/.codex/config.toml.
+
+[plugins."prediction-protocol@devpowers"]
+enabled = true
+
+[plugins."task-flow@devpowers"]
+enabled = true
+
+[agents]
+max_concurrent_threads_per_session = 4

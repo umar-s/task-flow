@@ -1,0 +1,43 @@
+# .codex/rules/git.rules — Codex execpolicy for a builder in `workspace-write`.
+#
+# Inside that sandbox `.git/` is read-only, so `git commit` and `git push` must
+# run outside it, and under approval_policy=never (every `codex exec`) a command
+# that needs an approval simply fails. These rules let exactly these prefixes
+# leave the sandbox.
+#
+# They do NOT make a one-way push safe. A prefix rule sees a flag only in the
+# position it names: `git push --force origin main` is forbidden below, but
+# `git push origin main --force` matches only the plain-push rule. That case
+# belongs to the prediction-protocol gate (PreToolUse runs before execpolicy) —
+# use these rules only where its hooks are trusted (`predict report` → `gate: seen`).
+#
+#   codex execpolicy check --pretty --rules .codex/rules/git.rules -- git push --force origin main
+
+prefix_rule(
+    pattern = ["git", "commit"],
+    decision = "allow",
+    justification = "the builder commits; .git is read-only inside the sandbox",
+    match = [["git", "commit", "-m", "feat: x"]],
+)
+
+prefix_rule(
+    pattern = ["git", "push"],
+    decision = "allow",
+    justification = "a plain push of the feature branch; one-way variants are the prediction gate's",
+    match = [["git", "push", "origin", "feature/x"]],
+)
+
+prefix_rule(
+    pattern = ["git", "push", ["--force", "-f", "--force-with-lease", "--force-if-includes", "--mirror", "--delete", "-d", "--prune"]],
+    decision = "forbidden",
+    justification = "a history-rewriting or ref-deleting push never comes from the builder",
+    match = [["git", "push", "--force", "origin", "main"], ["git", "push", "-f"], ["git", "push", "--delete", "origin", "x"]],
+    not_match = [["git", "push", "origin", "main"]],
+)
+
+prefix_rule(
+    pattern = ["glab", "mr", "create"],
+    decision = "allow",
+    justification = "the builder opens the MR; merging stays with a person",
+    match = [["glab", "mr", "create", "--fill"]],
+)
