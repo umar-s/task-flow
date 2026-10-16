@@ -40,6 +40,8 @@ it judges (the gate files are under required code-owner review).
   imports) — where the gate owner and the runner executor may already be named.
 - **`$ROOT`:** Codex never sets `CLAUDE_PLUGIN_ROOT` in the model's shell; the
   fallback above (this SKILL.md's own path) is the path there.
+- **Subagents:** none in either harness — this skill installs a deterministic
+  gate and dispatches no reviewer.
 - **Codex sandbox:** the network is off in `workspace-write`; with no
   `gitleaks` on `PATH`, step 6's `--selftest` has to fetch the pinned scanner
   and exits `2` there — approve running it outside the sandbox; never read

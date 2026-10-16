@@ -35,7 +35,11 @@ deterministic gate», блокирующая сила Critical/Required, пра�
 
 ## 2. Решения
 
-### 2.1 Раздел Harness в каждом SKILL.md (≤ 12 строк)
+### 2.1 Раздел Harness в каждом SKILL.md (≤ 16 строк)
+
+Цель стека была 12 строк; деталь Codex-гейта (deny вместо ask, `PREDICT`)
+в `task` её не уместила — lint держит кап 16, чтобы раздел не разросся в
+reference.
 
 Имя вызова (`/task-flow:<skill>` ↔ `$task-flow:<skill>`), файл инструкций
 проекта, `$ROOT`, что значит «fresh subagent» в каждом харнессе, и что
