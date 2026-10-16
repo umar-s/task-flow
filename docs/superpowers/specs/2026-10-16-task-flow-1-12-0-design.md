@@ -135,11 +135,13 @@ AppArmor-профиль на встроенный бинарь `codex` — эт�
 `.codex/config.toml.skeleton`, `.codex/agents/reviewer.toml` (роль для
 интерактивного «spawn a subagent»: read-only, `developer_instructions`
 обязательны по `agent_role_config.rs`), `.codex/rules/git.rules`
-(`git commit`/`git push` вне песочницы; `--force`/`-f`/`--force-with-lease`/
-`--mirror`/`--delete` сразу после `push` — `forbidden`; флаг после refspec
-prefix-правило не видит — это слой гейта prediction-protocol, и шаблон так
-и говорит). Примеры `match`/`not_match` в правилах Codex проверяет при
-загрузке.
+(`git commit` — allow; `git push` — **prompt**: человек в TUI, под
+`codex exec` пушит раннер; `--force`/`-f`/`--force-with-lease`/`--mirror`/
+`--delete` сразу после `push` — `forbidden`). Prefix-правило матчит точные
+токены: `--force-with-lease=<ref>`, `-fu`, флаг после refspec оно не видит —
+поэтому push не разрешается автоматически вообще, а не «разрешается кроме
+force» (кросс-ревью Codex 2026-10-16 показало обход `allow`-варианта).
+Примеры `match`/`not_match` в правилах Codex проверяет при загрузке.
 
 ## 3. Премортем (что ломается и что это ловит)
 

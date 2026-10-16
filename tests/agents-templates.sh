@@ -34,17 +34,23 @@ if command -v codex >/dev/null; then
     got=$(decide "$R" $cmd) || got="error"
     [ "$got" = "$want" ] && ok || bad "git.rules: '$cmd' → $got, expected $want"
   done <<'EOF'
-allow|git push origin feature/x
 allow|git commit -m x
-none|glab mr create --fill
+prompt|git push origin feature/x
 forbidden|git push --force origin main
 forbidden|git push -f
 forbidden|git push --force-with-lease
 forbidden|git push --delete origin x
-allow|git push origin main --force
+prompt|git push origin main --force
+prompt|git push --force-with-lease=refs/heads/main origin HEAD:main
+prompt|git push -fu origin main
+none|glab mr create --fill
 none|git reset --hard
-none|glab mr merge 1
 EOF
+  for cmd in "git push" "git push origin HEAD" "git push --force-with-lease=x" "git push -fu" "git push origin +main"; do
+    # shellcheck disable=SC2086
+    got=$(decide "$R" $cmd) || got="error"
+    [ "$got" != allow ] && ok || bad "git.rules auto-allows '$cmd' — no push may leave the sandbox without a person"
+  done
   sed 's/match = \[\["git", "push", "--force", "origin", "main"\]/match = [["git", "pull"]/' "$R" > "$TMP/bad.rules"
   cmp -s "$R" "$TMP/bad.rules" && bad "the negative-control edit did not apply"
   codex execpolicy check --rules "$TMP/bad.rules" -- git push >/dev/null 2>&1 && bad "a rule whose match example does not match still loads" || ok

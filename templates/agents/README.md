@@ -9,7 +9,7 @@ their *Harness* section). Rename on copy:
 | `CLAUDE.md.skeleton` | `CLAUDE.md` | Claude Code — first line `@AGENTS.md`, then Claude-only notes |
 | `.codex/config.toml.skeleton` | `.codex/config.toml` | Codex, project layer — loaded only for a trusted project |
 | `.codex/agents/reviewer.toml` | `.codex/agents/reviewer.toml` | Codex's own subagents: the read-only phase 6/6b reviewer role |
-| `.codex/rules/git.rules` | `.codex/rules/git.rules` | Codex execpolicy: which git commands may leave the sandbox |
+| `.codex/rules/git.rules` | `.codex/rules/git.rules` | Codex execpolicy: commit leaves the sandbox, a push asks, visible force forms are forbidden |
 
 Why two instruction files and not one: sessions of both harnesses work in one
 directory, and each writes to *its* file (`#` notes in Claude Code append to
@@ -22,6 +22,7 @@ exists from the start and imports it. Codex has no include mechanism —
 Check the rules file before relying on it:
 
 ```bash
-codex execpolicy check --pretty --rules .codex/rules/git.rules -- git push origin feature/x        # allow
+codex execpolicy check --pretty --rules .codex/rules/git.rules -- git commit -m x                  # allow
+codex execpolicy check --pretty --rules .codex/rules/git.rules -- git push origin feature/x        # prompt
 codex execpolicy check --pretty --rules .codex/rules/git.rules -- git push --force origin main     # forbidden
 ```

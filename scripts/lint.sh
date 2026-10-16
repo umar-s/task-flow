@@ -294,7 +294,8 @@ grep -q '^## task-flow bindings' "$AG/AGENTS.md.skeleton" || err "$AG/AGENTS.md.
 grep -q '^sandbox_mode = "read-only"' "$AG/.codex/agents/reviewer.toml" || err "$AG reviewer role is not read-only"
 grep -q '^developer_instructions = """' "$AG/.codex/agents/reviewer.toml" || err "$AG reviewer role lacks developer_instructions (Codex ignores the role without them)"
 grep -q 'decision = "forbidden"' "$AG/.codex/rules/git.rules" || err "$AG/.codex/rules/git.rules lost the forbidden force-push rule"
-grep -q 'belongs to the prediction-protocol gate' "$AG/.codex/rules/git.rules" || err "$AG/.codex/rules/git.rules no longer names what a prefix rule cannot see"
+grep -q 'Nothing here is a force-push guarantee' "$AG/.codex/rules/git.rules" || err "$AG/.codex/rules/git.rules no longer names what a prefix rule cannot see"
+awk '/pattern = \["git", "push"\],/{p=1;next} p && /decision/{print; exit}' "$AG/.codex/rules/git.rules" | grep -q '"prompt"' || err "$AG/.codex/rules/git.rules: a push must prompt, never auto-allow (prefix rules cannot see every force form)"
 grep -q 'glab' "$AG/.codex/rules/git.rules" && err "$AG/.codex/rules/git.rules grants glab again (no requirement asks for it)"
 for r in README.md README.ru.md; do
   grep -qF '$task-flow:task' "$r" || err "$r does not show the Codex invocation"

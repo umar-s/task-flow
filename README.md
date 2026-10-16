@@ -181,7 +181,8 @@ The flow is the same in both; these are the places where the harness shows:
 `templates/agents/` has the skeletons: `AGENTS.md` with the task-flow bindings
 and `## Code Review Rules`, a `CLAUDE.md` that imports it, the project's
 `.codex/config.toml`, the read-only reviewer role, and `.codex/rules/git.rules`
-(commit and plain push may leave the sandbox; force variants are forbidden).
+(a commit leaves the sandbox, a push asks a person, the force forms a prefix
+rule can see are forbidden).
 
 ## Skill routing (paste into the consuming project's `AGENTS.md` or `CLAUDE.md`)
 

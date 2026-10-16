@@ -42,6 +42,7 @@ Read by `task-flow:task`, `task-flow:decompose` and `task-flow:ci-gate`.
 - Skills: `$task-flow:task <TASK-ID>`, `$task-flow:decompose <input>`,
   `$task-flow:ci-gate`, `$prediction-protocol:prediction-protocol`.
 - Sandbox `workspace-write`: `.git/` is read-only and the network is off inside
-  it — `git commit` / `git push` escalate through `.codex/rules/git.rules`.
+  it — `git commit` leaves it through `.codex/rules/git.rules`; a push asks a
+  person (under `codex exec` the runner pushes, not the model).
 - Under the prediction protocol a one-way command without a receipt is denied,
   not asked: open the receipt (`predict open …`), then repeat the command.

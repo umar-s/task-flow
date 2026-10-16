@@ -181,8 +181,9 @@ codex plugin add task-flow@devpowers
 
 В `templates/agents/` — скелеты: `AGENTS.md` с bindings task-flow и
 `## Code Review Rules`, `CLAUDE.md`, который его импортирует, `.codex/config.toml`
-проекта, read-only роль ревьюера и `.codex/rules/git.rules` (commit и обычный
-push могут выйти из песочницы; force-варианты запрещены).
+проекта, read-only роль ревьюера и `.codex/rules/git.rules` (commit выходит из
+песочницы, push спрашивает человека, force-формы, видимые prefix-правилу,
+запрещены).
 
 ## Маршрутизация скиллов (вставить в `AGENTS.md` или `CLAUDE.md` проекта-потребителя)
 
