@@ -293,8 +293,11 @@ printf '%s: %s reviews %s..%s (%s brief, isolation %s)\n' "$me" "$BY" "${BASE_SH
 rrc=0
 if [ "$BY" = codex ]; then
   env ${SCRUB[@]+"${SCRUB[@]}"} ${TO[@]+"${TO[@]}"} "$BIN" "${ARGS[@]}" < "$TMP/brief" > "$TMP/stdout" 2> "$TMP/stderr" || rrc=$?
-  m="$(sed -nE 's/^model: ([^[:space:]]+).*/\1/p' "$TMP/stderr" | head -n 1)"
-  [ -z "$m" ] || SEEN_MODEL="$m"
+  # stderr also carries the agent's own output: take the banner's model line
+  # only in the shape a model id has, so nothing the reviewer prints reaches
+  # the rendered header.
+  m="$(sed -nE 's/^model: ([A-Za-z0-9._:-]+)$/\1/p' "$TMP/stderr" | head -n 1)"
+  SEEN_MODEL="${m:-unknown}"
 else
   env ${SCRUB[@]+"${SCRUB[@]}"} ${TO[@]+"${TO[@]}"} "$BIN" "${ARGS[@]}" < "$TMP/brief" > "$TMP/last.md" 2> "$TMP/stderr" || rrc=$?
 fi
@@ -317,26 +320,30 @@ awk '{ sub(/\r$/, ""); sub(/[ \t]+$/, "") } NF { n1 = n2; t1 = t2; n2 = NR; t2 =
   "$TMP/last.md" > "$TMP/trailer"
 n1="$(sed -n 1p "$TMP/trailer")"; t1="$(sed -n 2p "$TMP/trailer")"
 n2="$(sed -n 3p "$TMP/trailer")"; t2="$(sed -n 4p "$TMP/trailer")"
-verdict="unreadable"; out=2; why=""; sha=""
+verdict="unreadable"; out=2; why=""; sha=""; shown_sha="none"
 case "$t1" in "REVIEWED "*) sha="${t1#REVIEWED }" ;; esac
 if ! printf '%s\n' "$sha" | grep -qxE '[0-9a-f]{7,40}'; then
   why="the second-to-last line is not 'REVIEWED <sha>'"
 elif [ "${HEAD_SHA#"$sha"}" = "$HEAD_SHA" ]; then
-  why="the answer says REVIEWED $sha, the range head is $HEAD_SHA"
-elif [ "$KIND" = code ]; then
-  case "$t2" in
-    "VERDICT yes") verdict="ready to merge"; out=0 ;;
-    "VERDICT no") verdict="not ready"; out=1 ;;
-    "VERDICT with-fixes") verdict="ready with fixes"; out=1 ;;
-    *) why="the last line is not 'VERDICT yes|no|with-fixes'" ;;
-  esac
-elif printf '%s\n' "$t2" | grep -qxE 'SUMMARY critical=[0-9]+ high=[0-9]+ medium=[0-9]+ low=[0-9]+'; then
-  c="$(printf '%s' "$t2" | sed -E 's/^SUMMARY critical=([0-9]+) .*/\1/')"
-  h="$(printf '%s' "$t2" | sed -E 's/^SUMMARY critical=[0-9]+ high=([0-9]+) .*/\1/')"
-  # No arithmetic: a count past 2^63 wraps to 0 and would read as clean.
-  case "$c$h" in *[1-9]*) verdict="Critical $c / High $h"; out=1 ;; *) verdict="Critical 0 / High 0"; out=0 ;; esac
+  why="the answer names another commit than the range head $HEAD_SHA"
 else
-  why="the last line is not 'SUMMARY critical=N high=N medium=N low=N'"
+  # Only a validated sha reaches the rendered header.
+  shown_sha="$sha"
+  if [ "$KIND" = code ]; then
+    case "$t2" in
+      "VERDICT yes") verdict="ready to merge"; out=0 ;;
+      "VERDICT no") verdict="not ready"; out=1 ;;
+      "VERDICT with-fixes") verdict="ready with fixes"; out=1 ;;
+      *) why="the last line is not 'VERDICT yes|no|with-fixes'" ;;
+    esac
+  elif printf '%s\n' "$t2" | grep -qxE 'SUMMARY critical=[0-9]+ high=[0-9]+ medium=[0-9]+ low=[0-9]+'; then
+    c="$(printf '%s' "$t2" | sed -E 's/^SUMMARY critical=([0-9]+) .*/\1/')"
+    h="$(printf '%s' "$t2" | sed -E 's/^SUMMARY critical=[0-9]+ high=([0-9]+) .*/\1/')"
+    # No arithmetic: a count past 2^63 wraps to 0 and would read as clean.
+    case "$c$h" in *[1-9]*) verdict="Critical $c / High $h"; out=1 ;; *) verdict="Critical 0 / High 0"; out=0 ;; esac
+  else
+    why="the last line is not 'SUMMARY critical=N high=N medium=N low=N'"
+  fi
 fi
 [ "$out" != 2 ] || verdict="unreadable: $why"
 
@@ -354,7 +361,7 @@ else BRIEF_SUM="$(shasum -a 256 "$TMP/brief" | cut -d' ' -f1)"; fi
   printf '| range | %s..%s (base %s) |\n' "$BASE_SHA" "$HEAD_SHA" "$BASE_REF"
   printf '| brief | %s, sha256 %s |\n' "$(basename "$TEMPLATE_FILE")" "$BRIEF_SUM"
   printf '| isolation | %s |\n' "$ISOLATION"
-  printf '| reviewed | %s |\n' "${sha:-none}"
+  printf '| reviewed | %s |\n' "$shown_sha"   # validated or "none"; the reviewer's own text stays in the block
   printf '| verdict | %s → exit %s |\n' "$verdict" "$out"
   printf '| date | %s |\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   # The reviewer's text, verbatim and LITERAL: a fenced block longer than any
