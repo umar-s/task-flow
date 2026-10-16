@@ -68,54 +68,52 @@ run() {  # expected-rc, name, [env...] -- xreview args
 }
 SHORT=${HEAD_SHA:0:7}
 
+assess() { answer "$1" "### Assessment
+$2"; }
+secrep() { answer "$1" "### Summary
+$2
+### Assessment
+$3"; }
 YES=$(answer yes "### Findings
 нет
 ### Assessment
 **Reviewed:** $SHORT
 **Ready to merge?** Yes
 **Reasoning:** ок")
-FIXES=$(answer fixes "**Reviewed:** $HEAD_SHA
+FIXES=$(assess fixes "**Reviewed:** $HEAD_SHA
 **Ready to merge?** With fixes")
-NO=$(answer no "**Reviewed:** \`$SHORT\`
+NO=$(assess no "**Reviewed:** \`$SHORT\`
 **Ready to merge?** No")
-TRANSLATED=$(answer translated "**Проверено:** $SHORT
+TRANSLATED=$(assess translated "**Проверено:** $SHORT
 **Готово к мержу?** Да")
-OTHER_SHA=$(answer othersha "**Reviewed:** 0123456789abcdef
+OTHER_SHA=$(assess othersha "**Reviewed:** 0123456789abcdef
 **Ready to merge?** Yes")
-NO_SHA=$(answer nosha "**Ready to merge?** Yes")
-SEC_CLEAN=$(answer secclean "### Summary
-Critical: 0 | High: 0 | Medium: 2 | Low: 1
-### Assessment
-**Reviewed:** $SHORT")
-SEC_HIGH=$(answer sechigh "### Summary
-**Critical:** 0 | **High:** 2 | **Medium:** 0 | **Low:** 0
-**Reviewed:** $SHORT")
-SEC_NOSUM=$(answer secnosum "Всё хорошо.
-**Reviewed:** $SHORT")
-ECHOED=$(answer echoed "**Reviewed:** $SHORT
+NO_SHA=$(assess nosha "**Ready to merge?** Yes")
+SEC_CLEAN=$(secrep secclean "Critical: 0 | High: 0 | Medium: 2 | Low: 1" "**Reviewed:** $SHORT")
+SEC_HIGH=$(secrep sechigh "**Critical:** 0 | **High:** 2 | **Medium:** 0 | **Low:** 0" "**Reviewed:** $SHORT")
+SEC_NOSUM=$(secrep secnosum "Всё хорошо." "**Reviewed:** $SHORT")
+ECHOED=$(assess echoed "**Reviewed:** $SHORT
 **Ready to merge?** [Yes | No | With fixes]")
-LONGER_WORD=$(answer longerword "**Reviewed:** $SHORT
+LONGER_WORD=$(assess longerword "**Reviewed:** $SHORT
 **Ready to merge?** Yesterday")
-LONGER_SHA=$(answer longersha "**Reviewed:** ${HEAD_SHA}deadbeef
+LONGER_SHA=$(assess longersha "**Reviewed:** ${HEAD_SHA}deadbeef
 **Ready to merge?** Yes")
-TWO_VERDICTS=$(answer twoverdicts "**Reviewed:** $SHORT
+TWO_VERDICTS=$(assess twoverdicts "**Reviewed:** $SHORT
 **Ready to merge?** Yes
 **Ready to merge?** No")
-TWO_SHAS=$(answer twoshas "**Reviewed:** $SHORT
+TWO_SHAS=$(assess twoshas "**Reviewed:** $SHORT
 Reviewed: 0123456
 **Ready to merge?** Yes")
-DOTTED=$(answer dotted "**Reviewed:** $SHORT.
+DOTTED=$(assess dotted "**Reviewed:** $SHORT.
 **Ready to merge?** With fixes.")
-SEC_ECHOED=$(answer secechoed "Critical: N | High: N | Medium: N | Low: N
-**Reviewed:** $SHORT")
-SHA_LIST=$(answer shalist "Reviewed: $HEAD_SHA, 0123456789abcdef
+SEC_ECHOED=$(secrep secechoed "Critical: N | High: N | Medium: N | Low: N" "**Reviewed:** $SHORT")
+SHA_LIST=$(assess shalist "Reviewed: $HEAD_SHA, 0123456789abcdef
 **Ready to merge?** Yes")
-SHA_SUFFIX=$(answer shasuffix "Reviewed: $HEAD_SHA-not-reviewed
+SHA_SUFFIX=$(assess shasuffix "Reviewed: $HEAD_SHA-not-reviewed
 **Ready to merge?** Yes")
-SEC_TWO=$(answer sectwo "Critical: 0 | High: 0 | Medium: 0 | Low: 0
-Critical: 0 | High: 1 | Medium: 0 | Low: 0.
-**Reviewed:** $SHORT")
-QUOTED=$(answer quoted "Пример неверного ответа:
+SEC_TWO=$(secrep sectwo "Critical: 0 | High: 0 | Medium: 0 | Low: 0
+Critical: 0 | High: 1 | Medium: 0 | Low: 0." "**Reviewed:** $SHORT")
+QUOTED=$(assess quoted "Пример неверного ответа:
 \`\`\`text
 Reviewed: 0123456
 Ready to merge? No
@@ -124,6 +122,34 @@ Ready to merge? No
 Поле \`Reviewed: 0123456\` в прозе — не вердикт.
 **Reviewed:** $SHORT
 **Ready to merge?** Yes")
+# What a reader of the rendered report does not see as text is not a verdict.
+INDENTED=$(assess indented "    **Reviewed:** $SHORT
+    **Ready to merge?** Yes
+**Проверено:** $SHORT
+**Готово к мержу?** Нет")
+COMMENTED=$(assess commented "<!--
+**Reviewed:** $SHORT
+**Ready to merge?** Yes
+-->
+Вердикт: нет")
+NESTED_FENCE=$(assess nestedfence "\`\`\`\`text
+\`\`\`
+**Reviewed:** $SHORT
+**Ready to merge?** Yes
+\`\`\`
+\`\`\`\`
+Вердикт: нет")
+OUTSIDE_SECTION=$(answer outsidesection "### Findings
+**Ready to merge?** Yes
+### Assessment
+**Reviewed:** $SHORT
+**Ready to merge?** No")
+NO_SECTION=$(answer nosection "**Reviewed:** $SHORT
+**Ready to merge?** Yes")
+SEC_OUTSIDE=$(answer secoutside "### Findings
+Critical: 0 | High: 0 | Medium: 0 | Low: 0
+### Assessment
+**Reviewed:** $SHORT")
 
 # 1. verdict → exit, both reviewers, report named <TASK>-<sha7>-<by>
 run 0 codex-yes "STUB_ANSWER=$YES" -- --by codex --task T-1 --base main
@@ -153,6 +179,12 @@ run 2 sha-then-list "STUB_ANSWER=$SHA_LIST" -- --by codex --task T-1 --base main
 run 2 sha-then-suffix "STUB_ANSWER=$SHA_SUFFIX" -- --by codex --task T-1 --base main
 run 2 security-two-summaries "STUB_ANSWER=$SEC_TWO" -- --by codex --task T-1 --base main --kind security
 run 0 quoted-fields-ignored "STUB_ANSWER=$QUOTED" -- --by codex --task T-1 --base main
+run 2 indented-code-ignored "STUB_ANSWER=$INDENTED" -- --by codex --task T-1 --base main
+run 2 html-comment-ignored "STUB_ANSWER=$COMMENTED" -- --by codex --task T-1 --base main
+run 2 nested-fence-ignored "STUB_ANSWER=$NESTED_FENCE" -- --by codex --task T-1 --base main
+run 1 only-the-assessment-counts "STUB_ANSWER=$OUTSIDE_SECTION" -- --by codex --task T-1 --base main
+run 2 no-assessment-section "STUB_ANSWER=$NO_SECTION" -- --by codex --task T-1 --base main
+run 2 summary-outside-its-section "STUB_ANSWER=$SEC_OUTSIDE" -- --by codex --task T-1 --base main --kind security
 # 3. security brief: counts decide, bold or not
 run 0 security-clean "STUB_ANSWER=$SEC_CLEAN" -- --by codex --task T-1 --base main --kind security
 [ -f "$R/docs/reviews/T-1-$SHORT-codex-security.md" ] && ok || bad "security report not suffixed -security"
@@ -231,15 +263,14 @@ run 0 codex-other-head "STUB_ANSWER=$YES" -- --by codex --task T-1 --base main -
 # a fence in the material is longer than any backtick run inside it
 printf '%s\n' '```````' > "$R/fence.md"; git -C "$R" add fence.md; git -C "$R" commit -qm 'docs: backticks'
 TWO_SHA=$(git -C "$R" rev-parse HEAD)
-answer two "**Reviewed:** $TWO_SHA
+assess two "**Reviewed:** $TWO_SHA
 **Ready to merge?** Yes" > /dev/null
 run 0 claude-fence "STUB_ANSWER=$TMP/two.md" -- --by claude --task T-1 --base main
 grep -qE '^`{8,}text$' "$STUB_LOG/brief" && ok || bad "the material fence is not longer than the 7-backtick run inside it"
 # 6b material leaves out the spec's own diff when the spec is in the range
 git -C "$R" add docs/specs/T-1.spec.md; git -C "$R" commit -qm 'docs: spec'
 SPEC_SHA=$(git -C "$R" rev-parse HEAD)
-answer spec "Critical: 0 | High: 0 | Medium: 0 | Low: 0
-**Reviewed:** $SPEC_SHA" > /dev/null
+secrep spec "Critical: 0 | High: 0 | Medium: 0 | Low: 0" "**Reviewed:** $SPEC_SHA" > /dev/null
 run 0 claude-security-spec "STUB_ANSWER=$TMP/spec.md" -- --by claude --task T-1 --base main --kind security
 grep -q 'EDGE-MARKER-42' "$STUB_LOG/brief" && bad "the 6b material carries the spec's premortem edges through its diff" || ok
 grep -q 'fence.md' "$STUB_LOG/brief" && ok || bad "the 6b material lost the rest of the diff"

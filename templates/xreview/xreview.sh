@@ -305,22 +305,39 @@ if [ "$rrc" != 0 ] || [ ! -s "$TMP/last.md" ]; then
 fi
 
 # Verdict. A verdict attaches to the commit it saw. The fields are lines that
-# START with their label (bold allowed), outside code fences — a field quoted
-# in prose, a blockquote or a fence is not the reviewer's verdict. Each value
-# is taken whole: anything but one clean value is BAD, and BAD or two
-# disagreeing values are "unreadable" (2), never clean.
+# START with their label (bold allowed) inside their section, in text a reader
+# of the rendered report sees — a field quoted in prose, a blockquote, a fence,
+# a comment or indented code is not the reviewer's verdict. Each value is taken
+# whole: anything but one clean value is BAD, and BAD or two disagreeing values
+# are "unreadable" (2), never clean.
 awk '
-  /^[[:space:]]*(```|~~~)/ { fence = !fence; next }
-  fence { next }
+  # What a reader of the rendered report sees as text is what counts: fenced
+  # code (closed by a fence of the same character and at least its length),
+  # HTML comments and indented code are skipped; a field counts only in its
+  # own section (### Assessment; the 6b counts in ### Summary).
+  fl {
+    t = $0; sub(/^ +/, "", t); sub(/[ \t]+$/, "", t)
+    if ($0 ~ /^ {0,3}(`+|~+)[ \t]*$/ && substr(t, 1, 1) == fc && length(t) >= fl) fl = 0
+    next
+  }
+  /^ {0,3}(```|~~~)/ {
+    t = $0; sub(/^ +/, "", t); fc = substr(t, 1, 1); fl = 0
+    while (substr(t, fl + 1, 1) == fc) fl++
+    next
+  }
+  cm { if (index($0, "-->")) cm = 0; next }
+  index($0, "<!--") && !index(substr($0, index($0, "<!--")), "-->") { cm = 1; next }
+  /^(    |\t)/ { next }
+  /^ {0,3}#{1,6}[ \t]/ { h = $0; sub(/^ *#+[ \t]*/, "", h); gsub(/\*/, "", h); sub(/[ \t#]+$/, "", h); sec = h; next }
   {
-    line = $0; gsub(/\*/, "", line); sub(/^[[:space:]]+/, "", line)
-    if (line ~ /^Reviewed:/) {
+    line = $0; gsub(/\*/, "", line); sub(/^[ \t]+/, "", line)
+    if (sec == "Assessment" && line ~ /^Reviewed:/) {
       v = substr(line, 10); gsub(/`/, "", v); sub(/^[[:space:]]+/, "", v); sub(/[[:space:].]+$/, "", v)
       print "R " ((v ~ /^[0-9a-f]+$/ && length(v) >= 7 && length(v) <= 40) ? v : "BAD")
-    } else if (line ~ /^Ready to merge\?/) {
+    } else if (sec == "Assessment" && line ~ /^Ready to merge\?/) {
       v = tolower(substr(line, 16)); sub(/^[[:space:]]+/, "", v); sub(/[[:space:].]+$/, "", v)
       print "V " ((v == "yes" || v == "no" || v == "with fixes") ? v : "BAD")
-    } else if (line ~ /^Critical:/) {
+    } else if (sec == "Summary" && line ~ /^Critical:/) {
       v = line; sub(/[[:space:].]+$/, "", v)
       if (v ~ /^Critical:[[:space:]]*[0-9]+[[:space:]]*\|[[:space:]]*High:[[:space:]]*[0-9]+[[:space:]]*\|[[:space:]]*Medium:[[:space:]]*[0-9]+[[:space:]]*\|[[:space:]]*Low:[[:space:]]*[0-9]+$/) {
         split(v, f, "|"); c = f[1]; h = f[2]; gsub(/[^0-9]/, "", c); gsub(/[^0-9]/, "", h)
@@ -333,7 +350,7 @@ count() { printf '%s' "$1" | grep -c . || true; }  # lint: allow (an empty list 
 verdict="unreadable"; out=2; why=""
 shas="$(field R)"
 if [ "$(count "$shas")" = 0 ]; then
-  why="no 'Reviewed: <sha>' line"
+  why="no 'Reviewed: <sha>' line in ### Assessment"
 elif [ "$(count "$shas")" != 1 ] || [ "$shas" = BAD ]; then
   why="the 'Reviewed:' field is not one clean sha ($(printf '%s' "$shas" | tr '\n' ' '))"
 elif [ "${HEAD_SHA#"$shas"}" = "$HEAD_SHA" ]; then
@@ -344,7 +361,7 @@ elif [ "$KIND" = code ]; then
     1:yes) verdict="ready to merge"; out=0 ;;
     1:no) verdict="not ready"; out=1 ;;
     "1:with fixes") verdict="ready with fixes"; out=1 ;;
-    0:*) why="no 'Ready to merge? Yes|No|With fixes' line" ;;
+    0:*) why="no 'Ready to merge? Yes|No|With fixes' line in ### Assessment" ;;
     *) why="the verdict is not one of Yes, No, With fixes ($(printf '%s' "$vals" | tr '\n' '/'))" ;;
   esac
 else
@@ -353,7 +370,7 @@ else
     1:BAD) why="the summary line is not 'Critical: N | High: N | Medium: N | Low: N'" ;;
     1:*) c="${sums% *}"; h="${sums#* }"
        if [ $((c + h)) -gt 0 ]; then verdict="Critical $c / High $h"; out=1; else verdict="Critical 0 / High 0"; out=0; fi ;;
-    0:*) why="no 'Critical: N | High: N | Medium: N | Low: N' summary line" ;;
+    0:*) why="no 'Critical: N | High: N | Medium: N | Low: N' line in ### Summary" ;;
     *) why="summary lines disagree or are malformed ($(printf '%s' "$sums" | tr '\n' '/'))" ;;
   esac
 fi

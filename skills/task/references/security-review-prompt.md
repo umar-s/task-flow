@@ -146,7 +146,8 @@ the checklist below only guards against blind spots.
 ## Output format (respond in Russian; keep code/paths/terms as-is)
 
 ### Summary
-Строка ниже — **дословно в этой форме, по-английски** (её читает раннер):
+Заголовок `### Summary` и строка ниже — **дословно в этой форме, по-английски**,
+обычным текстом (их читает раннер):
 
 Critical: N | High: N | Medium: N | Low: N
 
@@ -165,4 +166,6 @@ Critical: N | High: N | Medium: N | Low: N
 
 ### Assessment
 **Reviewed:** [HEAD_SHA]
+
+*(Заголовок и строка `Reviewed:` — дословно, по-английски.)*
 ````
