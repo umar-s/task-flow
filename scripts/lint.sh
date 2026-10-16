@@ -294,6 +294,7 @@ grep -q '^## task-flow bindings' "$AG/AGENTS.md.skeleton" || err "$AG/AGENTS.md.
 grep -q '^sandbox_mode = "read-only"' "$AG/.codex/agents/reviewer.toml" || err "$AG reviewer role is not read-only"
 grep -q '^developer_instructions = """' "$AG/.codex/agents/reviewer.toml" || err "$AG reviewer role lacks developer_instructions (Codex ignores the role without them)"
 grep -q 'decision = "forbidden"' "$AG/.codex/rules/git.rules" || err "$AG/.codex/rules/git.rules lost the forbidden force-push rule"
+grep -qE 'npm install .*@openai/codex@[0-9]+\.[0-9]+\.[0-9]+' .github/workflows/check.yml || err "check.yml no longer installs a pinned Codex CLI — tests/agents-templates.sh fails under CI without it"
 grep -q 'Nothing here is a force-push guarantee' "$AG/.codex/rules/git.rules" || err "$AG/.codex/rules/git.rules no longer names what a prefix rule cannot see"
 awk '/pattern = \["git", "push"\],/{p=1;next} p && /decision/{print; exit}' "$AG/.codex/rules/git.rules" | grep -q '"prompt"' || err "$AG/.codex/rules/git.rules: a push must prompt, never auto-allow (prefix rules cannot see every force form)"
 grep -q 'glab' "$AG/.codex/rules/git.rules" && err "$AG/.codex/rules/git.rules grants glab again (no requirement asks for it)"

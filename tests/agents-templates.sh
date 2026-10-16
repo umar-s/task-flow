@@ -3,7 +3,8 @@
 # exactly what their header promises (including the residue they cannot see),
 # a broken rule example fails to load, and the TOML templates parse.
 # The execpolicy half needs Codex CLI on PATH; without it that half prints
-# SKIPPED — a skipped check is named, never counted as passed.
+# SKIPPED locally — a skipped check is named, never counted as passed — and
+# fails under CI, where .github/workflows/check.yml installs the pinned CLI.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 AG="$ROOT/templates/agents"
@@ -22,6 +23,8 @@ if [ -n "$PY" ]; then
   done
   "$PY" -I -c 'import sys,tomllib; d=tomllib.load(open(sys.argv[1],"rb")); assert d["sandbox_mode"]=="read-only" and d["developer_instructions"].strip() and d["name"]=="reviewer"' "$AG/.codex/agents/reviewer.toml" \
     && ok || bad "reviewer.toml: not a read-only role with developer_instructions"
+elif [ -n "${CI:-}" ]; then
+  bad "no python3 with tomllib under CI — the TOML templates would not be parsed"
 else
   skipped=$((skipped+1)); echo "tests/agents-templates: TOML parse SKIPPED (no python3 with tomllib)"
 fi
@@ -54,6 +57,8 @@ EOF
   sed 's/match = \[\["git", "push", "--force", "origin", "main"\]/match = [["git", "pull"]/' "$R" > "$TMP/bad.rules"
   cmp -s "$R" "$TMP/bad.rules" && bad "the negative-control edit did not apply"
   codex execpolicy check --rules "$TMP/bad.rules" -- git push >/dev/null 2>&1 && bad "a rule whose match example does not match still loads" || ok
+elif [ -n "${CI:-}" ]; then
+  bad "codex not on PATH under CI — the execpolicy checks would not run (check.yml installs the pinned CLI)"
 else
   skipped=$((skipped+1)); echo "tests/agents-templates: execpolicy checks SKIPPED (codex not on PATH)"
 fi
