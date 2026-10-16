@@ -1,0 +1,48 @@
+# AGENTS.md — <project name>
+
+<!-- The project's rules for both harnesses. Codex reads only this file (32 KiB
+     limit — keep rules here, detail in docs/); Claude Code reads it through the
+     `@AGENTS.md` import in CLAUDE.md. Harness-specific notes go in their own
+     sections at the end. Replace every <…>; delete what does not apply. -->
+
+## Project
+<One paragraph: what this repository is, its runtime and where the code lives.>
+
+## Commands
+- test: `<command>`
+- static analysis / lint: `<command>`
+- build: `<command>`
+
+## task-flow bindings
+Read by `task-flow:task`, `task-flow:decompose` and `task-flow:ci-gate`.
+- **Tracker:** <tracker>. Read a ticket with its comments: `<how>`; comment:
+  `<how>`; set Done: `<how>`; log spent time: `<how>`. Token: the **name** of
+  the variable (`<VAR_NAME>`), never its value.
+- **VCS / CI:** integration branch `<develop>`; open an MR: `<command>`;
+  pipeline status: `<command>`; GitLab runner executor: `<docker | shell (tag)>`.
+- **Build / verify:** deploy to dev: `<command>`; browser-verify URL: `<url | none>`.
+- **Deploy / merge policy:** merge method `<squash | merge>`; approval
+  `<self | mr-approval-required>`; MR state: `<glab mr view <id> --output json>`;
+  deploy trigger and status: `<how>`.
+- **One-way wrappers:** `<make deploy>`, … (handed to `predict on --also`) — or none.
+- **Artifact directory:** `docs/specs/` — or `<dir>`.
+- **Gate owner:** `@<owner>` — the one identity an MR under check must not be.
+- **Builder / reviewer:** each ticket names its builder (`builder: codex | claude`);
+  the reviewer is the other harness (`xreview.sh`, task phases 6 and 6b).
+
+## Code Review Rules
+<!-- Applied and cited by Codex's built-in reviewer (`codex exec review`,
+     `@codex review`). Two or three invariants of THIS project, each with its
+     safe path — not style or lint (CI owns those). -->
+- <Invariant, e.g. "every balance change goes through `Ledger.post()`; a direct
+  `UPDATE balances` is a bug"> — safe path: <…>.
+- <Invariant> — safe path: <…>.
+
+## Codex
+- Skills: `$task-flow:task <TASK-ID>`, `$task-flow:decompose <input>`,
+  `$task-flow:ci-gate`, `$prediction-protocol:prediction-protocol`.
+- Sandbox `workspace-write`: `.git/` is read-only and the network is off inside
+  it — `git commit` leaves it through `.codex/rules/git.rules`; a push asks a
+  person (under `codex exec` the runner pushes, not the model).
+- Under the prediction protocol a one-way command without a receipt is denied,
+  not asked: open the receipt (`predict open …`), then repeat the command.

@@ -1,6 +1,6 @@
 # ci-gate (vendored)
 
-<!-- ci-gate payload version: 1.8.1 — `/ci-gate` re-run upgrades it; see "Upgrading" -->
+<!-- ci-gate payload version: 1.12.0 — `/ci-gate` re-run upgrades it; see "Upgrading" -->
 
 Deterministic merge gate for this repository — the non-gameable floor under
 secrets, destructive migrations, and force-push. It complements (does not
@@ -102,6 +102,31 @@ Two include files ship — pick by your runner **executor**:
 Secret-scan is **incremental**: MR → the MR's commits; default-branch push → only
 new commits; scheduled pipeline → full-history audit. Set up a pipeline schedule
 so the periodic full scan runs.
+
+## Second security pass (optional, GitLab): Codex Security
+`ci/codex-security.gitlab-ci.yml` (docker / kubernetes) or
+`ci/codex-security.shell.gitlab-ci.yml` (shell executor) adds two jobs in the
+built-in `.post` stage: `codex-security` scans the MR diff with OpenAI's Codex
+Security CLI and keeps a SARIF report, `codex-security-gate` restores the
+scanner's exit code (`0` complete and clean · `1` findings at or above
+`CODEX_SECURITY_FAIL_ON`, default `high` · `2` incomplete coverage or an error).
+
+This is an **LLM scanner, not a layer of this gate**: a model reading the diff
+for exploitable paths, the same kind of pass as the task flow's security review
+(6b), run again by another model. It is gameable the way any model is, so it
+never stands in for secret-scan / migration-guard / unicode-guard, and those
+never stand in for it. Run it only for MRs between two protected branches of
+this project (the include's `rules:` already do); the key is the owner's —
+`CODEX_SECURITY_API_KEY` (masked + hidden + protected, environment scope
+`codex-security/openai`), or on a private self-hosted shell runner
+`CODEX_SECURITY_AUTH=chatgpt` with the runner user logged in. Each include's
+header lists its setup, knobs and host requirements; nothing may be written
+into the checkout before the scan (a committed-diff scan refuses a dirty tree).
+The key leaves the job environment before the first child process and comes
+back only for the scanner; installs run with a cleared environment (docker:
+npm as the unprivileged `node` user); temporary paths come from `mktemp -d`.
+On a shell runner every process of the job runs as the runner user and can read
+the job's initial environment — give this job a dedicated runner.
 
 ## Pinned gitleaks
 One scanner version, pinned in every path it runs through — so the local hook,

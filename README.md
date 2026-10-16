@@ -4,9 +4,10 @@
 [![changelog](https://img.shields.io/badge/changelog-keep--a--changelog-0b7285)](CHANGELOG.md)
 [![license](https://img.shields.io/badge/license-MIT-0b7285)](LICENSE)
 
-A Claude Code plugin: a disciplined **per-task quality flow** plus the
-**deterministic CI gate** it leans on — and a `decompose` skill that feeds
-both. Three skills, one product.
+A plugin for **Claude Code and Codex CLI**: a disciplined **per-task quality
+flow** plus the **deterministic CI gate** it leans on — and a `decompose`
+skill that feeds both. Three skills, one product; with both harnesses
+installed, the review of every change goes to the model that did not write it.
 
 > Русская версия — [README.ru.md](README.ru.md).
 > Release history — [CHANGELOG.md](CHANGELOG.md).
@@ -49,8 +50,9 @@ draft (`docs/decompose/YYYY-MM-DD-<epic>.md`) is the self-contained primary
 artifact; tracker push (YouTrack and other adapters) is a generic, optional
 extra.
 
-Invoke with `/decompose` (or "нарежь на задачи", "декомпозируй эпик"). Each
-produced `<TASK-ID>` is then picked up end-to-end by `task`.
+Invoke with `/task-flow:decompose` (Codex: `$task-flow:decompose`), or
+"нарежь на задачи", "декомпозируй эпик". Each produced `<TASK-ID>` is then
+picked up end-to-end by `task`.
 
 ### `task` — per-task quality flow
 Takes one tracked ticket from ingest to closed through fixed quality gates:
@@ -72,8 +74,9 @@ and the close comment opens with a terminal status — `DONE |
 DONE_WITH_CONCERNS | BLOCKED | MERGED_NOT_LIVE | ABANDONED` — so a human, or a
 runner, reads the outcome without parsing prose.
 
-Invoke with `/task DEV-475` (or "прогони через наш flow"). The discipline is
-fixed; concrete tracker/VCS/build commands are resolved from the project's
+Invoke with `/task-flow:task DEV-475` (Codex: `$task-flow:task DEV-475`), or
+"прогони через наш flow". The discipline is fixed; concrete tracker/VCS/build
+commands are resolved from the project's instruction file — `AGENTS.md` or
 `CLAUDE.md`.
 
 With the `prediction-protocol` plugin installed, `task` puts the session under
@@ -83,6 +86,16 @@ item — into a receipt graded by the tool, reads `docs/evidence/REFUTED.md` in
 phase 0, and carries the `predictions:` line into the evidence block. Without
 the plugin the same lines print `predict-gate: absent` and the flow runs as
 before.
+
+**Cross-review by the other model.** With both CLIs installed, phases 6 and 6b
+go to the harness that did not write the diff: `templates/xreview/xreview.sh`
+fills the review brief from the spec file and git, runs `codex exec` or
+`claude -p` read-only and isolated from the author's session — without the
+user's plugins, so no memory plugin replays the implementation story to the
+reviewer — reads the verdict, and writes
+`docs/reviews/<TASK-ID>-<sha>-<model>.md`. Exit `0` clean · `1` blocking · `2`
+no review happened, which is never read as clean. A same-model subagent stays
+the declared fallback.
 
 ### `ci-gate` — scaffold the deterministic merge gate
 Drops a portable, non-gameable gate into any repo — the floor under the
@@ -126,6 +139,14 @@ shell runner (re-verified on every call), commit-pinned `rev` in pre-commit.
 Secret-scan is incremental (MR range / new commits on push / full-history on a
 schedule).
 
+**Optional second security pass (GitLab): Codex Security.** Two more includes
+scan the MR diff with OpenAI's Codex Security CLI, keep a SARIF report, and
+restore the scanner's exit code in a separate gate job. It is an **LLM
+scanner, not a layer of the gate** — another model after the task's 6b, never a
+substitute for secret-scan, migration-guard or unicode-guard. It runs only for
+MRs between protected branches of the same project; the API key (or a private
+shell runner's ChatGPT login) is the owner's decision.
+
 ## Install
 
 ```
@@ -133,21 +154,47 @@ schedule).
 /plugin install task-flow@devpowers
 ```
 
-Then drive the pipeline: `/decompose` an epic into tasks, `/task DEV-475` each
-one through the quality flow, `/ci-gate` once per repo to scaffold the merge
-gate they all land behind.
+In Codex CLI:
 
-## Skill routing (paste into the consuming project's `CLAUDE.md`)
+```
+codex plugin marketplace add umar-s/devpowers
+codex plugin add task-flow@devpowers
+```
+
+Then drive the pipeline: `/task-flow:decompose` an epic into tasks,
+`/task-flow:task DEV-475` each one through the quality flow, `/task-flow:ci-gate`
+once per repo to scaffold the merge gate they all land behind (in Codex the
+same names start with `$`).
+
+## Claude Code and Codex
+
+The flow is the same in both; these are the places where the harness shows:
+
+| | Claude Code | Codex CLI |
+|---|---|---|
+| Invoke | `/task-flow:task <TASK-ID>` | `$task-flow:task <TASK-ID>` |
+| Project rules | `CLAUDE.md`, first line `@AGENTS.md` | `AGENTS.md` (the only file it reads) |
+| Fresh subagent | the Agent tool | a spawned subagent (`.codex/agents/reviewer.toml`) |
+| One-way command without a receipt (prediction-protocol) | asked | denied — open the receipt, repeat |
+| Reviewer for phases 6 / 6b | `xreview.sh --by codex` | `xreview.sh --by claude` |
+
+`templates/agents/` has the skeletons: `AGENTS.md` with the task-flow bindings
+and `## Code Review Rules`, a `CLAUDE.md` that imports it, the project's
+`.codex/config.toml`, the read-only reviewer role, and `.codex/rules/git.rules`
+(a commit leaves the sandbox, a push asks a person, the force forms a prefix
+rule can see are forbidden).
+
+## Skill routing (paste into the consuming project's `AGENTS.md` or `CLAUDE.md`)
 
 The skills' own `description`s compete with dozens of others in a session; a
-routing table in the project's `CLAUDE.md` is what makes the model reach for
-them on its own:
+routing table in the project's instruction file is what makes the model reach
+for them on its own (in Codex, write the names with `$`):
 
 ```markdown
 ## Skill routing
-- A ticket / task id (`DEV-475`, `#123`, "сделай задачу …") → `/task`
-- An epic, a feature description or a spec to slice into tasks → `/decompose`
-- "add the CI gate", "secret scan", "migration guard", a new repo → `/ci-gate`
+- A ticket / task id (`DEV-475`, `#123`, "сделай задачу …") → `/task-flow:task`
+- An epic, a feature description or a spec to slice into tasks → `/task-flow:decompose`
+- "add the CI gate", "secret scan", "migration guard", a new repo → `/task-flow:ci-gate`
 - Unsure whether a skill applies → invoke it; declining inside the skill is
   cheaper than a flow run without it.
 ```

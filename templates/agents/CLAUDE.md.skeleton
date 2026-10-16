@@ -1,0 +1,11 @@
+@AGENTS.md
+
+<!-- Claude Code expands the import above when it loads this file; everything
+     below is Claude-only. Keep this file even when nothing else is in it: a
+     CLAUDE.md created later without the import hides AGENTS.md from Claude Code. -->
+
+## Claude Code
+- Skills: `/task-flow:task <TASK-ID>`, `/task-flow:decompose <input>`, `/task-flow:ci-gate`.
+- Tracker MCP: tools are found with ToolSearch at run time; name the server here
+  only if ToolSearch cannot find it (`<server>`).
+- <Claude-only notes: /compact policy, output style, local MCP servers, …>

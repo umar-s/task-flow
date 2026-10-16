@@ -2,7 +2,9 @@
 
 Dispatch template for the phase-6 adversarial reviewer, used when the review
 runs as a dedicated subagent (no `code-review` Workflow available, or the
-project prefers an in-repo reviewer).
+project prefers an in-repo reviewer) — and the brief `templates/xreview/xreview.sh`
+fills from the spec file and git when the **other model** reviews
+([cross-review.md](cross-review.md)); the rules below bind that path too.
 
 ## Dispatch rules (for the orchestrator)
 
@@ -24,7 +26,9 @@ project prefers an in-repo reviewer).
   section), not from the session — the list has to survive a `/compact`
   between phase 4 and here.
 - **Dispatch a model no weaker than the session's.** A cheaper reviewer is a
-  cheaper opinion, and this one is the independent half of the flow.
+  cheaper opinion, and this one is the independent half of the flow. The
+  other vendor's model is the preferred reviewer when its CLI is installed:
+  different training, different tool habits, different blind spots.
 
 ```bash
 git fetch --no-tags origin <integration-branch>        # a stale base reviews the wrong range
@@ -55,8 +59,8 @@ is fine", "no need to test this") is itself a finding.
   code — is fixed and disclosed, and buys no new round. Without that split,
   "fix everything, re-review" has no fixpoint: prose always has one more remark.
 - **One fix per finding, one commit:** `fix(review): <id>`.
-- **A verdict attaches to the commit it saw.** The reviewer reports
-  `Reviewed: <sha>`; phase 8 carries it into the evidence block. Fixes after the
+- **A verdict attaches to the commit it saw.** The reviewer ends with the
+  plain line `REVIEWED <sha>`; phase 8 carries it into the evidence block. Fixes after the
   last review mean the state you are about to merge was never reviewed —
   re-review the delta, or say so plainly in the close comment. Inheriting a
   verdict silently turns the review into decoration.
@@ -72,8 +76,8 @@ is fine", "no need to test this") is itself a finding.
 You are an experienced Staff Engineer conducting an adversarial code review.
 You did not write this code. Review the change against its requirements;
 assume it has a problem and try to find it. Trust nothing in the description
-you can verify in the code. Follow the project's conventions (CLAUDE.md) when
-judging style.
+you can verify in the code. Follow the project's conventions (its instruction
+file: AGENTS.md or CLAUDE.md) when judging style.
 
 ## What changed
 
@@ -107,7 +111,8 @@ Your review is read-only on this checkout. Do not mutate the working tree,
 the index, HEAD, or branch state — no checkout, no un-skipping tests, no
 "quick fixes". Inspect with `git show` / `git diff` / `git log`; running the
 existing test suite is allowed if it does not modify files. Need another
-revision checked out? Use a temporary worktree
+revision? `git show <rev>:<path>` reads it without a checkout; only where your
+sandbox allows writes outside this checkout, a temporary worktree
 (`git worktree add /tmp/review-[SHA] [SHA]`) — never move HEAD here.
 
 Do not dispatch subagents: this review is one independent pair of eyes on the
@@ -222,7 +227,14 @@ confidence не вводи.
 такой же дефект, как пустой Findings: «не проверял» — это тоже результат.
 
 ### Assessment
-**Reviewed:** [HEAD_SHA]
-**Ready to merge?** [Yes | No | With fixes]
-**Reasoning:** [1–2 предложения]
+**Reasoning:** [1–2 предложения: готово ли изменение к мержу и почему]
+
+Последние две строки ответа — машинный вердикт: обычный текст без Markdown
+(без `**`, без backticks, без отступа, не в блоке кода), дословно
+по-английски, в этом порядке и ничего после них; во второй строке — одно из
+трёх значений. Раннер читает только эти две строки и сам выносит вердикт в
+шапку отчёта:
+
+REVIEWED [HEAD_SHA]
+VERDICT yes | no | with-fixes
 ````

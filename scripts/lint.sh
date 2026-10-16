@@ -211,6 +211,104 @@ grep -q 'a receipt to write' skills/task/references/security-review-prompt.md ||
 grep -q 'predict <id>' skills/task/references/design-spec-template.md || err "design-spec-template lost the predict id citation"
 { grep -q 'predict-gate: absent' README.md && grep -q 'predict-gate: absent' README.ru.md; } || err "README pair lost the prediction-protocol paragraph"
 
+# 1.12.0 — two harnesses and cross-review. A harness term that slips back to
+# Claude-only, a reviewer that can write or inherits the author's memory, or
+# an LLM scanner presented as part of the deterministic gate each breaks a
+# promise this release made; every rule is pinned where it lives.
+for sk in task decompose ci-gate; do
+  f="skills/$sk/SKILL.md"
+  grep -q '^## Harness — Claude Code or Codex' "$f" || err "$f lost its Harness section"
+  H=$(section "$f" '/^## Harness — Claude Code or Codex/,/^## [^H]/')
+  printf '%s' "$H" | grep -qF "/task-flow:$sk" || err "$f Harness: no Claude Code invocation /task-flow:$sk"
+  printf '%s' "$H" | grep -qF "\$task-flow:$sk" || err "$f Harness: no Codex invocation \$task-flow:$sk"
+  printf '%s' "$H" | grep -q 'AGENTS.md' || err "$f Harness: the instruction file is not AGENTS.md-or-CLAUDE.md"
+  n=$(awk '/^## Harness — Claude Code or Codex/{h=1;next} h && /^## /{exit} h{c++} END{print c+0}' "$f")
+  [ "$n" -le 16 ] || err "$f: the Harness section is $n lines (cap 16) — harness detail belongs in a reference"
+done
+if grep -nE "from CLAUDE\.md|project's \`CLAUDE\.md\`|the project \`CLAUDE\.md\`" skills/*/SKILL.md skills/*/references/*.md >/dev/null; then
+  err "a skill reads its bindings from CLAUDE.md alone again (the instruction file is AGENTS.md or CLAUDE.md):"
+  grep -nE "from CLAUDE\.md|project's \`CLAUDE\.md\`|the project \`CLAUDE\.md\`" skills/*/SKILL.md skills/*/references/*.md >&2
+fi
+CG=skills/ci-gate/SKILL.md
+grep -q 'ROOT="${CLAUDE_PLUGIN_ROOT:-' "$CG" || err "$CG lost the \$ROOT resolution block (Codex never sets CLAUDE_PLUGIN_ROOT in the model's shell)"
+grep -qF '${CLAUDE_PLUGIN_ROOT}/templates' "$CG" && err "$CG reads the payload through a bare \${CLAUDE_PLUGIN_ROOT} again"
+S7=$(section "$CG" '/^7\. \*\*Second security pass/,/^## Scan strategy/')
+[ -n "$S7" ] || err "$CG lost step 7 (second security pass)"
+printf '%s' "$S7" | grep -q 'This is a model, \*\*not a gate\*\*' || err "$CG step 7 no longer says Codex Security is a model, not a gate"
+printf '%s' "$S7" | grep -q 'never the agent' || err "$CG step 7 no longer leaves the credentials to the owner"
+grep -q 'LLM scanner, not a layer of this gate' templates/ci-gate/ci/README.md || err "ci/README.md no longer separates Codex Security from the gate"
+P6X=$(section skills/task/SKILL.md '/^## 6\. Code-review/,/^## 6b\./')
+printf '%s' "$P6X" | grep -q 'First choice: the other model' || err "task phase 6 lost 'the other model first'"
+printf '%s' "$P6X" | grep -q 'templates/xreview/xreview.sh' || err "task phase 6 no longer names xreview.sh"
+printf '%s' "$P6X" | grep -q 'never clean' || err "task phase 6 no longer says exit 2 is never clean"
+section skills/task/SKILL.md '/^## 6b\./,/^## 7\./' | grep -q 'kind security' || err "task phase 6b lost the cross-model security pass"
+XR=skills/task/references/cross-review.md
+flat "$XR" | grep -q 'The reviewer is the harness that did not write the diff' || err "$XR lost who reviews"
+flat "$XR" | grep -q 'Isolated from the author' || err "$XR lost the isolation rule"
+flat "$XR" | grep -q 'not averaged and not decided by the author' || err "$XR lost the two-review disagreement rule"
+grep -qF "':!docs/reviews' ':!docs/evidence'" "$XR" || err "$XR lost the docs-only commit check"
+flat "$XR" | grep -q 'an LLM layer, not part of the deterministic gate' || err "$XR no longer separates Codex Security from the gate"
+# The verdict is a separate channel: each brief's template block ENDS with the
+# two plain machine lines xreview reads (and nothing else is read).
+tail2() { awk '/^## Template/ { t = 1; next } t && /^````$/ { if (b) exit; b = 1; next } b && NF { p = l; l = $0 } END { print p; print l }' "$1"; }
+[ "$(tail2 "$CR")" = "$(printf 'REVIEWED [HEAD_SHA]\nVERDICT yes | no | with-fixes')" ] || err "$CR: the template no longer ends with the two machine lines xreview reads"
+[ "$(tail2 skills/task/references/security-review-prompt.md)" = "$(printf 'REVIEWED [HEAD_SHA]\nSUMMARY critical=N high=N medium=N low=N')" ] || err "security-review-prompt.md: the template no longer ends with the two machine lines xreview reads"
+grep -q 'по-английски' "$CR" || err "$CR: the machine lines are no longer pinned against translation"
+XS=templates/xreview/xreview.sh
+for f in templates/xreview/*.sh; do bash -n "$f" || err "syntax error: $f"; [ -x "$f" ] || err "not executable: $f"; done
+if grep -nE '\|\| true|2>/dev/null' templates/xreview/*.sh | grep -v 'lint: allow' >/dev/null; then
+  err "fail-open idiom in templates/xreview (mark a deliberate one with '# lint: allow')"
+  grep -nE '\|\| true|2>/dev/null' templates/xreview/*.sh | grep -v 'lint: allow' >&2
+fi
+grep -q 'Ready to merge' "$XS" && err "$XS parses a Markdown verdict again (two review rounds showed a person and a parser read it differently)"
+grep -q 'last two non-empty lines' "$XS" || err "$XS no longer reads the verdict from the last two lines only"
+for w in 'exec -s read-only --ignore-rules' '--ignore-user-config' '--setting-sources ""' '"disableAllHooks":true' '--strict-mcp-config' '--disable-slash-commands' '--permission-mode dontAsk' \
+         'compgen -e' 'CLAUDE_CODE_*|CLAUDE_PLUGIN_*' 'PP_*' 'CODEX_SESSION_ID' 'empty range'; do
+  grep -qF -- "$w" "$XS" || err "$XS lost '$w'"
+done
+grep -q '^  TOOLS="Read,Grep,Glob"$' "$XS" || err "$XS: the claude reviewer's default tool set is not Read,Grep,Glob"
+grep -q 'Bash(git' "$XS" && err "$XS allowlists git commands for the claude reviewer again (git diff --output writes)"
+grep -qE 'setting-sources [^"]*(project|local)' "$XS" && err "$XS loads a project/local settings file into the claude reviewer (hooks and apiKeyHelper from the diff run at session start)"
+CSD=templates/ci-gate/gitlab/codex-security.gitlab-ci.yml; CSS=templates/ci-gate/gitlab/codex-security.shell.gitlab-ci.yml
+for f in "$CSD" "$CSS"; do
+  [ -f "$f" ] || { err "$f missing"; continue; }
+  for job in codex-security codex-security-gate; do grep -qE "^${job}:" "$f" || err "$f lacks the '$job' job"; done
+  grep -q 'CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_ID' "$f" || err "$f: a fork MR could reach the protected key"
+  grep -q 'CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"' "$f" || err "$f: the scan is no longer limited to protected branches"
+  grep -q -- '--fail-on-severity' "$f" || err "$f: without --fail-on-severity the gate job is green on any finding"
+  grep -q 'stage: .post' "$f" || err "$f must use the built-in .post stage (an include cannot rely on the project's stages)"
+  grep -q 'SCAN_JSON=' "$f" || err "$f writes into the checkout during the scan (a committed-diff scan refuses a dirty tree)"
+  grep -q 'unset CODEX_SECURITY_API_KEY' "$f" || err "$f leaves the API key in the job environment"
+  # The key leaves the environment before the first child process: the capture
+  # is the first command of before_script after `set -eu` (and fail()).
+  first=$(awk '/^  before_script:/{b=1;next} b && /^  script:/{exit} b' "$f" | grep -vE '^\s*(- \||#|set -eu|fail\(\) )' | grep -vE '^\s*$' | head -n 1)
+  printf '%s' "$first" | grep -q 'codex_security_api_key="${CODEX_SECURITY_API_KEY:-}"' || err "$f: the key is not captured and unset before the first child process (first command: $first)"
+  grep -q 'mktemp -d' "$f" || err "$f: temporary paths must come from mktemp -d (a job-id path can be planted)"
+  grep -q 'CI_JOB_ID' "$f" && err "$f builds a temporary path from the guessable CI_JOB_ID"
+  grep -q 'set -f' "$f" || err "$f: CODEX_SECURITY_EXTRA_ARGS must not be globbed"
+done
+grep -q 'setpriv --reuid=node' "$CSD" || err "$CSD: npm must run as the unprivileged node user (it could read root's initial environment)"
+grep -qE '^  image: node:[0-9a-z.-]+@sha256:[0-9a-f]{64}$' "$CSD" || err "$CSD: the image must be pinned by digest"
+[ "$(grep -cE '^  image: ' "$CSD")" = "$(grep -cE '^  image: node:[0-9a-z.-]+@sha256:[0-9a-f]{64}$' "$CSD")" ] || err "$CSD: every image must be the pinned one"
+grep -qE '^\s+image:' "$CSS" && err "$CSS: a shell-executor include must not carry image: (it is ignored there)"
+V1=$(sed -nE 's/^ +CODEX_SECURITY_VERSION: "([0-9.]+)".*/\1/p' "$CSD"); V2=$(sed -nE 's/^ +CODEX_SECURITY_VERSION: "([0-9.]+)".*/\1/p' "$CSS")
+[ -n "$V1" ] && [ "$V1" = "$V2" ] || err "codex-security CLI pin differs between the two includes ('$V1' vs '$V2')"
+AG=templates/agents
+[ "$(head -n 1 "$AG/CLAUDE.md.skeleton")" = "@AGENTS.md" ] || err "$AG/CLAUDE.md.skeleton: the first line must be @AGENTS.md"
+grep -q '^## Code Review Rules' "$AG/AGENTS.md.skeleton" || err "$AG/AGENTS.md.skeleton lost '## Code Review Rules' (codex exec review reads it)"
+grep -q '^## task-flow bindings' "$AG/AGENTS.md.skeleton" || err "$AG/AGENTS.md.skeleton lost the bindings section"
+grep -q '^sandbox_mode = "read-only"' "$AG/.codex/agents/reviewer.toml" || err "$AG reviewer role is not read-only"
+grep -q '^developer_instructions = """' "$AG/.codex/agents/reviewer.toml" || err "$AG reviewer role lacks developer_instructions (Codex ignores the role without them)"
+grep -q 'decision = "forbidden"' "$AG/.codex/rules/git.rules" || err "$AG/.codex/rules/git.rules lost the forbidden force-push rule"
+grep -qE 'npm install .*@openai/codex@[0-9]+\.[0-9]+\.[0-9]+' .github/workflows/check.yml || err "check.yml no longer installs a pinned Codex CLI — tests/agents-templates.sh fails under CI without it"
+grep -q 'Nothing here is a force-push guarantee' "$AG/.codex/rules/git.rules" || err "$AG/.codex/rules/git.rules no longer names what a prefix rule cannot see"
+awk '/pattern = \["git", "push"\],/{p=1;next} p && /decision/{print; exit}' "$AG/.codex/rules/git.rules" | grep -q '"prompt"' || err "$AG/.codex/rules/git.rules: a push must prompt, never auto-allow (prefix rules cannot see every force form)"
+grep -q 'glab' "$AG/.codex/rules/git.rules" && err "$AG/.codex/rules/git.rules grants glab again (no requirement asks for it)"
+for r in README.md README.ru.md; do
+  grep -qF '$task-flow:task' "$r" || err "$r does not show the Codex invocation"
+  grep -q 'xreview' "$r" || err "$r does not describe the cross-model review"
+done
+
 # 7. No personal absolute paths in tracked files (CLAUDE.md is local and untracked).
 if git grep -nE '/home/[a-z]+/' -- . ':!CLAUDE.md' >/dev/null; then
   err "personal absolute path in tracked files:"
@@ -380,7 +478,7 @@ for w in 'Stop condition' 'Compatibility window' 'Rollback'; do
 done
 flat "$DST" | grep -q 'What does \*\*not\*\* count' || err "$DST lost the rejection criteria that stop a rollback plan from being fiction"
 flat skills/task/references/checkpoint.md | grep -q 'validate before you trust' || err "checkpoint.md lost the resume validation"
-grep -q 'Reviewed:' skills/task/references/code-review-prompt.md || err "code-review-prompt.md: the verdict must carry 'Reviewed: <sha>'"
+grep -q 'REVIEWED <sha>' skills/task/references/code-review-prompt.md || err "code-review-prompt.md: the verdict must carry 'REVIEWED <sha>'"
 grep -q 'review @' skills/task/references/land.md || err "land.md's evidence block lost the 'review @ <sha>' field"
 grep -q 'DoD-n' skills/task/SKILL.md || err "task/SKILL.md lost the DoD-n grading rule"
 grep -qE 'DoD-n .*PASS' skills/task/references/code-review-prompt.md || err "code-review-prompt.md lost the DoD-n grading"

@@ -9,6 +9,224 @@ below is tagged `vX.Y.Z` in git. Installs track the default branch (the
 marketplace entry pins no ref), so a release tag marks history rather than a
 download.
 
+## [1.12.0] — 2026-10-16
+
+Two harnesses and cross-review: the three skills run unchanged in Codex CLI,
+and phases 6 / 6b go to the model that did not write the diff. Design:
+`docs/superpowers/specs/2026-10-16-task-flow-1-12-0-design.md` (stage S2 of
+the devpowers Claude Code + Codex stack; prediction-protocol 1.1.0 is S1).
+The flow itself — phases, order, clean-context dispatch, "green includes the
+deterministic gate", the blocking force of Critical/Required — is unchanged.
+
+### Added
+- **`templates/xreview/xreview.sh`** — phase 6 / 6b review by the other
+  harness, headless and read-only, run in place from the plugin. Fills the
+  brief from the spec file (`DoD → check table` → `[DOD]`, `Premortem edges`
+  → `[PREMORTEM_EDGES]` for phase 6 only, the rest → `[DESIGN_SPEC]`) and git,
+  literally and in one pass; reads the verdict's two machine lines; writes
+  `docs/reviews/<TASK-ID>-<sha7>-<by>[-security].md`. Exit `0` clean · `1`
+  blocking · `2` no review happened (empty range, no spec or DoD section, CLI
+  missing or failed, verdict unreadable, verdict for another sha) — never
+  read as clean. `--brief-only` prints the filled brief for an interactive
+  subagent.
+- **Read-only by construction.** Codex: `codex exec -s read-only
+  --ignore-rules --ephemeral` — an execpolicy `allow` would run the matched
+  command outside the sandbox. Claude Code: `claude -p --tools
+  Read,Grep,Glob --permission-mode dontAsk --strict-mcp-config
+  --disable-slash-commands` — no shell (an allowlisted `git diff
+  --output=<file>` writes), no MCP server, no skills; the range material
+  (stat, log, status, full diff, fenced longer than any backtick run inside,
+  capped by `XREVIEW_MAX_DIFF_BYTES` and refused — not truncated — above it;
+  6b without the spec's own diff) is attached to the brief, and the checkout
+  must be at the head under review. `XREVIEW_ALLOW` grants a shell for
+  exactly the listed rules.
+- **No repository config reaches the reviewer.** A `.claude/settings.json`
+  or `settings.local.json` committed in the diff ran its SessionStart hook
+  and its `apiKeyHelper` command when a `claude -p` reviewer started (lab,
+  2026-10-16); the Claude reviewer now loads no settings file
+  (`--setting-sources ""`, `disableAllHooks`; OAuth unaffected). The same
+  hook in `.codex/hooks.json` did not run under `--ignore-user-config`.
+- **Isolation from the author's session, by default.** Measured 2026-10-16:
+  `claude -p` ran 9 SessionStart hooks of user plugins, with the user's
+  settings left out none; `codex exec` ran 4, with `--ignore-user-config`
+  none — memory plugins replay the implementation story, which is exactly
+  the briefing the dispatch rule forbids. `XREVIEW_ISOLATE=0` brings the
+  user's own settings and plugins back, never MCP, `.rules` or repository
+  settings. The reviewer's environment drops the session variable families
+  (`CLAUDE_CODE_*`, `CLAUDE_PLUGIN_*`, `PP_*`, `CODEX_SANDBOX*`, the session
+  ids, `PREDICT`, the parent's messaging socket and token) and keeps the
+  reviewer's own auth (`CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_*`, …,
+  `XREVIEW_KEEP_ENV`); `--effort` is checked against the known levels.
+- **The verdict is a separate channel.** The briefs end with two plain
+  lines — `REVIEWED <sha>`, then `VERDICT yes|no|with-fixes` (6b: `SUMMARY
+  critical=N high=N medium=N low=N`) — and xreview reads those last two
+  non-empty lines and nothing else; anything but their exact shape is exit
+  2. It moves them into the report header and writes the reviewer's text
+  below verbatim, in one literal block nothing inside can close — no table,
+  heading or HTML of the body renders, so none can pose as the verdict; the
+  reader sees the verdict the runner used. (Two review rounds
+  showed that a verdict inferred from free-form Markdown reads differently to
+  a person and to a parser — quoted, commented, indented, fenced.)
+- `skills/task/references/cross-review.md` — who reviews (the harness that
+  did not write the diff), the script's steps and flags, where it can run,
+  the delta re-review by the same other model, the docs-only commit rule
+  (`git diff --quiet <reviewed>..HEAD -- . ':!docs/reviews' ':!docs/evidence'`),
+  two reviews that disagree (not averaged, not decided by the author), the
+  Codex native reviewer as an extra opinion, the evidence-block line.
+- **Harness section** in all three `SKILL.md`: `/task-flow:<skill>` ↔
+  `$task-flow:<skill>`, the instruction file, `$ROOT`, what "fresh subagent"
+  means in each harness, the other model as the preferred reviewer; `task`
+  adds the prediction gate's deny-instead-of-ask on Codex.
+- `templates/ci-gate/gitlab/codex-security.gitlab-ci.yml` and
+  `codex-security.shell.gitlab-ci.yml` — optional second security pass on
+  MRs between protected branches of one project (`ci-gate` step 7), from the
+  official scan-only example with these changes: the image pinned by digest;
+  `git` and `python3` installed (the slim node image ships neither — the
+  example's `git merge-base` cannot run); `--fail-on-severity` (default
+  `high` — without it the scanner never exits 1 and the gate job is green on
+  any finding); `--effort low`, optional `--max-cost`; both jobs in `.post`
+  ordered by `needs:` (an include cannot rely on the project's `stages:`);
+  the scan JSON written outside the checkout (a committed-diff scan refuses a
+  dirty tree); the gate rejects an unreadable exit code; the key is captured
+  and unset as the first command, installs run under `env -i` (docker: npm as
+  the unprivileged `node` user, so it cannot read root's initial
+  environment), a missing key fails before any install; temporary paths come
+  from `mktemp -d` and an EXIT trap, never from the guessable `CI_JOB_ID`;
+  `CODEX_SECURITY_EXTRA_ARGS` is split with globbing off. The shell variant
+  checks Node / Python / git first and allows `CODEX_SECURITY_AUTH=chatgpt`
+  for a private self-hosted runner. Marked an **LLM scanner, not a layer of
+  the gate** in the skill, `ci/README.md` and both READMEs.
+- `templates/agents/` — `AGENTS.md.skeleton` (task-flow bindings,
+  `## Code Review Rules`), `CLAUDE.md.skeleton` (`@AGENTS.md` first),
+  `.codex/config.toml.skeleton`, `.codex/agents/reviewer.toml` (read-only
+  role; `developer_instructions` are mandatory or Codex ignores the role),
+  `.codex/rules/git.rules` (commit is allowed out of the sandbox; a push
+  **prompts** — a person approves it, under `codex exec` it fails and the
+  runner pushes; `--force`, `-f`, `--force-with-lease`, `--mirror`,
+  `--delete` right after `push` are forbidden; a prefix rule cannot see
+  `--force-with-lease=<ref>`, `-fu` or a flag after the refspec, which is why
+  no push is auto-allowed — the rule file says so).
+- Tests: `tests/xreview.sh` (162 controls with stub CLIs, run once per awk —
+  gawk, mawk, busybox: verdict → exit, the machine lines and every malformed,
+  decorated, fenced, commented or misplaced form of them, CRLF, sha mismatch,
+  empty range, missing spec / DoD, failing or silent CLI, literal slots,
+  read-only and isolation flags, the attached range material, env scrub by
+  family); `tests/agents-templates.sh` (20: execpolicy decisions, no push
+  auto-allowed in any form, a broken rule example, TOML parse; SKIPPED
+  locally without codex, a failure under CI — `check.yml` installs
+  `@openai/codex@0.162.1`); `scripts/codex-security-mock.sh` — manual
+  acceptance of both includes with `--mock` (docker variant in the pinned
+  image, shell variant on the host), including an npm shim that records what
+  the install step can see.
+- `lint.sh`: pins for the Harness sections (with a 16-line cap), the
+  instruction-file bindings, `ci-gate`'s `$ROOT`, step 7's "not a gate",
+  phase 6's other-model-first dispatch, `cross-review.md`, the parsable
+  verdict lines, `xreview.sh` flags and scrub list, the Codex Security
+  includes and the agents templates; the fail-closed idiom check covers
+  `templates/xreview/`.
+
+### Changed
+- Bindings come from **the project's instruction file** — `AGENTS.md` (Codex
+  reads only it; the recommended single source) or `CLAUDE.md` with what its
+  `@AGENTS.md` imports — in the three skills, `tracker-sync.md`,
+  `design-spec-template.md` and `land.md`.
+- `ci-gate` resolves `$ROOT` like the other skills: the payload was read
+  through a bare `${CLAUDE_PLUGIN_ROOT}`, which Codex never sets in the
+  model's shell (the path became `/templates/ci-gate/`).
+- Phase 6 / 6b: the other model first (`xreview.sh`), the `code-review`
+  Workflow or a same-model subagent as the declared fallback; phase 5 reads
+  `PREDICT` from the prediction-protocol session-start context on Codex.
+- `decompose` phase 5 dispatches "the harness's fresh subagent" (was: the
+  Agent tool); phase 7 discovers tracker tools with ToolSearch or Codex's
+  tool list.
+- Review briefs end with the two machine lines (above), in English, as plain
+  text — a translated or decorated line reads as no verdict; the
+  orchestrator's contract says `REVIEWED <sha>`; another revision is read with
+  `git show <rev>:<path>` — a read-only sandbox cannot add a worktree; the
+  project's conventions are its instruction file.
+- `ci/README.md` documents the Codex Security includes; payload marker 1.12.0.
+- README pair: "for Claude Code and Codex CLI", fully qualified invocations,
+  Codex install, a harness table, cross-review and Codex Security paragraphs.
+
+### Acceptance record
+- `scripts/lint.sh`, `scripts/release-check.sh`, `tests/run.sh` (incl. 162
+  xreview controls under each of gawk, mawk and busybox awk, 20
+  agents-template controls); three mutants of `xreview.sh` (unreadable
+  verdict → 0, no empty-range check, no isolation) each turn the suite red,
+  and every parser control added by a review round was red on the parser
+  before it.
+- Live, on a lab repository with a planted defect (DoD: invalid input raises
+  `ValueError`; the code returned a default): `--by codex` (gpt-6.1-sol) and
+  `--by claude` (opus) each found the swallowed error, the off-by-one at both
+  boundaries and the missing tests independently — verdicts `With fixes` /
+  `No`, exit 1, `Reviewed:` equal to HEAD, checkout untouched; `--kind
+  security` both ways parsed; the shell-less Claude reviewer found the same
+  defects from the attached material. On a lab diff carrying a
+  `.claude/settings.json` hook, a committed `settings.local.json` with a hook
+  and an `apiKeyHelper`, a project MCP server and a `.codex/hooks.json` hook,
+  both reviewers ran without any of them executing (marker files absent).
+  With the machine-line contract, four live runs (codex and claude, code and
+  security) ended with the two lines exactly and parsed.
+- `scripts/codex-security-mock.sh`: 20/20 — SARIF 2.1.0, scan exit 1 recorded
+  and restored by the gate, missing / garbled artifact → 2, no key → 2 before
+  any install, pinned CLI version installed, npm saw no key and could not
+  read PID 1's environment; shell variant: Python < 3.10 → 2 before
+  installing, npm without the key, mock scan → exit 1, the private work
+  directory removed.
+- `codex execpolicy check` on `git.rules`: commit allow, plain push prompt,
+  `push --force …` forbidden, `--force-with-lease=<ref>` / `-fu` / a flag
+  after the refspec prompt (never allow); a rule whose example does not match
+  fails to load. A user `.rules` allow ran a command outside the reviewer's
+  read-only sandbox under `--ignore-user-config` alone, not with
+  `--ignore-rules`. `reviewer.toml` loads without a warning; the same role
+  without `developer_instructions` is ignored with "malformed agent role
+  definition".
+
+### Review record
+Built by Claude, reviewed by Codex through `xreview.sh` itself, plus the
+background security review of each commit. Round 1 (`No`): seven findings
+F1–F7 — a writing git command in the Claude allowlist, the API key visible
+to installs, force forms past `git.rules`, a lenient verdict parser, scrub
+by name, an unrequested `glab` grant, execpolicy checks skipped in CI. The
+security review added guessable `/tmp` paths, repository settings and
+`.rules` reaching the reviewers, and a parser that counted text a reader
+does not see. Round 2 (`With fixes`): MCP tools left to the Claude reviewer,
+a one-character field boundary, stale release notes. Round 3 (`No`): a
+second parser differential and a regex mawk cannot compile — two failures of
+one kind in a row, so the strategy changed: the verdict became a separate
+channel instead of a better Markdown parser. Rounds 4–7 (`With fixes`):
+counts wrapping past 2^63, a body that could render a second verdict (first
+escaped, then — the same lesson — made one literal block), an invalid
+`REVIEWED` value and a codex model line reaching the rendered header, and
+the regression controls for them. Round 8: `Ready to merge`, no findings.
+One commit per finding (`fix(review): …`); the record is in the design
+spec, §6.
+
+### Supply-chain self-check
+`git diff v1.11.0 -- skills templates` plus the new files, grepped for
+network, credentials, `rm -rf`, `eval`, base64:
+- `CODEX_SECURITY_API_KEY` (both Codex Security includes): read from the
+  protected CI variable into a shell variable and unset as the first command
+  of the job, before any child process; handed back only to the scanner, as
+  `OPENAI_API_KEY`. Residue: on a shell runner every process of the job runs
+  as the runner user and could read the job's initial environment from
+  `/proc` (the include says so; docker runs npm as another user).
+- Network the grep does not name: the includes run `apt-get install git
+  python3 ca-certificates` (docker variant) and `npm install
+  @openai/codex-security@0.1.31 --ignore-scripts` (top-level pin; the
+  package pins its own dependencies exactly, there is no lockfile), in a
+  digest-pinned image. `xreview.sh` starts the other harness's CLI, which
+  sends the brief — spec text and commit subjects — and whatever files the
+  reviewer reads to that vendor's API: the same exposure as running that CLI
+  in the repository by hand.
+- `rm -rf`: `xreview.sh` removes its own `mktemp -d` directory on exit; both
+  includes remove their own `mktemp -d` directories in an EXIT trap.
+- `.github/workflows/check.yml` (this repository's CI, not shipped) installs
+  `@openai/codex@0.162.1` with `--ignore-scripts` for the execpolicy checks;
+  no credentials.
+- `fetch` / `https`: only prose (`git fetch` before a review, the selftest's
+  pinned-scanner fetch); no `eval`, no base64.
+
 ## [1.11.0] — 2026-08-22
 
 `task` — routing for the `prediction-protocol` plugin (conditional; the flow
@@ -688,6 +906,7 @@ Donor audit of the `hybrid-plan` / `hybrid-review` skill set —
   tool-agnostic migration-guard and protected-branch rules into any repo —
   GitLab and GitHub CI, pre-commit hooks, failing closed.
 
+[1.12.0]: https://github.com/umar-s/task-flow/compare/v1.11.0...v1.12.0
 [1.11.0]: https://github.com/umar-s/task-flow/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/umar-s/task-flow/compare/v1.9.1...v1.10.0
 [1.9.1]: https://github.com/umar-s/task-flow/compare/v1.9.0...v1.9.1

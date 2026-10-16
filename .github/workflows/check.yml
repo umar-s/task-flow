@@ -30,6 +30,10 @@ jobs:
         run: bash scripts/lint.sh
       - name: release state
         run: bash scripts/release-check.sh
+      - name: Codex CLI for the execpolicy checks (pinned, no install scripts, no credentials)
+        run: |
+          npm install --prefix "$RUNNER_TEMP/codex" --ignore-scripts --no-audit --no-fund @openai/codex@0.162.1
+          echo "$RUNNER_TEMP/codex/node_modules/.bin" >> "$GITHUB_PATH"
       - name: payload negative controls (tests/run.sh — every suite under tests/)
         run: bash tests/run.sh
       - name: unicode-guard over this repo's own change (dogfood)

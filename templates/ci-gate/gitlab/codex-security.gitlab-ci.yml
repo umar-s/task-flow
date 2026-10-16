@@ -1,0 +1,148 @@
+# codex-security — OPTIONAL second security pass on merge requests (GitLab,
+# docker / kubernetes executor). Shell executor → codex-security.shell.gitlab-ci.yml.
+#
+# This is an LLM scanner (OpenAI Codex Security), NOT part of the deterministic
+# gate: it never replaces secret-scan / migration-guard / unicode-guard, and the
+# `task` skill's phase 8 does not count it as "the gate". It is another model
+# walking the trust boundaries of the MR diff after the task's own 6b review.
+#
+# Based on the official scan-only example (learn.chatgpt.com → Codex Security →
+# CLI → CI → GitLab), changed where the example does not hold:
+#   * the image is pinned by digest — a tag is re-pointable;
+#   * git and python3 are installed — the slim node image ships neither
+#     (checked 2026-10-16), and `git merge-base` and the export need both;
+#   * --fail-on-severity (default high) — without a threshold the scanner never
+#     exits 1, and the gate job would be green on any finding;
+#   * --effort low (the recommended MR-diff effort), optional --max-cost;
+#   * both jobs live in the built-in `.post` stage, ordered by `needs:` — an
+#     included file must not depend on the project's own `stages:` list;
+#   * the gate job rejects an unreadable exit code instead of `exit ""`;
+#   * nothing is written into the checkout before the scan — a committed-diff
+#     scan refuses a dirty tree and exits 2 ("require a clean repository checkout");
+#   * the key leaves the environment before the first child process; apt-get
+#     and npm run with a cleared environment, npm as the unprivileged `node`
+#     user; temporary paths come from mktemp, never from the guessable job id.
+#
+# Setup (the repository owner, once):
+#   include: [ { local: 'ci/codex-security.gitlab-ci.yml' } ]
+#   CI/CD variable CODEX_SECURITY_API_KEY — a Platform API key with Codex
+#     Security access (separate billing): masked + hidden + protected,
+#     environment scope `codex-security/openai`.
+#   Jobs run only for MRs between two PROTECTED branches of THIS project —
+#     protected variables never reach a fork.
+#   SARIF reaches the MR security widget on GitLab Ultimate 19.2+; on other tiers
+#     the artifact is kept and codex-security-gate still decides.
+#   The runner must let the scanner's sandbox (bwrap) create a user namespace;
+#     on Ubuntu 23.10+ hosts with kernel.apparmor_restrict_unprivileged_userns=1
+#     that needs an AppArmor profile for the bundled `codex` binary.
+# Knobs (CI/CD variables):
+#   CODEX_SECURITY_FAIL_ON     critical | high | medium | low   (default high)
+#   CODEX_SECURITY_EFFORT      minimal … max                   (default low)
+#   CODEX_SECURITY_MAX_COST    estimated USD per scan — a guardrail, not a billing cap
+#   CODEX_SECURITY_EXTRA_ARGS  extra scan flags, space-separated (e.g. --path src)
+# Exit codes, restored by codex-security-gate:
+#   0 complete and clean · 1 findings at or above the threshold · 2 incomplete coverage or an error
+
+.codex-security-merge-request:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_ID && $CI_MERGE_REQUEST_SOURCE_BRANCH_PROTECTED == "true" && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"'
+
+codex-security:
+  extends: .codex-security-merge-request
+  stage: .post
+  image: node:26-bookworm-slim@sha256:298992629d69bbd5b2b03ad57094d8e4fcb3a8eeb7c4e25d29de656519568913
+  environment:
+    name: codex-security/openai
+    action: access
+  variables:
+    GIT_DEPTH: "0"                    # the merge base must be reachable
+    CODEX_SECURITY_VERSION: "0.1.31"  # the CLI whose flags this job was checked against
+  before_script:
+    - |
+      set -eu
+      # The key leaves the environment before the first child process; only the
+      # scanner gets it back, as OPENAI_API_KEY. apt-get and npm run with a
+      # cleared environment, npm also as the unprivileged `node` user, so they
+      # neither inherit the key nor can read the job's initial environment
+      # (/proc/1/environ belongs to root). apt-get stays root: Debian-signed
+      # packages, a residue this job accepts.
+      codex_security_api_key="${CODEX_SECURITY_API_KEY:-}"
+      unset CODEX_SECURITY_API_KEY
+      if [ -z "$codex_security_api_key" ]; then
+        echo "codex-security: CODEX_SECURITY_API_KEY is not available to this MR (protected, environment codex-security/openai) — failing closed" >&2
+        exit 2
+      fi
+      WORK="$(mktemp -d /tmp/codex-security.XXXXXXXX)"        # private (0700), unpredictable
+      CLI_DIR="$(mktemp -d /tmp/codex-security-cli.XXXXXXXX)"
+      trap 'rm -rf -- "$WORK" "$CLI_DIR"' EXIT
+      chown node:node "$CLI_DIR"
+      env -i PATH="$PATH" DEBIAN_FRONTEND=noninteractive \
+        sh -c 'apt-get update -qq && apt-get install -y -qq --no-install-recommends git python3 ca-certificates >/dev/null'
+      env -i PATH="$PATH" HOME="$CLI_DIR" setpriv --reuid=node --regid=node --init-groups \
+        npm install --prefix "$CLI_DIR" --ignore-scripts --no-audit --no-fund "@openai/codex-security@${CODEX_SECURITY_VERSION}"
+  script:
+    - |
+      set -eu
+      CODEX_SECURITY_BIN="$CLI_DIR/node_modules/.bin/codex-security"
+      RESULTS_DIR="$WORK/results"
+      SCAN_JSON="$WORK/scan.json"            # outside the checkout: the scan refuses a dirty tree
+      ARTIFACT_DIR="codex-security-artifacts"
+      BASE_REVISION="$(git merge-base "$CI_MERGE_REQUEST_DIFF_BASE_SHA" "$CI_COMMIT_SHA")"
+      install -d -m 700 "$RESULTS_DIR" "$ARTIFACT_DIR/results"   # empty dirs are invisible to git
+
+      set -- scan . --diff "$BASE_REVISION" --head "$CI_COMMIT_SHA" \
+        --auth api-key --output-dir "$RESULTS_DIR" --json --headless \
+        --fail-on-severity "${CODEX_SECURITY_FAIL_ON:-high}" \
+        --effort "${CODEX_SECURITY_EFFORT:-low}"
+      if [ -n "${CODEX_SECURITY_MAX_COST:-}" ]; then set -- "$@" --max-cost "$CODEX_SECURITY_MAX_COST"; fi
+      set -f   # extra flags are split on spaces, never globbed
+      # shellcheck disable=SC2086
+      if [ -n "${CODEX_SECURITY_EXTRA_ARGS:-}" ]; then set -- "$@" $CODEX_SECURITY_EXTRA_ARGS; fi
+      set +f
+
+      set +e
+      OPENAI_API_KEY="$codex_security_api_key" "$CODEX_SECURITY_BIN" "$@" > "$SCAN_JSON"
+      scan_exit="$?"
+      set -e
+      unset codex_security_api_key
+
+      case "$scan_exit" in
+        0|1|2) ;;
+        *) exit "$scan_exit" ;;
+      esac
+
+      "$CODEX_SECURITY_BIN" export "$RESULTS_DIR" \
+        --export-format sarif \
+        --source-root "$CI_PROJECT_DIR" \
+        --output "$ARTIFACT_DIR/results.sarif"
+      test -s "$ARTIFACT_DIR/results.sarif"
+      cp -R "$RESULTS_DIR"/. "$ARTIFACT_DIR/results/"
+      cp "$SCAN_JSON" "$ARTIFACT_DIR/scan.json"
+      printf '%s\n' "$scan_exit" > "$ARTIFACT_DIR/scan-exit-code.txt"
+      echo "codex-security: scan exit $scan_exit (0 clean · 1 findings at or above ${CODEX_SECURITY_FAIL_ON:-high} · 2 incomplete) — codex-security-gate restores it"
+      exit 0
+  artifacts:
+    when: always
+    access: maintainer
+    expire_in: 7 days
+    paths:
+      - codex-security-artifacts/
+    reports:
+      sarif: codex-security-artifacts/results.sarif
+
+codex-security-gate:
+  extends: .codex-security-merge-request
+  stage: .post
+  image: node:26-bookworm-slim@sha256:298992629d69bbd5b2b03ad57094d8e4fcb3a8eeb7c4e25d29de656519568913
+  needs:
+    - job: codex-security
+      artifacts: true
+  variables:
+    GIT_STRATEGY: none                # judges the artifact, needs no checkout
+  script:
+    - |
+      code="$(cat codex-security-artifacts/scan-exit-code.txt)" || { echo "codex-security-gate: no exit-code artifact — failing closed" >&2; exit 2; }
+      case "$code" in
+        0|1|2) exit "$code" ;;
+        *) echo "codex-security-gate: unreadable exit code '$code' — failing closed" >&2; exit 2 ;;
+      esac

@@ -19,8 +19,8 @@ A single pass that takes one large unit of work from a rough description (or
 an existing epic, or a spec doc) to a reviewed, dependency-graphed task
 breakdown the user can push into a tracker. The **discipline below is
 fixed**; the **concrete commands are project-specific** — read the project's
-`CLAUDE.md` first and map each "resolve from CLAUDE.md" step to the real
-binding there.
+instruction file (*Harness*, below) first and map each "resolve from the
+instruction file" step to the real binding there.
 
 **Argument:** free description | existing tracker id `<TASK-ID>` | path to a
 spec/design doc. Auto-detect which of the three was given — a bare path that
@@ -34,6 +34,19 @@ need to disambiguate.
 each done as you go. Do the phases in order — do not skip Phase 5 (QA) or
 Phase 4 (graph/waves) because the breakdown "looks obviously right"; that is
 exactly when a missing dependency or an uncovered requirement hides.
+
+## Harness — Claude Code or Codex
+- **Invoke:** `/task-flow:decompose <input>` (Claude Code) · `$task-flow:decompose <input>` (Codex).
+- **Instruction file:** the project's `AGENTS.md` (Codex reads only it) or
+  `CLAUDE.md` with what its `@AGENTS.md` imports — the bindings below.
+- **`$ROOT`:** the block below; on Codex the fallback (this SKILL.md's own path)
+  is the path — `CLAUDE_PLUGIN_ROOT` is never set in the model's shell there.
+- **Phase 5 QA subagent:** Claude Code — the Agent tool; Codex — a spawned
+  subagent whose only input is the brief phase 5 names. The other model
+  (headless, read-only) is as independent and welcome; the context that wrote
+  the breakdown grading it never is.
+- **Tracker tools (phase 7):** ToolSearch in Claude Code; in Codex the MCP
+  tools are already in the session's tool list — read the names from there.
 
 ## Reference loading (resolve once, read lazily per phase)
 
@@ -66,7 +79,7 @@ before Phase 0 starts. Phase 0 only needs `references/edge-probe.md`;
 Phase 2 doesn't need `references/qa-checklist.md` yet; and so on. This keeps
 context spent on the reference that's actually in play.
 
-## Project bindings — resolve these from CLAUDE.md before starting
+## Project bindings — resolve these from the instruction file before starting
 
 - **Tracker** (optional) — how to create an issue/epic, link `parent` and
   `depends` relations, and which fields map to `story_points`/estimate; for
@@ -81,7 +94,7 @@ context spent on the reference that's actually in play.
   places instead of guessing.
 
 ## 0. Ingest & scope
-Read the project context first: `CLAUDE.md`, project memory, and whichever
+Read the project context first: the instruction file, project memory, and whichever
 existing docs/specs are relevant to the input. If the input is an existing
 tracker epic or a spec path, read it in full before anything else.
 
@@ -182,8 +195,8 @@ drop a wave. `depends_on` legitimately carries both kinds of edge: "needs its
 output" and "cannot safely run beside it."
 
 ## 5. QA
-Dispatch an **independent** subagent, via the Agent tool, in a **fresh
-context** — it must not have seen Phases 0-4 run, so it has no attachment to
+Dispatch an **independent** subagent (the harness's fresh subagent —
+*Harness*), in a **fresh context** — it must not have seen Phases 0-4 run, so it has no attachment to
 the breakdown it's grading. Load `references/qa-checklist.md` now and hand
 its full text as that subagent's brief, along with the `REQ-NN` list, the
 out-of-scope list from Phase 1, the input itself (epic text or spec path), the
@@ -254,8 +267,9 @@ breakdowns: skip the offer silently.
 
 ## 7. Tracker sync (optional)
 Only after Phase 6's explicit approval. Load `references/tracker-sync.md`
-and follow it exactly: resolve the tracker binding from `CLAUDE.md`,
-discover the concrete MCP tools via ToolSearch (never hardcode a tool name) —
+and follow it exactly: resolve the tracker binding from the instruction file,
+discover the concrete MCP tools at run time (ToolSearch, or Codex's tool list —
+never hardcode a tool name) —
 or, when there is no MCP but the binding names a REST endpoint and the
 **name** of the token variable, use that as the transport — and if no tracker
 is configured or reachable in this session, stop gracefully at the draft —
@@ -286,7 +300,7 @@ optionally, a well-formed set of tracker issues) exists; running any task is
 not this skill's job.
 
 ## Fixed discipline (non-negotiable)
-- Where this flow and the project's `CLAUDE.md` genuinely conflict, the project
+- Where this flow and the project's instruction file genuinely conflict, the project
   wins — apply its rule and say in one line which step you deviated from and
   why. A silently skipped phase is the failure; a declared deviation is a
   decision.

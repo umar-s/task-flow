@@ -15,8 +15,9 @@ description: >-
 
 A single, supervised pass that takes one tracked task from ticket to closed,
 with quality gates the user relies on. The **discipline below is fixed**; the
-**concrete commands are project-specific** — read the project's `CLAUDE.md`
-first and map each "run the project's …" step to the real command there.
+**concrete commands are project-specific** — read the project's instruction
+file (*Harness*, below) first and map each "run the project's …" step to the
+real command there.
 
 **Argument:** the task id (e.g. `DEV-475`). If none was given, ask which task.
 
@@ -35,7 +36,23 @@ DoD: a hand-over gap is exactly when the "важное уточнение" arriv
 each done as you go. Do the phases in order — do not skip a premortem because
 the task "looks simple"; that is exactly when gaps hide.
 
-## Project bindings — resolve these from CLAUDE.md before starting
+## Harness — Claude Code or Codex
+Same flow in both; only these names differ.
+- **Invoke:** `/task-flow:task <TASK-ID>` (Claude Code) · `$task-flow:task <TASK-ID>` (Codex).
+- **Instruction file:** the project's `AGENTS.md` (Codex reads only it — the
+  recommended single source) or `CLAUDE.md` with what its `@AGENTS.md` imports.
+  Every binding below comes from there; `templates/agents/` has skeletons.
+- **`$ROOT`:** the block below. Codex never sets `CLAUDE_PLUGIN_ROOT` in the
+  model's shell, so there the fallback — this SKILL.md's own path — is the path.
+- **Fresh subagent:** Claude Code — the Agent tool; Codex — a spawned subagent
+  whose only input is the filled brief (the project's `.codex/agents/reviewer.toml`).
+- **Independent reviewer:** the other model first (`xreview.sh`, phases 6/6b);
+  a same-model subagent is the declared fallback.
+- **Prediction gate on Codex:** a one-way command without a receipt is denied
+  (Codex cannot ask) — open the receipt, repeat the command. `PREDICT` is not
+  exported there: take it from the prediction-protocol session-start context.
+
+## Project bindings — resolve these from the instruction file before starting
 - **Tracker** — how to read a ticket + its comments, post a comment, set state
   Done, log Spent time, assign, and link related tickets (API + token).
 - **VCS/CI** — integration branch to base work on (e.g. `develop`), how to open
@@ -44,7 +61,7 @@ the task "looks simple"; that is exactly when gaps hide.
   the dev/staging environment; whether a browser-verify surface exists and its URL.
 - **Deploy / merge policy** — merge method; whether merging needs someone
   else's approval (`self` | `mr-approval-required`) — commit statistics are not
-  authorisation, so if `CLAUDE.md` is silent, **ask once** and offer to record
+  authorisation, so if the instruction file is silent, **ask once** and offer to record
   the answer there; the command that reads the authoritative MR state
   (`gh pr view --json state,mergedAt,mergeCommit` / `glab mr view --output
   json`); how a deploy is triggered (CI on merge, or a command) and how its
@@ -59,7 +76,8 @@ the task "looks simple"; that is exactly when gaps hide.
 ## Reference loading (resolve once, read lazily per phase)
 
 Phases 1, 3, 5, 6, 6b and 7 each load exactly one reference file under this
-skill's `references/` dir; `land.md` covers phases 7 **and** 8. A session that
+skill's `references/` dir (6 and 6b add `cross-review.md` when the other model
+reviews); `land.md` covers phases 7 **and** 8. A session that
 **starts** at a later phase (a resume, per `checkpoint.md`) loads what those
 phases need before doing anything: entering at 7 or 8 means `land.md` and
 `implementation-integrity.md` first. Resolve the base path **once**, at the start, with a bash
@@ -78,7 +96,8 @@ substituted in before the call — the Read tool does not expand `${…}`, so a
 literal pass reads nothing.
 Load lazily, one phase at a time: phase 1 `design-spec-template.md`, phase 3
 `blast-radius.md`, phase 5 `implementation-integrity.md`, phase 6
-`code-review-prompt.md`, 6b `security-review-prompt.md`, phase 7 `land.md`
+`code-review-prompt.md`, 6b `security-review-prompt.md` (plus `cross-review.md`
+in either when the other model reviews), phase 7 `land.md`
 (it carries phase 8 as well, and a session resuming at 8 loads it there);
 `checkpoint.md` only on a session hand-over.
 
@@ -210,8 +229,8 @@ Branch off the integration branch (`fix/…` or `feature/…`, one branch per ta
 **Then, inside that checkout, put the session under the prediction protocol**
 (the `prediction-protocol` plugin; conditional, never assumed):
 `"${PREDICT:?}" on <TASK-ID> --also '<each one-way wrapper from the bindings>'`
-prints `predict-gate: active v… (selftest: …)`; an unset `PREDICT` means the
-plugin is not installed — write `predict-gate: absent (PREDICT unset)` and
+prints `predict-gate: active v… (selftest: …)`; `PREDICT` still unset after the
+*Harness* step means the plugin is not installed — write `predict-gate: absent (PREDICT unset)` and
 continue, the flow does not depend on it. The journal root is fixed where
 `on` ran, so run it in the branch's own checkout, never in a parent tree.
 Under the protocol every state-changing step of the implementation (a
@@ -226,12 +245,19 @@ static-analysis + lint** to green. Keep spec-adjacent docs (API reference,
 OpenAPI) in the same change.
 
 ## 6. Code-review (adversarial)
-Run an independent, adversarial review of the diff — the `code-review` Workflow
-at high effort, or a **fresh reviewer subagent** dispatched with
-`code-review-prompt.md`. Either way, **load the template**
-(`Read "$ROOT/skills/task/references/code-review-prompt.md"`): its *After the
+Run an independent, adversarial review of the diff. **First choice: the other
+model** — when the other harness's CLI is installed, `bash
+"$ROOT/templates/xreview/xreview.sh" --by <the harness that did not write it>
+--task <TASK-ID> --base origin/<integration-branch>` runs it headless,
+read-only and isolated from this session, and exits `0` clean · `1` blocking ·
+`2` no review happened (never clean); load `cross-review.md`
+(`Read "$ROOT/skills/task/references/cross-review.md"`) for its flags, the
+report under `docs/reviews/` and what to do when two reviews disagree.
+Otherwise — the `code-review` Workflow at high effort, or a **fresh reviewer
+subagent** dispatched with `code-review-prompt.md`. Either way, **load the
+template** (`Read "$ROOT/skills/task/references/code-review-prompt.md"`): its *After the
 review comes back* section is the orchestrator's contract — severity → action,
-the split that terminates the loop, one commit per fix, `Reviewed: <sha>` —
+the split that terminates the loop, one commit per fix, `REVIEWED <sha>` —
 and it applies to whoever produced the findings.
 **Guard the input first:** `git fetch --no-tags origin <integration-branch>`,
 then a non-empty `git diff --stat <base>..HEAD` — a review of an empty or stale
@@ -245,13 +271,14 @@ framing of what is "fine" (why, and the slot rules: the template's dispatch
 section). The review
 is read-only on the checkout. What to do with what comes back —
 severity → action, the behavioural/description split that makes the loop
-terminate, one commit per fix, and `Reviewed: <sha>` — is in the same template,
+terminate, one commit per fix, and `REVIEWED <sha>` — is in the same template,
 under *After the review comes back*; it is a contract, not advice.
 
 ## 6b. Security-review (conditional)
-Run an **independent** security pass on the diff (`/security-review`, or a fresh
-subagent dispatched with `security-review-prompt.md` — never the agent that
-implemented it, same clean-context rule as phase 6). Load the template either
+Run an **independent** security pass on the diff — the other model first
+(`xreview.sh … --kind security`, per `cross-review.md`), else `/security-review`
+or a fresh subagent dispatched with `security-review-prompt.md` — never the agent that
+implemented it, same clean-context rule as phase 6. Load the template either
 way (`Read "$ROOT/skills/task/references/security-review-prompt.md"`): the
 checklist, the severity mapping and the rule that this pass does **not** get
 the spec's *Premortem edges* live there. A
@@ -353,7 +380,7 @@ the `landing:` field, and reverting through this same flow.
   ticket and note it.
 
 ## Fixed discipline (non-negotiable)
-- Where this flow and the project's `CLAUDE.md` genuinely conflict, the project
+- Where this flow and the project's instruction file genuinely conflict, the project
   wins — apply its rule and say in one line which step you deviated from and
   why. A silently skipped step is the failure; a declared one is a decision.
   What a project may rebind is **commands, paths, branch names, environments

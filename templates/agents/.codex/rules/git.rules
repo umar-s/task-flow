@@ -1,0 +1,43 @@
+# .codex/rules/git.rules — Codex execpolicy for a builder in `workspace-write`.
+#
+# Inside that sandbox `.git/` is read-only, so `git commit` has to run outside
+# it; under approval_policy=never (every `codex exec`) a command that needs an
+# approval simply fails. These rules decide which git commands may leave the
+# sandbox and how:
+#
+#   git commit            allow   — local, reversible
+#   git push …            prompt  — it leaves the machine: in the TUI a person
+#                                   approves it; under `codex exec` it fails, and
+#                                   pushing is the runner's step, not the model's
+#   git push --force …    forbidden, for the forms a prefix rule can see
+#
+# A prefix rule matches exact tokens in exact positions, so it cannot see
+# `--force-with-lease=<ref>`, combined short flags (`-fu`) or a flag after the
+# refspec (`git push origin main --force`). Those fall to the push rule — a
+# prompt, never an automatic allow — and to the prediction-protocol gate
+# (PreToolUse runs before execpolicy). Nothing here is a force-push guarantee;
+# the server-side protected branch is.
+#
+#   codex execpolicy check --pretty --rules .codex/rules/git.rules -- git push --force origin main
+
+prefix_rule(
+    pattern = ["git", "commit"],
+    decision = "allow",
+    justification = "the builder commits; .git is read-only inside the sandbox",
+    match = [["git", "commit", "-m", "feat: x"]],
+)
+
+prefix_rule(
+    pattern = ["git", "push"],
+    decision = "prompt",
+    justification = "a push leaves the machine: a person approves it, or the runner pushes",
+    match = [["git", "push", "origin", "feature/x"]],
+)
+
+prefix_rule(
+    pattern = ["git", "push", ["--force", "-f", "--force-with-lease", "--force-if-includes", "--mirror", "--delete", "-d", "--prune"]],
+    decision = "forbidden",
+    justification = "a history-rewriting or ref-deleting push never comes from the builder",
+    match = [["git", "push", "--force", "origin", "main"], ["git", "push", "-f"], ["git", "push", "--delete", "origin", "x"]],
+    not_match = [["git", "push", "origin", "main"]],
+)

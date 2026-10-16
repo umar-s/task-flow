@@ -1,7 +1,8 @@
 # Security-review dispatch — prompt template (phase 6b)
 
 Dispatch template for the phase-6b security pass when it runs as a dedicated
-subagent. Dispatch rules are the same as in
+subagent, or as the other model through `templates/xreview/xreview.sh --kind
+security` ([cross-review.md](cross-review.md)). Dispatch rules are the same as in
 [code-review-prompt.md](code-review-prompt.md): fresh subagent, clean context,
 factual `[WHAT_CHANGED]` with zero justifications, slots filled from flow
 artifacts, same `[BASE_SHA]`/`[HEAD_SHA]`. Run it in parallel with (or after)
@@ -42,8 +43,9 @@ git diff [BASE_SHA]..[HEAD_SHA]
 Review the diff plus enough surrounding code to trace how untrusted data flows
 through the changed paths — including the helpers the new code calls.
 Read-only: do not mutate the working tree, index, HEAD, or branch state;
-another revision → temporary worktree (`git worktree add /tmp/review-[SHA]
-[SHA]`), never checkout. Do not dispatch subagents — this lens is one
+another revision → `git show <rev>:<path>`, or a temporary worktree
+(`git worktree add /tmp/review-[SHA] [SHA]`) where your sandbox allows it,
+never checkout. Do not dispatch subagents — this lens is one
 independent threat model, not a relay. Do not open `.env` files or other secret
 stores unless this dispatch authorized it: reporting that a path leaks a secret
 never requires reading the secret.
@@ -158,4 +160,13 @@ Critical: N | High: N | Medium: N | Low: N
 которые не удалось протрассировать, эксплуатируемость, которую не удалось ни
 подтвердить, ни опровергнуть, контроли, существование которых ты принял на
 веру. Молчание здесь читается как «проверено всё» — а это почти никогда не так.
+
+### Assessment
+Последние две строки ответа — машинный вердикт: обычный текст без Markdown
+(без `**`, без backticks, без отступа, не в блоке кода), дословно
+по-английски, в этом порядке и ничего после них; числа — те же, что в Summary.
+Раннер читает только эти две строки и сам выносит вердикт в шапку отчёта:
+
+REVIEWED [HEAD_SHA]
+SUMMARY critical=N high=N medium=N low=N
 ````

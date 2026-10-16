@@ -64,7 +64,7 @@ markup: "markdown" | "jira-wiki" | "adf-via-markdown" | "plain"   # declared, de
   §10 returns next to the id; an adapter without it falls back to the base
   URL the binding names plus the id, and says that it did.
 - **`markup` is declared, not guessed.** Resolution order: a `markup:` line
-  in the `CLAUDE.md` tracker binding; else the tracker family the binding
+  in the instruction file's tracker binding; else the tracker family the binding
   names (Jira Server/DC → `jira-wiki` — it shows Markdown as literal
   asterisks; Jira Cloud → `adf-via-markdown` through an MCP tool that
   converts, `jira-wiki` over REST API v2 — v3 takes only ADF, which this
@@ -101,7 +101,7 @@ running, just with writes disabled.
    §8-9). Skipping straight to a tracker push "to save a round-trip" turns
    an unreviewed decomposition into permanent tracker state.
 2. **A known target project / parent-epic id.** Either the user names it
-   directly, or Phase 7 resolves a candidate from a `CLAUDE.md` tracker
+   directly, or Phase 7 resolves a candidate from the instruction file's tracker
    binding (§3) and then confirms it with the user before writing anything
    — never silently default to "whichever project the MCP happens to
    point at." Writing an epic's tasks into the wrong tracker project is as
@@ -109,15 +109,18 @@ running, just with writes disabled.
 
 ## 3. Runtime tool discovery
 
-Same discipline as `task`'s "Project bindings — resolve these from
-CLAUDE.md" section: read the concrete tracker binding from the project's
-own `CLAUDE.md` first, never hardcode a tracker's tool names or API shape
-into this skill.
+Same discipline as `task`'s "Project bindings — resolve these from the
+instruction file" section: read the concrete tracker binding from the
+project's own instruction file (`AGENTS.md`, or `CLAUDE.md` with what it
+imports) first, never hardcode a tracker's tool names or API shape into this
+skill. **Harness:** Claude Code discovers MCP tools with **ToolSearch**; in
+Codex they are already in the session's tool list (`mcp__<server>__<tool>`)
+— "ToolSearch" below means whichever of the two the session has.
 
-1. Read the project's `CLAUDE.md` for a tracker binding (mirrors `task`:
+1. Read the project's instruction file for a tracker binding (mirrors `task`:
    how to create/read/link issues, the project key, and any
    credential/token the binding names).
-2. If `CLAUDE.md` names a tracker, use **ToolSearch** to locate the
+2. If the instruction file names a tracker, use **ToolSearch** to locate the
    concrete MCP tools for it this session — e.g. `ToolSearch(query:
    "youtrack create issue")`, `ToolSearch(query: "youtrack link issue")`,
    `ToolSearch(query: "youtrack update issue")`, `ToolSearch(query:
@@ -126,13 +129,13 @@ into this skill.
    names vary per MCP
    server build and version, so search for the capability rather than
    assume a literal tool name.
-3. If `CLAUDE.md` names a tracker binding but ToolSearch finds no matching
+3. If the instruction file names a tracker binding but ToolSearch finds no matching
    tool in *this* session (the MCP is attached to some sessions and not
    this one — e.g. a project session vs. a general one) — and the binding
    names no REST endpoint (step 4) — tell the user the tracker isn't
    reachable here and stop at the draft. Do not
    fabricate a call against a tool that doesn't exist in this session.
-4. **No MCP, but the binding names a REST endpoint?** If `CLAUDE.md` gives the
+4. **No MCP, but the binding names a REST endpoint?** If the instruction file gives the
    API base URL and the **name** of the environment variable holding the token
    (never the value: it is referenced only as `"$NAME"` inside the call — an
    `Authorization` header, not a query string — never echoed, never expanded
@@ -149,13 +152,13 @@ into this skill.
    one issue per call, so a failure still maps to one task). The binding
    declares `markup:` next to the endpoint (§1 gives the fallback order). A
    binding that names neither an MCP nor an endpoint goes to §4.
-5. If `CLAUDE.md` defines **no** tracker binding at all, skip discovery
+5. If the instruction file defines **no** tracker binding at all, skip discovery
    entirely and go straight to §4.
 
 ## 4. No-tracker graceful stop
 
 If discovery found neither a tracker MCP nor a REST endpoint — whether
-`CLAUDE.md` has no tracker binding at all or a binding that names no
+the instruction file has no tracker binding at all or a binding that names no
 transport — that is not a failure condition — it is the expected shape of a
 fresh install, or of any project session that simply has no tracker MCP
 attached. Phase 7 stops here and says so plainly, once, in one sentence:
