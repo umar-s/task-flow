@@ -106,7 +106,7 @@ deterministic gate", the blocking force of Critical/Required — is unchanged.
   `--delete` right after `push` are forbidden; a prefix rule cannot see
   `--force-with-lease=<ref>`, `-fu` or a flag after the refspec, which is why
   no push is auto-allowed — the rule file says so).
-- Tests: `tests/xreview.sh` (136 controls with stub CLIs, run once per awk —
+- Tests: `tests/xreview.sh` (162 controls with stub CLIs, run once per awk —
   gawk, mawk, busybox: verdict → exit, the machine lines and every malformed,
   decorated, fenced, commented or misplaced form of them, CRLF, sha mismatch,
   empty range, missing spec / DoD, failing or silent CLI, literal slots,
@@ -149,7 +149,7 @@ deterministic gate", the blocking force of Critical/Required — is unchanged.
   Codex install, a harness table, cross-review and Codex Security paragraphs.
 
 ### Acceptance record
-- `scripts/lint.sh`, `scripts/release-check.sh`, `tests/run.sh` (incl. 136
+- `scripts/lint.sh`, `scripts/release-check.sh`, `tests/run.sh` (incl. 162
   xreview controls under each of gawk, mawk and busybox awk, 20
   agents-template controls); three mutants of `xreview.sh` (unreadable
   verdict → 0, no empty-range check, no isolation) each turn the suite red,
@@ -194,8 +194,13 @@ does not see. Round 2 (`With fixes`): MCP tools left to the Claude reviewer,
 a one-character field boundary, stale release notes. Round 3 (`No`): a
 second parser differential and a regex mawk cannot compile — two failures of
 one kind in a row, so the strategy changed: the verdict became a separate
-channel instead of a better Markdown parser. One commit per finding
-(`fix(review): …`); the record is in the design spec, §6.
+channel instead of a better Markdown parser. Rounds 4–7 (`With fixes`):
+counts wrapping past 2^63, a body that could render a second verdict (first
+escaped, then — the same lesson — made one literal block), an invalid
+`REVIEWED` value and a codex model line reaching the rendered header, and
+the regression controls for them. Round 8: `Ready to merge`, no findings.
+One commit per finding (`fix(review): …`); the record is in the design
+spec, §6.
 
 ### Supply-chain self-check
 `git diff v1.11.0 -- skills templates` plus the new files, grepped for
