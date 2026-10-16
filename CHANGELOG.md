@@ -57,11 +57,14 @@ deterministic gate", the blocking force of Critical/Required — is unchanged.
   ids, `PREDICT`, the parent's messaging socket and token) and keeps the
   reviewer's own auth (`CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_*`, …,
   `XREVIEW_KEEP_ENV`); `--effort` is checked against the known levels.
-- **The verdict a reader sees is the verdict parsed.** A field is a line
-  starting with its label in its own section (`### Assessment`; the 6b
-  counts in `### Summary`), outside fences, HTML comments and indented code,
-  its value taken whole; an echoed placeholder, a longer word or sha, or two
-  disagreeing values are exit 2.
+- **The verdict is a separate channel.** The briefs end with two plain
+  lines — `REVIEWED <sha>`, then `VERDICT yes|no|with-fixes` (6b: `SUMMARY
+  critical=N high=N medium=N low=N`) — and xreview reads those last two
+  non-empty lines and nothing else; anything but their exact shape is exit
+  2. It strips them from the body and writes the verdict into the report
+  header, so the reader sees the verdict the runner used. (Two review rounds
+  showed that a verdict inferred from free-form Markdown reads differently to
+  a person and to a parser — quoted, commented, indented, fenced.)
 - `skills/task/references/cross-review.md` — who reviews (the harness that
   did not write the diff), the script's steps and flags, where it can run,
   the delta re-review by the same other model, the docs-only commit rule
@@ -101,8 +104,9 @@ deterministic gate", the blocking force of Critical/Required — is unchanged.
   `--delete` right after `push` are forbidden; a prefix rule cannot see
   `--force-with-lease=<ref>`, `-fu` or a flag after the refspec, which is why
   no push is auto-allowed — the rule file says so).
-- Tests: `tests/xreview.sh` (126 controls with stub CLIs: verdict → exit,
-  strict and rendered-text field parsing, sha mismatch, translated labels,
+- Tests: `tests/xreview.sh` (136 controls with stub CLIs, run once per awk —
+  gawk, mawk, busybox: verdict → exit, the machine lines and every malformed,
+  decorated, fenced, commented or misplaced form of them, CRLF, sha mismatch,
   empty range, missing spec / DoD, failing or silent CLI, literal slots,
   read-only and isolation flags, the attached range material, env scrub by
   family); `tests/agents-templates.sh` (20: execpolicy decisions, no push
@@ -133,10 +137,9 @@ deterministic gate", the blocking force of Critical/Required — is unchanged.
 - `decompose` phase 5 dispatches "the harness's fresh subagent" (was: the
   Agent tool); phase 7 discovers tracker tools with ToolSearch or Codex's
   tool list.
-- Review briefs: the `### Assessment` / `### Summary` headings and their
-  label lines are pinned in English, as plain text (a runner parses them; a
-  translated label reads as no verdict); 6b ends with
-  `**Reviewed:** [HEAD_SHA]`; another revision is read with
+- Review briefs end with the two machine lines (above), in English, as plain
+  text — a translated or decorated line reads as no verdict; the
+  orchestrator's contract says `REVIEWED <sha>`; another revision is read with
   `git show <rev>:<path>` — a read-only sandbox cannot add a worktree; the
   project's conventions are its instruction file.
 - `ci/README.md` documents the Codex Security includes; payload marker 1.12.0.
@@ -144,11 +147,12 @@ deterministic gate", the blocking force of Critical/Required — is unchanged.
   Codex install, a harness table, cross-review and Codex Security paragraphs.
 
 ### Acceptance record
-- `scripts/lint.sh`, `scripts/release-check.sh`, `tests/run.sh` (incl. 126
-  xreview controls, 20 agents-template controls); three mutants of
-  `xreview.sh` (unreadable verdict → 0, no empty-range check, no isolation)
-  each turn the suite red, and every parser control added by a review round
-  was red on the parser before it.
+- `scripts/lint.sh`, `scripts/release-check.sh`, `tests/run.sh` (incl. 136
+  xreview controls under each of gawk, mawk and busybox awk, 20
+  agents-template controls); three mutants of `xreview.sh` (unreadable
+  verdict → 0, no empty-range check, no isolation) each turn the suite red,
+  and every parser control added by a review round was red on the parser
+  before it.
 - Live, on a lab repository with a planted defect (DoD: invalid input raises
   `ValueError`; the code returned a default): `--by codex` (gpt-6.1-sol) and
   `--by claude` (opus) each found the swallowed error, the off-by-one at both
@@ -159,8 +163,8 @@ deterministic gate", the blocking force of Critical/Required — is unchanged.
   `.claude/settings.json` hook, a committed `settings.local.json` with a hook
   and an `apiKeyHelper`, a project MCP server and a `.codex/hooks.json` hook,
   both reviewers ran without any of them executing (marker files absent).
-  Every real report of the session replays through the final parser to its
-  recorded verdict.
+  With the machine-line contract, four live runs (codex and claude, code and
+  security) ended with the two lines exactly and parsed.
 - `scripts/codex-security-mock.sh`: 20/20 — SARIF 2.1.0, scan exit 1 recorded
   and restored by the gate, missing / garbled artifact → 2, no key → 2 before
   any install, pinned CLI version installed, npm saw no key and could not
@@ -185,8 +189,11 @@ by name, an unrequested `glab` grant, execpolicy checks skipped in CI. The
 security review added guessable `/tmp` paths, repository settings and
 `.rules` reaching the reviewers, and a parser that counted text a reader
 does not see. Round 2 (`With fixes`): MCP tools left to the Claude reviewer,
-a one-character field boundary, stale release notes. One commit per
-finding (`fix(review): …`); the record is in the design spec, §6.
+a one-character field boundary, stale release notes. Round 3 (`No`): a
+second parser differential and a regex mawk cannot compile — two failures of
+one kind in a row, so the strategy changed: the verdict became a separate
+channel instead of a better Markdown parser. One commit per finding
+(`fix(review): …`); the record is in the design spec, §6.
 
 ### Supply-chain self-check
 `git diff v1.11.0 -- skills templates` plus the new files, grepped for
