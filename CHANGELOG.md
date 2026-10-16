@@ -61,8 +61,10 @@ deterministic gate", the blocking force of Critical/Required — is unchanged.
   lines — `REVIEWED <sha>`, then `VERDICT yes|no|with-fixes` (6b: `SUMMARY
   critical=N high=N medium=N low=N`) — and xreview reads those last two
   non-empty lines and nothing else; anything but their exact shape is exit
-  2. It strips them from the body and writes the verdict into the report
-  header, so the reader sees the verdict the runner used. (Two review rounds
+  2. It moves them into the report header and writes the reviewer's text
+  below verbatim, in one literal block nothing inside can close — no table,
+  heading or HTML of the body renders, so none can pose as the verdict; the
+  reader sees the verdict the runner used. (Two review rounds
   showed that a verdict inferred from free-form Markdown reads differently to
   a person and to a parser — quoted, commented, indented, fenced.)
 - `skills/task/references/cross-review.md` — who reviews (the harness that

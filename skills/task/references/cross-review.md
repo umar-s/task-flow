@@ -65,8 +65,10 @@ What the script does, in order — each step that cannot complete exits `2`:
    the reader sees the verdict the runner used.
 5. Writes `docs/reviews/<TASK-ID>-<sha7>-<by>[-security].md` (header by the
    script: reviewer, model, range, brief hash, isolation, `reviewed` sha,
-   verdict; body by the reviewer, its machine lines moved into the header and
-   any look-alike header row escaped) and prints its path. Phase 8 takes the
+   verdict; below it the reviewer's text verbatim in one literal block that
+   nothing inside can close — no table, heading or HTML of the body renders,
+   so none can look like the header; its machine lines are in the header) and
+   prints its path. Phase 8 takes the
    sha from that `reviewed` row; the exit code, not a grep of the file, is
    the verdict a runner acts on.
 

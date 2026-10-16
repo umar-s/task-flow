@@ -357,18 +357,19 @@ else BRIEF_SUM="$(shasum -a 256 "$TMP/brief" | cut -d' ' -f1)"; fi
   printf '| reviewed | %s |\n' "${sha:-none}"
   printf '| verdict | %s → exit %s |\n' "$verdict" "$out"
   printf '| date | %s |\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  printf '_The verdict is this table'"'"'s. Everything below the line is the reviewer'"'"'s text; a row or a title in it that looks like this header is escaped._\n\n---\n\n'
-  # The body without the machine lines once they were read (all of it
-  # otherwise), with look-alike header rows and titles escaped so the body
-  # cannot present a second verdict.
+  # The reviewer's text, verbatim and LITERAL: a fenced block longer than any
+  # backtick run inside it, so nothing in it renders — no table, heading or
+  # HTML of the body can look like this header (escaping look-alikes is a
+  # Markdown subset, and every subset leaked). Machine lines are moved into
+  # the header once they were read; an unreadable answer is kept whole.
   strip=0; [ "$out" = 2 ] || strip=1
-  awk -v a="$n1" -v b="$n2" -v strip="$strip" '
-    strip && (NR == a || NR == b) { next }
-    /^[[:space:]]*[|][[:space:]]*(reviewer|range|brief|isolation|reviewed|verdict|date)[[:space:]]*[|]/ {
-      i = index($0, "|"); print substr($0, 1, i - 1) "\\" substr($0, i); next
-    }
-    /^[[:space:]]*#+[[:space:]]*Cross-review/ { i = index($0, "#"); print substr($0, 1, i - 1) "\\" substr($0, i); next }
-    { print }' "$TMP/last.md"
+  awk -v a="$n1" -v b="$n2" -v strip="$strip" 'strip && (NR == a || NR == b) { next } { print }' "$TMP/last.md" > "$TMP/body"
+  n="$(awk '{ while (match($0, /`+/)) { if (RLENGTH > m) m = RLENGTH; $0 = substr($0, RSTART + RLENGTH) } } END { print m + 0 }' "$TMP/body")"
+  [ "$n" -ge 3 ] || n=3
+  fence="$(printf '%*s' "$((n + 1))" '' | tr ' ' '`')"
+  printf 'The verdict is this table'"'"'s. Below, verbatim and unrendered: the reviewer'"'"'s text.\n\n%stext\n' "$fence"
+  cat "$TMP/body"
+  printf '%s\n' "$fence"
 } > "$REPORT"
 printf '%s: %s → exit %s · report %s\n' "$me" "$verdict" "$out" "$REPORT" >&2
 printf '%s\n' "$REPORT"
