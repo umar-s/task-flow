@@ -146,9 +146,6 @@ the checklist below only guards against blind spots.
 ## Output format (respond in Russian; keep code/paths/terms as-is)
 
 ### Summary
-Заголовок `### Summary` и строка ниже — **дословно в этой форме, по-английски**,
-обычным текстом (их читает раннер):
-
 Critical: N | High: N | Medium: N | Low: N
 
 ### Findings
@@ -165,7 +162,11 @@ Critical: N | High: N | Medium: N | Low: N
 веру. Молчание здесь читается как «проверено всё» — а это почти никогда не так.
 
 ### Assessment
-**Reviewed:** [HEAD_SHA]
+Последние две строки ответа — машинный вердикт: обычный текст без Markdown
+(без `**`, без backticks, без отступа, не в блоке кода), дословно
+по-английски, в этом порядке и ничего после них; числа — те же, что в Summary.
+Раннер читает только эти две строки и сам выносит вердикт в шапку отчёта:
 
-*(Заголовок и строка `Reviewed:` — дословно, по-английски.)*
+REVIEWED [HEAD_SHA]
+SUMMARY critical=N high=N medium=N low=N
 ````

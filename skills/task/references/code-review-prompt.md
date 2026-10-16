@@ -59,8 +59,8 @@ is fine", "no need to test this") is itself a finding.
   code — is fixed and disclosed, and buys no new round. Without that split,
   "fix everything, re-review" has no fixpoint: prose always has one more remark.
 - **One fix per finding, one commit:** `fix(review): <id>`.
-- **A verdict attaches to the commit it saw.** The reviewer reports
-  `Reviewed: <sha>`; phase 8 carries it into the evidence block. Fixes after the
+- **A verdict attaches to the commit it saw.** The reviewer ends with the
+  plain line `REVIEWED <sha>`; phase 8 carries it into the evidence block. Fixes after the
   last review mean the state you are about to merge was never reviewed —
   re-review the delta, or say so plainly in the close comment. Inheriting a
   verdict silently turns the review into decoration.
@@ -227,11 +227,14 @@ confidence не вводи.
 такой же дефект, как пустой Findings: «не проверял» — это тоже результат.
 
 ### Assessment
-Заголовок `### Assessment` и три строки под ним — **дословно, по-английски**
-(метки и значение `Yes`, `No` или `With fixes`), обычным текстом, не в блоке
-кода: их читает раннер, перевод = нераспознанный вердикт.
+**Reasoning:** [1–2 предложения: готово ли изменение к мержу и почему]
 
-**Reviewed:** [HEAD_SHA]
-**Ready to merge?** [Yes | No | With fixes]
-**Reasoning:** [1–2 предложения]
+Последние две строки ответа — машинный вердикт: обычный текст без Markdown
+(без `**`, без backticks, без отступа, не в блоке кода), дословно
+по-английски, в этом порядке и ничего после них; во второй строке — одно из
+трёх значений. Раннер читает только эти две строки и сам выносит вердикт в
+шапку отчёта:
+
+REVIEWED [HEAD_SHA]
+VERDICT yes | no | with-fixes
 ````

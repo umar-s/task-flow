@@ -68,128 +68,126 @@ run() {  # expected-rc, name, [env...] -- xreview args
 }
 SHORT=${HEAD_SHA:0:7}
 
-assess() { answer "$1" "### Assessment
-$2"; }
-secrep() { answer "$1" "### Summary
-$2
-### Assessment
-$3"; }
-YES=$(answer yes "### Findings
+# A reviewer answer: free prose, then the two plain machine lines.
+code() { answer "$1" "### Findings
 нет
 ### Assessment
-**Reviewed:** $SHORT
-**Ready to merge?** Yes
-**Reasoning:** ок")
-FIXES=$(assess fixes "**Reviewed:** $HEAD_SHA
-**Ready to merge?** With fixes")
-NO=$(assess no "**Reviewed:** \`$SHORT\`
-**Ready to merge?** No")
-TRANSLATED=$(assess translated "**Проверено:** $SHORT
-**Готово к мержу?** Да")
-OTHER_SHA=$(assess othersha "**Reviewed:** 0123456789abcdef
-**Ready to merge?** Yes")
-NO_SHA=$(assess nosha "**Ready to merge?** Yes")
-SEC_CLEAN=$(secrep secclean "Critical: 0 | High: 0 | Medium: 2 | Low: 1" "**Reviewed:** $SHORT")
-SEC_HIGH=$(secrep sechigh "**Critical:** 0 | **High:** 2 | **Medium:** 0 | **Low:** 0" "**Reviewed:** $SHORT")
-SEC_NOSUM=$(secrep secnosum "Всё хорошо." "**Reviewed:** $SHORT")
-ECHOED=$(assess echoed "**Reviewed:** $SHORT
-**Ready to merge?** [Yes | No | With fixes]")
-LONGER_WORD=$(assess longerword "**Reviewed:** $SHORT
-**Ready to merge?** Yesterday")
-LONGER_SHA=$(assess longersha "**Reviewed:** ${HEAD_SHA}deadbeef
-**Ready to merge?** Yes")
-TWO_VERDICTS=$(assess twoverdicts "**Reviewed:** $SHORT
-**Ready to merge?** Yes
-**Ready to merge?** No")
-TWO_SHAS=$(assess twoshas "**Reviewed:** $SHORT
-Reviewed: 0123456
-**Ready to merge?** Yes")
-DOTTED=$(assess dotted "**Reviewed:** $SHORT.
-**Ready to merge?** With fixes.")
-SEC_ECHOED=$(secrep secechoed "Critical: N | High: N | Medium: N | Low: N" "**Reviewed:** $SHORT")
-SHA_LIST=$(assess shalist "Reviewed: $HEAD_SHA, 0123456789abcdef
-**Ready to merge?** Yes")
-SHA_SUFFIX=$(assess shasuffix "Reviewed: $HEAD_SHA-not-reviewed
-**Ready to merge?** Yes")
-SEC_TWO=$(secrep sectwo "Critical: 0 | High: 0 | Medium: 0 | Low: 0
-Critical: 0 | High: 1 | Medium: 0 | Low: 0." "**Reviewed:** $SHORT")
-QUOTED=$(assess quoted "Пример неверного ответа:
-\`\`\`text
-Reviewed: 0123456
-Ready to merge? No
-\`\`\`
-> Reviewed: 0123456
-Поле \`Reviewed: 0123456\` в прозе — не вердикт.
-**Reviewed:** $SHORT
-**Ready to merge?** Yes")
-# What a reader of the rendered report does not see as text is not a verdict.
-INDENTED=$(assess indented "    **Reviewed:** $SHORT
-    **Ready to merge?** Yes
-**Проверено:** $SHORT
-**Готово к мержу?** Нет")
-COMMENTED=$(assess commented "<!--
-**Reviewed:** $SHORT
-**Ready to merge?** Yes
--->
-Вердикт: нет")
-NESTED_FENCE=$(assess nestedfence "\`\`\`\`text
-\`\`\`
-**Reviewed:** $SHORT
-**Ready to merge?** Yes
-\`\`\`
-\`\`\`\`
-Вердикт: нет")
-OUTSIDE_SECTION=$(answer outsidesection "### Findings
-**Ready to merge?** Yes
+**Reasoning:** ок
+$2"; }
+YES=$(code yes "REVIEWED $SHORT
+VERDICT yes")
+FIXES=$(code fixes "REVIEWED $HEAD_SHA
+VERDICT with-fixes")
+NO=$(code no "REVIEWED $SHORT
+VERDICT no")
+SEC_CLEAN=$(answer secclean "### Summary
+Critical: 0 | High: 0 | Medium: 2 | Low: 1
 ### Assessment
-**Reviewed:** $SHORT
-**Ready to merge?** No")
-NO_SECTION=$(answer nosection "**Reviewed:** $SHORT
+REVIEWED $SHORT
+SUMMARY critical=0 high=0 medium=2 low=1")
+SEC_HIGH=$(answer sechigh "REVIEWED $SHORT
+SUMMARY critical=0 high=2 medium=0 low=0")
+SEC_LEADING_ZERO=$(answer secoctal "REVIEWED $SHORT
+SUMMARY critical=08 high=09 medium=0 low=0")
+CRLF=$(answer crlf "$(printf 'REVIEWED %s\r\nVERDICT no\r' "$SHORT")")
+# Anything but the exact two last lines is unreadable (2), never clean.
+TRANSLATED=$(code translated "ПРОВЕРЕНО $SHORT
+ВЕРДИКТ да")
+OTHER_SHA=$(code othersha "REVIEWED 0123456789abcdef
+VERDICT yes")
+NO_SHA=$(code nosha "VERDICT yes")
+ECHOED=$(code echoed "REVIEWED $SHORT
+VERDICT yes | no | with-fixes")
+LONGER_WORD=$(code longerword "REVIEWED $SHORT
+VERDICT yesterday")
+LONGER_SHA=$(code longersha "REVIEWED ${HEAD_SHA}deadbeef
+VERDICT yes")
+SHA_LIST=$(code shalist "REVIEWED $HEAD_SHA, 0123456789abcdef
+VERDICT yes")
+SHA_SUFFIX=$(code shasuffix "REVIEWED $HEAD_SHA-not-reviewed
+VERDICT yes")
+AFTER=$(code after "REVIEWED $SHORT
+VERDICT yes
+Спасибо за внимание.")
+REVERSED=$(code reversed "VERDICT yes
+REVIEWED $SHORT")
+DOTTED=$(code dotted "REVIEWED $SHORT
+VERDICT yes.")
+BOLD=$(code bold "**REVIEWED** $SHORT
+**VERDICT** yes")
+LEGACY=$(code legacy "**Reviewed:** $SHORT
 **Ready to merge?** Yes")
-SEC_OUTSIDE=$(answer secoutside "### Findings
-Critical: 0 | High: 0 | Medium: 0 | Low: 0
-### Assessment
-**Reviewed:** $SHORT")
+INDENTED=$(code indented "    REVIEWED $SHORT
+    VERDICT yes")
+FENCED=$(code fenced "\`\`\`
+REVIEWED $SHORT
+VERDICT yes
+\`\`\`")
+COMMENTED=$(code commented "<!--
+REVIEWED $SHORT
+VERDICT yes
+-->")
+# Only the last two lines count: an example trailer earlier is prose.
+EXAMPLE_FIRST=$(code examplefirst "Пример: REVIEWED 0123456 / VERDICT yes
+REVIEWED 0123456
+VERDICT yes
+Итог:
+REVIEWED $SHORT
+VERDICT no")
+# An unclosed comment before the trailer cannot hide the verdict from the
+# reader: the script writes it into the header, above the body.
+UNCLOSED=$(code unclosed "<!-- без закрытия
+REVIEWED $SHORT
+VERDICT yes")
+SEC_ECHOED=$(answer secechoed "REVIEWED $SHORT
+SUMMARY critical=N high=N medium=N low=N")
+SEC_DOTTED=$(answer secdotted "REVIEWED $SHORT
+SUMMARY critical=0 high=1 medium=0 low=0.")
+SEC_NOSUM=$(answer secnosum "Всё хорошо.
+REVIEWED $SHORT")
+SEC_PROSE=$(answer secprose "Critical: 0 | High: 0 | Medium: 0 | Low: 0
+REVIEWED $SHORT")
 
 # 1. verdict → exit, both reviewers, report named <TASK>-<sha7>-<by>
 run 0 codex-yes "STUB_ANSWER=$YES" -- --by codex --task T-1 --base main
-[ -f "$R/docs/reviews/T-1-$SHORT-codex.md" ] && ok || bad "codex report not at docs/reviews/T-1-$SHORT-codex.md"
-grep -q 'model: stub-codex-1' "$R/docs/reviews/T-1-$SHORT-codex.md" && ok || bad "report header lacks the model codex reported"
-grep -q 'ready to merge → exit 0' "$R/docs/reviews/T-1-$SHORT-codex.md" && ok || bad "report header lacks the verdict"
+REP="$R/docs/reviews/T-1-$SHORT-codex.md"
+[ -f "$REP" ] && ok || bad "codex report not at docs/reviews/T-1-$SHORT-codex.md"
+grep -q 'model: stub-codex-1' "$REP" && ok || bad "report header lacks the model codex reported"
+grep -q '^| verdict | ready to merge → exit 0 |$' "$REP" && ok || bad "report header lacks the verdict"
+grep -q "^| reviewed | $SHORT |\$" "$REP" && ok || bad "report header lacks the reviewed sha"
+grep -qE '^(REVIEWED|VERDICT) ' "$REP" && bad "the machine lines were left in the body (the header carries them)" || ok
+grep -q '^\*\*Reasoning:\*\* ок$' "$REP" && ok || bad "the reviewer's prose is missing from the report"
 [ "$OUT" = "docs/reviews/T-1-$SHORT-codex.md" ] && ok || bad "stdout is not the report path: $OUT"
 run 0 claude-yes "STUB_ANSWER=$YES" -- --by claude --task T-1 --base main
 [ -f "$R/docs/reviews/T-1-$SHORT-claude.md" ] && ok || bad "claude report missing"
 run 1 with-fixes "STUB_ANSWER=$FIXES" -- --by codex --task T-1 --base main
 run 1 not-ready "STUB_ANSWER=$NO" -- --by claude --task T-1 --base main
+run 1 crlf-line-ends "STUB_ANSWER=$CRLF" -- --by codex --task T-1 --base main
+run 1 example-trailer-earlier "STUB_ANSWER=$EXAMPLE_FIRST" -- --by codex --task T-1 --base main
+run 0 unclosed-comment-before "STUB_ANSWER=$UNCLOSED" -- --by codex --task T-1 --base main
+REP="$R/docs/reviews/T-1-$SHORT-codex.md"
+[ "$(grep -n '^| verdict |' "$REP" | cut -d: -f1)" -lt "$(grep -n '^<!-- без закрытия' "$REP" | cut -d: -f1)" ] && ok || bad "the verdict header is not above the reviewer's body"
 # 2. an answer the script cannot read is not clean
-run 2 translated-labels "STUB_ANSWER=$TRANSLATED" -- --by codex --task T-1 --base main
-grep -q 'unreadable' "$R/docs/reviews/T-1-$SHORT-codex.md" && ok || bad "an unreadable verdict is not recorded as unreadable in the report"
-run 2 other-sha "STUB_ANSWER=$OTHER_SHA" -- --by codex --task T-1 --base main
-run 2 no-reviewed-line "STUB_ANSWER=$NO_SHA" -- --by claude --task T-1 --base main
-# 2b. strict fields: an echoed placeholder, a longer word, a longer sha or two
-#     disagreeing lines are unreadable; trailing punctuation is not
-run 2 echoed-placeholder "STUB_ANSWER=$ECHOED" -- --by codex --task T-1 --base main
-run 2 longer-word "STUB_ANSWER=$LONGER_WORD" -- --by codex --task T-1 --base main
-run 2 longer-sha "STUB_ANSWER=$LONGER_SHA" -- --by codex --task T-1 --base main
-run 2 two-verdicts "STUB_ANSWER=$TWO_VERDICTS" -- --by codex --task T-1 --base main
-run 2 two-shas "STUB_ANSWER=$TWO_SHAS" -- --by codex --task T-1 --base main
-run 1 trailing-dots "STUB_ANSWER=$DOTTED" -- --by codex --task T-1 --base main
-run 2 security-echoed-summary "STUB_ANSWER=$SEC_ECHOED" -- --by codex --task T-1 --base main --kind security
-run 2 sha-then-list "STUB_ANSWER=$SHA_LIST" -- --by codex --task T-1 --base main
-run 2 sha-then-suffix "STUB_ANSWER=$SHA_SUFFIX" -- --by codex --task T-1 --base main
-run 2 security-two-summaries "STUB_ANSWER=$SEC_TWO" -- --by codex --task T-1 --base main --kind security
-run 0 quoted-fields-ignored "STUB_ANSWER=$QUOTED" -- --by codex --task T-1 --base main
-run 2 indented-code-ignored "STUB_ANSWER=$INDENTED" -- --by codex --task T-1 --base main
-run 2 html-comment-ignored "STUB_ANSWER=$COMMENTED" -- --by codex --task T-1 --base main
-run 2 nested-fence-ignored "STUB_ANSWER=$NESTED_FENCE" -- --by codex --task T-1 --base main
-run 1 only-the-assessment-counts "STUB_ANSWER=$OUTSIDE_SECTION" -- --by codex --task T-1 --base main
-run 2 no-assessment-section "STUB_ANSWER=$NO_SECTION" -- --by codex --task T-1 --base main
-run 2 summary-outside-its-section "STUB_ANSWER=$SEC_OUTSIDE" -- --by codex --task T-1 --base main --kind security
-# 3. security brief: counts decide, bold or not
+for kase in translated:TRANSLATED other-sha:OTHER_SHA no-reviewed-line:NO_SHA echoed-placeholder:ECHOED \
+            longer-word:LONGER_WORD longer-sha:LONGER_SHA sha-then-list:SHA_LIST sha-then-suffix:SHA_SUFFIX \
+            text-after-the-trailer:AFTER reversed-lines:REVERSED trailing-dot:DOTTED bold-trailer:BOLD \
+            legacy-markdown-verdict:LEGACY indented-trailer:INDENTED fenced-trailer:FENCED commented-trailer:COMMENTED; do
+  v="${kase#*:}"; f="${!v}"
+  run 2 "${kase%%:*}" "STUB_ANSWER=$f" -- --by codex --task T-1 --base main
+done
+grep -q '^| verdict | unreadable' "$R/docs/reviews/T-1-$SHORT-codex.md" && ok || bad "an unreadable verdict is not recorded as unreadable in the report"
+grep -q '^-->$' "$R/docs/reviews/T-1-$SHORT-codex.md" && ok || bad "an unreadable answer is not kept whole in the report"
+# 3. security brief: the summary line decides
 run 0 security-clean "STUB_ANSWER=$SEC_CLEAN" -- --by codex --task T-1 --base main --kind security
 [ -f "$R/docs/reviews/T-1-$SHORT-codex-security.md" ] && ok || bad "security report not suffixed -security"
 run 1 security-high "STUB_ANSWER=$SEC_HIGH" -- --by claude --task T-1 --base main --kind security
-run 2 security-no-summary "STUB_ANSWER=$SEC_NOSUM" -- --by codex --task T-1 --base main --kind security
+run 1 security-leading-zeros "STUB_ANSWER=$SEC_LEADING_ZERO" -- --by codex --task T-1 --base main --kind security
+for kase in security-echoed:SEC_ECHOED security-trailing-dot:SEC_DOTTED security-no-summary:SEC_NOSUM security-prose-only:SEC_PROSE; do
+  v="${kase#*:}"; f="${!v}"
+  run 2 "${kase%%:*}" "STUB_ANSWER=$f" -- --by codex --task T-1 --base main --kind security
+done
+run 2 code-verdict-for-security "STUB_ANSWER=$YES" -- --by codex --task T-1 --base main --kind security
+run 2 security-summary-for-code "STUB_ANSWER=$SEC_CLEAN" -- --by codex --task T-1 --base main
 # 4. no review happened → 2, and the reviewer is never called on a bad range
 run 2 empty-range "STUB_ANSWER=$YES" -- --by codex --task T-1 --base feature
 [ ! -e "$STUB_LOG/argv" ] && ok || bad "the reviewer was dispatched on an empty range"
@@ -263,14 +261,15 @@ run 0 codex-other-head "STUB_ANSWER=$YES" -- --by codex --task T-1 --base main -
 # a fence in the material is longer than any backtick run inside it
 printf '%s\n' '```````' > "$R/fence.md"; git -C "$R" add fence.md; git -C "$R" commit -qm 'docs: backticks'
 TWO_SHA=$(git -C "$R" rev-parse HEAD)
-assess two "**Reviewed:** $TWO_SHA
-**Ready to merge?** Yes" > /dev/null
+code two "REVIEWED $TWO_SHA
+VERDICT yes" > /dev/null
 run 0 claude-fence "STUB_ANSWER=$TMP/two.md" -- --by claude --task T-1 --base main
 grep -qE '^`{8,}text$' "$STUB_LOG/brief" && ok || bad "the material fence is not longer than the 7-backtick run inside it"
 # 6b material leaves out the spec's own diff when the spec is in the range
 git -C "$R" add docs/specs/T-1.spec.md; git -C "$R" commit -qm 'docs: spec'
 SPEC_SHA=$(git -C "$R" rev-parse HEAD)
-secrep spec "Critical: 0 | High: 0 | Medium: 0 | Low: 0" "**Reviewed:** $SPEC_SHA" > /dev/null
+answer spec "REVIEWED $SPEC_SHA
+SUMMARY critical=0 high=0 medium=0 low=0" > /dev/null
 run 0 claude-security-spec "STUB_ANSWER=$TMP/spec.md" -- --by claude --task T-1 --base main --kind security
 grep -q 'EDGE-MARKER-42' "$STUB_LOG/brief" && bad "the 6b material carries the spec's premortem edges through its diff" || ok
 grep -q 'fence.md' "$STUB_LOG/brief" && ok || bad "the 6b material lost the rest of the diff"
@@ -287,5 +286,18 @@ grep -A1 -xF -- --setting-sources "$A" | tail -n 1 | grep -qx 'user' && ok || ba
 grep -qxF -- --strict-mcp-config "$A" && ok || bad "XREVIEW_ISOLATE=0 lets MCP servers (write tools) back in"
 git -C "$R" diff --quiet && ok || bad "the review modified a tracked file"
 
-echo "tests/xreview: $pass passed, $fail failed"
-[ "$fail" = 0 ]
+echo "tests/xreview${XREVIEW_TEST_AWK:+ (awk = $XREVIEW_TEST_AWK)}: $pass passed, $fail failed"
+rc=0; [ "$fail" = 0 ] || rc=1
+# The script runs on whatever awk the host has: the whole suite again under
+# each other implementation present (a regex mawk cannot compile once took
+# the script down outside its 0/1/2 contract).
+if [ -z "${XREVIEW_TEST_AWK:-}" ]; then
+  for impl in mawk busybox; do
+    command -v "$impl" >/dev/null || { echo "tests/xreview: $impl not installed — that pass SKIPPED"; continue; }
+    shim="$TMP/awk-$impl"; mkdir -p "$shim"
+    if [ "$impl" = busybox ]; then printf '#!/bin/sh\nexec busybox awk "$@"\n' > "$shim/awk"; else ln -s "$(command -v mawk)" "$shim/awk"; fi
+    chmod +x "$shim/awk" 2>/dev/null || true   # lint: allow (a symlink keeps its target's mode)
+    PATH="$shim:$PATH" XREVIEW_TEST_AWK="$impl" bash "$0" || rc=1
+  done
+fi
+exit "$rc"

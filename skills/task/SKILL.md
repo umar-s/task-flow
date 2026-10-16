@@ -257,7 +257,7 @@ Otherwise — the `code-review` Workflow at high effort, or a **fresh reviewer
 subagent** dispatched with `code-review-prompt.md`. Either way, **load the
 template** (`Read "$ROOT/skills/task/references/code-review-prompt.md"`): its *After the
 review comes back* section is the orchestrator's contract — severity → action,
-the split that terminates the loop, one commit per fix, `Reviewed: <sha>` —
+the split that terminates the loop, one commit per fix, `REVIEWED <sha>` —
 and it applies to whoever produced the findings.
 **Guard the input first:** `git fetch --no-tags origin <integration-branch>`,
 then a non-empty `git diff --stat <base>..HEAD` — a review of an empty or stale
@@ -271,7 +271,7 @@ framing of what is "fine" (why, and the slot rules: the template's dispatch
 section). The review
 is read-only on the checkout. What to do with what comes back —
 severity → action, the behavioural/description split that makes the loop
-terminate, one commit per fix, and `Reviewed: <sha>` — is in the same template,
+terminate, one commit per fix, and `REVIEWED <sha>` — is in the same template,
 under *After the review comes back*; it is a contract, not advice.
 
 ## 6b. Security-review (conditional)

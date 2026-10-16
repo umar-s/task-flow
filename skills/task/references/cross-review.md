@@ -34,7 +34,7 @@ bash "$ROOT/templates/xreview/xreview.sh" --by codex --task <TASK-ID> --base ori
 
 | Exit | Meaning | What the orchestrator does |
 |---|---|---|
-| `0` | the review ran; code: `Ready to merge? Yes`; security: Critical 0 and High 0 | read the report anyway — Optional/Medium findings are still findings |
+| `0` | the review ran; code: `VERDICT yes`; security: `critical=0 high=0` | read the report anyway — Optional/Medium findings are still findings |
 | `1` | the review ran; the verdict blocks | the template's contract: fix, `fix(review): <id>`, re-review the delta |
 | `2` | the review **did not happen** or cannot be read | the phase is not passed — fix the cause or fall back (§1), and say which |
 
@@ -54,9 +54,15 @@ What the script does, in order — each step that cannot complete exits `2`:
    --stat`, `git log`, `git status --short` and the full diff, run at dispatch
    time (6b leaves out the spec's own diff) — and the checkout must be at the
    head under review, because that reviewer has no shell.
-4. Reads the verdict: `Reviewed: <sha>` must name the range head, and the
-   verdict line must parse. A translated label, another sha or no verdict is
-   `2` — an unread verdict is never a clean one.
+4. Reads the verdict from the **last two non-empty lines** of the answer and
+   nothing else: `REVIEWED <sha>` naming the range head, then `VERDICT
+   yes|no|with-fixes` (6b: `SUMMARY critical=N high=N medium=N low=N`) — plain
+   text, exact shape, nothing after them. Anything else is `2`: an unread
+   verdict is never a clean one. Parsing free-form Markdown for a verdict
+   failed twice in review (a quoted, commented, indented or fenced verdict
+   reads differently to a person and to a parser), so the verdict is a
+   separate channel, and the script writes it into the report header itself:
+   the reader sees the verdict the runner used.
 5. Writes `docs/reviews/<TASK-ID>-<sha7>-<by>[-security].md` (header by the
    script: reviewer, model, range, brief hash, isolation, verdict; body by
    the reviewer) and prints its path.
@@ -108,12 +114,12 @@ inherits them.
 
 - The contract in `code-review-prompt.md` (*After the review comes back*)
   applies unchanged: severity → action, the behavioural/description split,
-  one `fix(review): <id>` commit per finding, `Reviewed: <sha>`.
+  one `fix(review): <id>` commit per finding, `REVIEWED <sha>`.
 - **The delta goes back to the same other model:** `--base <the reviewed sha>`
   reviews exactly what the fixes changed. A delta reviewed by the author's
   model is a same-model review, and is named as one.
 - **Committing the report does not move the verdict.** A commit that touches
-  only `docs/reviews/` and `docs/evidence/` keeps `Reviewed: <sha>` valid;
+  only `docs/reviews/` and `docs/evidence/` keeps `REVIEWED <sha>` valid;
   anything else is unreviewed. Check it, do not assume it:
 
   ```bash

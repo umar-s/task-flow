@@ -9,11 +9,12 @@
 #   bash "$ROOT/templates/xreview/xreview.sh" --by codex --task DEV-475 --base origin/develop
 #   bash "$ROOT/templates/xreview/xreview.sh" --by claude --task DEV-475 --base origin/develop --kind security
 #
-# Exit codes (the verdict is read from the report, never assumed):
-#   0  the review ran and its verdict is clean (code: "Ready to merge? Yes";
-#      security: Critical 0 and High 0)
-#   1  the review ran and its verdict blocks (code: "No" / "With fixes";
-#      security: any Critical or High)
+# Exit codes (the verdict is read from the answer's last two lines — REVIEWED
+# <sha>, then VERDICT or SUMMARY — never assumed):
+#   0  the review ran and its verdict is clean (code: "VERDICT yes";
+#      security: critical=0 high=0)
+#   1  the review ran and its verdict blocks (code: "VERDICT no" / "with-fixes";
+#      security: any critical or high)
 #   2  the review did not happen or cannot be read: empty range, no spec or no
 #      DoD section, reviewer CLI missing or failed, verdict unreadable, or a
 #      verdict attached to a different commit. Never read 2 as "clean".
@@ -304,75 +305,37 @@ if [ "$rrc" != 0 ] || [ ! -s "$TMP/last.md" ]; then
   exit 2
 fi
 
-# Verdict. A verdict attaches to the commit it saw. The fields are lines that
-# START with their label (bold allowed) inside their section, in text a reader
-# of the rendered report sees — a field quoted in prose, a blockquote, a fence,
-# a comment or indented code is not the reviewer's verdict. Each value is taken
-# whole: anything but one clean value is BAD, and BAD or two disagreeing values
-# are "unreadable" (2), never clean.
-awk '
-  # What a reader of the rendered report sees as text is what counts: fenced
-  # code (closed by a fence of the same character and at least its length),
-  # HTML comments and indented code are skipped; a field counts only in its
-  # own section (### Assessment; the 6b counts in ### Summary).
-  fl {
-    t = $0; sub(/^ +/, "", t); sub(/[ \t]+$/, "", t)
-    if ($0 ~ /^ {0,3}(`+|~+)[ \t]*$/ && substr(t, 1, 1) == fc && length(t) >= fl) fl = 0
-    next
-  }
-  /^ {0,3}(```|~~~)/ {
-    t = $0; sub(/^ +/, "", t); fc = substr(t, 1, 1); fl = 0
-    while (substr(t, fl + 1, 1) == fc) fl++
-    next
-  }
-  cm { if (index($0, "-->")) cm = 0; next }
-  index($0, "<!--") && !index(substr($0, index($0, "<!--")), "-->") { cm = 1; next }
-  /^(    |\t)/ { next }
-  /^ {0,3}#{1,6}[ \t]/ { h = $0; sub(/^ *#+[ \t]*/, "", h); gsub(/\*/, "", h); sub(/[ \t#]+$/, "", h); sec = h; next }
-  {
-    line = $0; gsub(/\*/, "", line); sub(/^[ \t]+/, "", line)
-    if (sec == "Assessment" && line ~ /^Reviewed:/) {
-      v = substr(line, 10); gsub(/`/, "", v); sub(/^[[:space:]]+/, "", v); sub(/[[:space:].]+$/, "", v)
-      print "R " ((v ~ /^[0-9a-f]+$/ && length(v) >= 7 && length(v) <= 40) ? v : "BAD")
-    } else if (sec == "Assessment" && line ~ /^Ready to merge\?/) {
-      v = tolower(substr(line, 16)); sub(/^[[:space:]]+/, "", v); sub(/[[:space:].]+$/, "", v)
-      print "V " ((v == "yes" || v == "no" || v == "with fixes") ? v : "BAD")
-    } else if (sec == "Summary" && line ~ /^Critical:/) {
-      v = line; sub(/[[:space:].]+$/, "", v)
-      if (v ~ /^Critical:[[:space:]]*[0-9]+[[:space:]]*\|[[:space:]]*High:[[:space:]]*[0-9]+[[:space:]]*\|[[:space:]]*Medium:[[:space:]]*[0-9]+[[:space:]]*\|[[:space:]]*Low:[[:space:]]*[0-9]+$/) {
-        split(v, f, "|"); c = f[1]; h = f[2]; gsub(/[^0-9]/, "", c); gsub(/[^0-9]/, "", h)
-        print "S " c " " h
-      } else print "S BAD"
-    }
-  }' "$TMP/last.md" > "$TMP/fields"
-field() { sed -n "s/^$1 //p" "$TMP/fields" | sort -u; }
-count() { printf '%s' "$1" | grep -c . || true; }  # lint: allow (an empty list counts as 0)
-verdict="unreadable"; out=2; why=""
-shas="$(field R)"
-if [ "$(count "$shas")" = 0 ]; then
-  why="no 'Reviewed: <sha>' line in ### Assessment"
-elif [ "$(count "$shas")" != 1 ] || [ "$shas" = BAD ]; then
-  why="the 'Reviewed:' field is not one clean sha ($(printf '%s' "$shas" | tr '\n' ' '))"
-elif [ "${HEAD_SHA#"$shas"}" = "$HEAD_SHA" ]; then
-  why="the report says Reviewed: $shas, the range head is $HEAD_SHA"
+# Verdict. A verdict attaches to the commit it saw. It is a separate channel:
+# the last two non-empty lines of the answer, plain text, exact shape —
+#   REVIEWED <sha>
+#   VERDICT yes|no|with-fixes      (6b: SUMMARY critical=N high=N medium=N low=N)
+# Nothing else in the answer is read. Inferring a verdict from free-form
+# Markdown failed twice in review (a quoted, commented, indented or fenced
+# verdict reads differently to a person and to a parser); this script writes
+# the verdict into the report header itself, so the reader sees what it used.
+awk '{ sub(/\r$/, ""); sub(/[ \t]+$/, "") } NF { n1 = n2; t1 = t2; n2 = NR; t2 = $0 } END { print n1 + 0; print t1; print n2 + 0; print t2 }' \
+  "$TMP/last.md" > "$TMP/trailer"
+n1="$(sed -n 1p "$TMP/trailer")"; t1="$(sed -n 2p "$TMP/trailer")"
+n2="$(sed -n 3p "$TMP/trailer")"; t2="$(sed -n 4p "$TMP/trailer")"
+verdict="unreadable"; out=2; why=""; sha=""
+case "$t1" in "REVIEWED "*) sha="${t1#REVIEWED }" ;; esac
+if ! printf '%s\n' "$sha" | grep -qxE '[0-9a-f]{7,40}'; then
+  why="the second-to-last line is not 'REVIEWED <sha>'"
+elif [ "${HEAD_SHA#"$sha"}" = "$HEAD_SHA" ]; then
+  why="the answer says REVIEWED $sha, the range head is $HEAD_SHA"
 elif [ "$KIND" = code ]; then
-  vals="$(field V)"
-  case "$(count "$vals"):$vals" in
-    1:yes) verdict="ready to merge"; out=0 ;;
-    1:no) verdict="not ready"; out=1 ;;
-    "1:with fixes") verdict="ready with fixes"; out=1 ;;
-    0:*) why="no 'Ready to merge? Yes|No|With fixes' line in ### Assessment" ;;
-    *) why="the verdict is not one of Yes, No, With fixes ($(printf '%s' "$vals" | tr '\n' '/'))" ;;
+  case "$t2" in
+    "VERDICT yes") verdict="ready to merge"; out=0 ;;
+    "VERDICT no") verdict="not ready"; out=1 ;;
+    "VERDICT with-fixes") verdict="ready with fixes"; out=1 ;;
+    *) why="the last line is not 'VERDICT yes|no|with-fixes'" ;;
   esac
+elif printf '%s\n' "$t2" | grep -qxE 'SUMMARY critical=[0-9]+ high=[0-9]+ medium=[0-9]+ low=[0-9]+'; then
+  c="$(printf '%s' "$t2" | sed -E 's/^SUMMARY critical=([0-9]+) .*/\1/')"
+  h="$(printf '%s' "$t2" | sed -E 's/^SUMMARY critical=[0-9]+ high=([0-9]+) .*/\1/')"
+  if [ $((10#$c + 10#$h)) -gt 0 ]; then verdict="Critical $c / High $h"; out=1; else verdict="Critical 0 / High 0"; out=0; fi
 else
-  sums="$(field S)"
-  case "$(count "$sums"):$sums" in
-    1:BAD) why="the summary line is not 'Critical: N | High: N | Medium: N | Low: N'" ;;
-    1:*) c="${sums% *}"; h="${sums#* }"
-       if [ $((c + h)) -gt 0 ]; then verdict="Critical $c / High $h"; out=1; else verdict="Critical 0 / High 0"; out=0; fi ;;
-    0:*) why="no 'Critical: N | High: N | Medium: N | Low: N' line in ### Summary" ;;
-    *) why="summary lines disagree or are malformed ($(printf '%s' "$sums" | tr '\n' '/'))" ;;
-  esac
+  why="the last line is not 'SUMMARY critical=N high=N medium=N low=N'"
 fi
 [ "$out" != 2 ] || verdict="unreadable: $why"
 
@@ -383,16 +346,18 @@ REPORT="$OUT_DIR/$SAFE_TASK-${HEAD_SHA:0:7}-$BY$SUFFIX.md"
 if command -v sha256sum >/dev/null; then BRIEF_SUM="$(sha256sum "$TMP/brief" | cut -d' ' -f1)"
 else BRIEF_SUM="$(shasum -a 256 "$TMP/brief" | cut -d' ' -f1)"; fi
 {
-  printf '<!-- generated by task-flow templates/xreview/xreview.sh; the reviewer wrote everything below the rule -->\n'
+  printf '<!-- generated by task-flow templates/xreview/xreview.sh; the reviewer wrote everything below the rule except its two machine lines, which the header carries -->\n'
   printf '# Cross-review · %s · %s · %s\n\n' "$TASK" "$KIND" "$BY"
   printf '| field | value |\n|---|---|\n'
   printf '| reviewer | %s (model: %s) |\n' "$BY" "$SEEN_MODEL"
   printf '| range | %s..%s (base %s) |\n' "$BASE_SHA" "$HEAD_SHA" "$BASE_REF"
   printf '| brief | %s, sha256 %s |\n' "$(basename "$TEMPLATE_FILE")" "$BRIEF_SUM"
   printf '| isolation | %s |\n' "$ISOLATION"
+  printf '| reviewed | %s |\n' "${sha:-none}"
   printf '| verdict | %s → exit %s |\n' "$verdict" "$out"
   printf '| date | %s |\n\n---\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  cat "$TMP/last.md"
+  # The body without the machine lines once they were read; all of it otherwise.
+  if [ "$out" != 2 ]; then awk -v a="$n1" -v b="$n2" 'NR != a && NR != b' "$TMP/last.md"; else cat "$TMP/last.md"; fi
 } > "$REPORT"
 printf '%s: %s → exit %s · report %s\n' "$me" "$verdict" "$out" "$REPORT" >&2
 printf '%s\n' "$REPORT"

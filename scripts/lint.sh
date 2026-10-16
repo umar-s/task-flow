@@ -248,15 +248,20 @@ flat "$XR" | grep -q 'Isolated from the author' || err "$XR lost the isolation r
 flat "$XR" | grep -q 'not averaged and not decided by the author' || err "$XR lost the two-review disagreement rule"
 grep -qF "':!docs/reviews' ':!docs/evidence'" "$XR" || err "$XR lost the docs-only commit check"
 flat "$XR" | grep -q 'an LLM layer, not part of the deterministic gate' || err "$XR no longer separates Codex Security from the gate"
-grep -q 'по-английски' "$CR" || err "$CR: the Assessment labels are no longer pinned against translation (xreview parses them)"
-grep -q '^\*\*Reviewed:\*\* \[HEAD_SHA\]' skills/task/references/security-review-prompt.md || err "security-review-prompt.md lost 'Reviewed: <sha>' — a 6b verdict must attach to a commit"
-grep -q '^Critical: N | High: N | Medium: N | Low: N$' skills/task/references/security-review-prompt.md || err "security-review-prompt.md: the summary line xreview parses changed shape"
+# The verdict is a separate channel: each brief's template block ENDS with the
+# two plain machine lines xreview reads (and nothing else is read).
+tail2() { awk '/^## Template/ { t = 1; next } t && /^````$/ { if (b) exit; b = 1; next } b && NF { p = l; l = $0 } END { print p; print l }' "$1"; }
+[ "$(tail2 "$CR")" = "$(printf 'REVIEWED [HEAD_SHA]\nVERDICT yes | no | with-fixes')" ] || err "$CR: the template no longer ends with the two machine lines xreview reads"
+[ "$(tail2 skills/task/references/security-review-prompt.md)" = "$(printf 'REVIEWED [HEAD_SHA]\nSUMMARY critical=N high=N medium=N low=N')" ] || err "security-review-prompt.md: the template no longer ends with the two machine lines xreview reads"
+grep -q 'по-английски' "$CR" || err "$CR: the machine lines are no longer pinned against translation"
 XS=templates/xreview/xreview.sh
 for f in templates/xreview/*.sh; do bash -n "$f" || err "syntax error: $f"; [ -x "$f" ] || err "not executable: $f"; done
 if grep -nE '\|\| true|2>/dev/null' templates/xreview/*.sh | grep -v 'lint: allow' >/dev/null; then
   err "fail-open idiom in templates/xreview (mark a deliberate one with '# lint: allow')"
   grep -nE '\|\| true|2>/dev/null' templates/xreview/*.sh | grep -v 'lint: allow' >&2
 fi
+grep -q 'Ready to merge' "$XS" && err "$XS parses a Markdown verdict again (two review rounds showed a person and a parser read it differently)"
+grep -q 'last two non-empty lines' "$XS" || err "$XS no longer reads the verdict from the last two lines only"
 for w in 'exec -s read-only --ignore-rules' '--ignore-user-config' '--setting-sources ""' '"disableAllHooks":true' '--strict-mcp-config' '--disable-slash-commands' '--permission-mode dontAsk' \
          'compgen -e' 'CLAUDE_CODE_*|CLAUDE_PLUGIN_*' 'PP_*' 'CODEX_SESSION_ID' 'empty range'; do
   grep -qF -- "$w" "$XS" || err "$XS lost '$w'"
@@ -473,7 +478,7 @@ for w in 'Stop condition' 'Compatibility window' 'Rollback'; do
 done
 flat "$DST" | grep -q 'What does \*\*not\*\* count' || err "$DST lost the rejection criteria that stop a rollback plan from being fiction"
 flat skills/task/references/checkpoint.md | grep -q 'validate before you trust' || err "checkpoint.md lost the resume validation"
-grep -q 'Reviewed:' skills/task/references/code-review-prompt.md || err "code-review-prompt.md: the verdict must carry 'Reviewed: <sha>'"
+grep -q 'REVIEWED <sha>' skills/task/references/code-review-prompt.md || err "code-review-prompt.md: the verdict must carry 'REVIEWED <sha>'"
 grep -q 'review @' skills/task/references/land.md || err "land.md's evidence block lost the 'review @ <sha>' field"
 grep -q 'DoD-n' skills/task/SKILL.md || err "task/SKILL.md lost the DoD-n grading rule"
 grep -qE 'DoD-n .*PASS' skills/task/references/code-review-prompt.md || err "code-review-prompt.md lost the DoD-n grading"
