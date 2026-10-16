@@ -7,10 +7,10 @@
 #   * no `image:` (ignored on a shell executor) — the host provides Node.js
 #     22.13+ / 24 / 26, Python 3.10+ (plus `tomli` on 3.10) and git; the job
 #     checks them before installing anything;
-#   * the CLI and the results live in per-job directories under $TMPDIR (default
-#     /tmp), removed in after_script — a shell runner is shared between
-#     projects. The scanner refuses an output parent that is group- or
-#     world-writable without the sticky bit: keep TMPDIR /tmp or a 0700 dir;
+#   * the CLI, the results and the scan JSON live in one `mktemp -d` directory
+#     (0700, unpredictable) under $TMPDIR, removed by an EXIT trap — a shell
+#     runner's /tmp is shared, and a path built from the job id can be planted
+#     in advance;
 #   * CODEX_SECURITY_AUTH=chatgpt is allowed: the scanner then uses the runner
 #     user's own login (`codex-security login --device-auth` as that user) and
 #     your ChatGPT quota instead of an API key. Only for a private self-hosted
@@ -49,35 +49,42 @@ codex-security:
     - |
       set -eu
       fail() { echo "codex-security: $* — failing closed" >&2; exit 2; }
+      # The key leaves the environment before the first child process; only the
+      # scanner gets it back, as OPENAI_API_KEY, and every pre-scan step runs
+      # with a cleared environment. Residue of a shell runner: every process of
+      # the job runs as the runner user and could read the job's initial
+      # environment from /proc — prefer a dedicated runner for this job.
+      codex_security_api_key="${CODEX_SECURITY_API_KEY:-}"
+      unset CODEX_SECURITY_API_KEY
+      AUTH="${CODEX_SECURITY_AUTH:-api-key}"
+      case "$AUTH" in
+        api-key) [ -n "$codex_security_api_key" ] || fail "CODEX_SECURITY_API_KEY is not available to this MR (protected, environment codex-security/openai)" ;;
+        chatgpt) codex_security_api_key="" ;;
+        *) fail "CODEX_SECURITY_AUTH must be api-key or chatgpt, got '$AUTH'" ;;
+      esac
+      clean() { env -i PATH="$PATH" HOME="${HOME:-/nonexistent}" "$@"; }
       command -v git >/dev/null || fail "git not on the runner's PATH"
       command -v node >/dev/null || fail "node not on the runner's PATH (need 22.13+, 24 or 26)"
       command -v npm >/dev/null || fail "npm not on the runner's PATH"
       command -v python3 >/dev/null || fail "python3 not on the runner's PATH (need 3.10+)"
-      node -e 'const [a,b]=process.versions.node.split(".").map(Number); process.exit((a===22&&b>=13)||a===24||a===26?0:1)' \
-        || fail "node $(node --version) is not 22.13+, 24 or 26"
-      python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' \
-        || fail "python3 $(python3 --version 2>&1) is older than 3.10"
-      CLI_DIR="${TMPDIR:-/tmp}/codex-security-cli-$CI_JOB_ID"
-      npm install --prefix "$CLI_DIR" --ignore-scripts --no-audit --no-fund "@openai/codex-security@${CODEX_SECURITY_VERSION}"
+      clean node -e 'const [a,b]=process.versions.node.split(".").map(Number); process.exit((a===22&&b>=13)||a===24||a===26?0:1)' \
+        || fail "node $(clean node --version) is not 22.13+, 24 or 26"
+      clean python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' \
+        || fail "python3 $(clean python3 --version 2>&1) is older than 3.10"
+      # Private (0700) and unpredictable: a shared runner's /tmp is everyone's,
+      # and a path built from the job id can be planted in advance.
+      WORK="$(mktemp -d "${TMPDIR:-/tmp}/codex-security.XXXXXXXX")"
+      trap 'rm -rf -- "$WORK"' EXIT
+      clean npm install --prefix "$WORK/cli" --cache "$WORK/npm-cache" --ignore-scripts --no-audit --no-fund \
+        "@openai/codex-security@${CODEX_SECURITY_VERSION}"
   script:
     - |
       set -eu
-      AUTH="${CODEX_SECURITY_AUTH:-api-key}"
-      case "$AUTH" in
-        api-key)
-          if [ -z "${CODEX_SECURITY_API_KEY:-}" ]; then
-            echo "codex-security: CODEX_SECURITY_API_KEY is not available to this MR (protected, environment codex-security/openai) — failing closed" >&2
-            exit 2
-          fi ;;
-        chatgpt) ;;
-        *) echo "codex-security: CODEX_SECURITY_AUTH must be api-key or chatgpt, got '$AUTH' — failing closed" >&2; exit 2 ;;
-      esac
-      CLI_DIR="${TMPDIR:-/tmp}/codex-security-cli-$CI_JOB_ID"
-      CODEX_SECURITY_BIN="$CLI_DIR/node_modules/.bin/codex-security"
-      RESULTS_DIR="${TMPDIR:-/tmp}/codex-security-results-$CI_JOB_ID"
+      CODEX_SECURITY_BIN="$WORK/cli/node_modules/.bin/codex-security"
+      RESULTS_DIR="$WORK/results"
+      SCAN_JSON="$WORK/scan.json"            # outside the checkout: the scan refuses a dirty tree
       ARTIFACT_DIR="codex-security-artifacts"
       BASE_REVISION="$(git merge-base "$CI_MERGE_REQUEST_DIFF_BASE_SHA" "$CI_COMMIT_SHA")"
-      SCAN_JSON="${TMPDIR:-/tmp}/codex-security-scan-$CI_JOB_ID.json"   # outside the checkout: the scan refuses a dirty tree
       install -d -m 700 "$RESULTS_DIR" "$ARTIFACT_DIR/results"   # empty dirs are invisible to git
 
       set -- scan . --diff "$BASE_REVISION" --head "$CI_COMMIT_SHA" \
@@ -85,21 +92,20 @@ codex-security:
         --fail-on-severity "${CODEX_SECURITY_FAIL_ON:-high}" \
         --effort "${CODEX_SECURITY_EFFORT:-low}"
       if [ -n "${CODEX_SECURITY_MAX_COST:-}" ]; then set -- "$@" --max-cost "$CODEX_SECURITY_MAX_COST"; fi
-      # shellcheck disable=SC2086 — space-separated flags by contract
+      set -f   # extra flags are split on spaces, never globbed
+      # shellcheck disable=SC2086
       if [ -n "${CODEX_SECURITY_EXTRA_ARGS:-}" ]; then set -- "$@" $CODEX_SECURITY_EXTRA_ARGS; fi
+      set +f
 
       set +e
       if [ "$AUTH" = api-key ]; then
-        codex_security_api_key="$CODEX_SECURITY_API_KEY"
-        unset CODEX_SECURITY_API_KEY
         OPENAI_API_KEY="$codex_security_api_key" "$CODEX_SECURITY_BIN" "$@" > "$SCAN_JSON"
-        scan_exit="$?"
-        unset codex_security_api_key
       else
         "$CODEX_SECURITY_BIN" "$@" > "$SCAN_JSON"
-        scan_exit="$?"
       fi
+      scan_exit="$?"
       set -e
+      unset codex_security_api_key
 
       case "$scan_exit" in
         0|1|2) ;;
@@ -116,8 +122,6 @@ codex-security:
       printf '%s\n' "$scan_exit" > "$ARTIFACT_DIR/scan-exit-code.txt"
       echo "codex-security: scan exit $scan_exit (0 clean · 1 findings at or above ${CODEX_SECURITY_FAIL_ON:-high} · 2 incomplete) — codex-security-gate restores it"
       exit 0
-  after_script:
-    - rm -rf -- "${TMPDIR:-/tmp}/codex-security-cli-$CI_JOB_ID" "${TMPDIR:-/tmp}/codex-security-results-$CI_JOB_ID" "${TMPDIR:-/tmp}/codex-security-scan-$CI_JOB_ID.json"
   artifacts:
     when: always
     access: maintainer

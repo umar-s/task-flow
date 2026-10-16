@@ -122,6 +122,11 @@ this project (the include's `rules:` already do); the key is the owner's —
 `CODEX_SECURITY_AUTH=chatgpt` with the runner user logged in. Each include's
 header lists its setup, knobs and host requirements; nothing may be written
 into the checkout before the scan (a committed-diff scan refuses a dirty tree).
+The key leaves the job environment before the first child process and comes
+back only for the scanner; installs run with a cleared environment (docker:
+npm as the unprivileged `node` user); temporary paths come from `mktemp -d`.
+On a shell runner every process of the job runs as the runner user and can read
+the job's initial environment — give this job a dedicated runner.
 
 ## Pinned gitleaks
 One scanner version, pinned in every path it runs through — so the local hook,

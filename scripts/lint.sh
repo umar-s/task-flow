@@ -273,7 +273,15 @@ for f in "$CSD" "$CSS"; do
   grep -q 'stage: .post' "$f" || err "$f must use the built-in .post stage (an include cannot rely on the project's stages)"
   grep -q 'SCAN_JSON=' "$f" || err "$f writes into the checkout during the scan (a committed-diff scan refuses a dirty tree)"
   grep -q 'unset CODEX_SECURITY_API_KEY' "$f" || err "$f leaves the API key in the job environment"
+  # The key leaves the environment before the first child process: the capture
+  # is the first command of before_script after `set -eu` (and fail()).
+  first=$(awk '/^  before_script:/{b=1;next} b && /^  script:/{exit} b' "$f" | grep -vE '^\s*(- \||#|set -eu|fail\(\) )' | grep -vE '^\s*$' | head -n 1)
+  printf '%s' "$first" | grep -q 'codex_security_api_key="${CODEX_SECURITY_API_KEY:-}"' || err "$f: the key is not captured and unset before the first child process (first command: $first)"
+  grep -q 'mktemp -d' "$f" || err "$f: temporary paths must come from mktemp -d (a job-id path can be planted)"
+  grep -q 'CI_JOB_ID' "$f" && err "$f builds a temporary path from the guessable CI_JOB_ID"
+  grep -q 'set -f' "$f" || err "$f: CODEX_SECURITY_EXTRA_ARGS must not be globbed"
 done
+grep -q 'setpriv --reuid=node' "$CSD" || err "$CSD: npm must run as the unprivileged node user (it could read root's initial environment)"
 grep -qE '^  image: node:[0-9a-z.-]+@sha256:[0-9a-f]{64}$' "$CSD" || err "$CSD: the image must be pinned by digest"
 [ "$(grep -cE '^  image: ' "$CSD")" = "$(grep -cE '^  image: node:[0-9a-z.-]+@sha256:[0-9a-f]{64}$' "$CSD")" ] || err "$CSD: every image must be the pinned one"
 grep -qE '^\s+image:' "$CSS" && err "$CSS: a shell-executor include must not carry image: (it is ignored there)"

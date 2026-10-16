@@ -16,9 +16,12 @@
 #   * --effort low (the recommended MR-diff effort), optional --max-cost;
 #   * both jobs live in the built-in `.post` stage, ordered by `needs:` — an
 #     included file must not depend on the project's own `stages:` list;
-#   * the gate job rejects an unreadable exit code instead of `exit ""`.
-#   Nothing is written into the checkout before the scan: a committed-diff scan
-#   refuses a dirty tree and exits 2 ("require a clean repository checkout").
+#   * the gate job rejects an unreadable exit code instead of `exit ""`;
+#   * nothing is written into the checkout before the scan — a committed-diff
+#     scan refuses a dirty tree and exits 2 ("require a clean repository checkout");
+#   * the key leaves the environment before the first child process; apt-get
+#     and npm run with a cleared environment, npm as the unprivileged `node`
+#     user; temporary paths come from mktemp, never from the guessable job id.
 #
 # Setup (the repository owner, once):
 #   include: [ { local: 'ci/codex-security.gitlab-ci.yml' } ]
@@ -55,20 +58,36 @@ codex-security:
     GIT_DEPTH: "0"                    # the merge base must be reachable
     CODEX_SECURITY_VERSION: "0.1.31"  # the CLI whose flags this job was checked against
   before_script:
-    - apt-get update -qq && apt-get install -y -qq --no-install-recommends git python3 ca-certificates >/dev/null
-    - npm install --prefix /tmp/codex-security-cli --ignore-scripts --no-audit --no-fund "@openai/codex-security@${CODEX_SECURITY_VERSION}"
-  script:
     - |
       set -eu
-      if [ -z "${CODEX_SECURITY_API_KEY:-}" ]; then
+      # The key leaves the environment before the first child process; only the
+      # scanner gets it back, as OPENAI_API_KEY. apt-get and npm run with a
+      # cleared environment, npm also as the unprivileged `node` user, so they
+      # neither inherit the key nor can read the job's initial environment
+      # (/proc/1/environ belongs to root). apt-get stays root: Debian-signed
+      # packages, a residue this job accepts.
+      codex_security_api_key="${CODEX_SECURITY_API_KEY:-}"
+      unset CODEX_SECURITY_API_KEY
+      if [ -z "$codex_security_api_key" ]; then
         echo "codex-security: CODEX_SECURITY_API_KEY is not available to this MR (protected, environment codex-security/openai) — failing closed" >&2
         exit 2
       fi
-      CODEX_SECURITY_BIN="/tmp/codex-security-cli/node_modules/.bin/codex-security"
-      RESULTS_DIR="/tmp/codex-security-results-$CI_JOB_ID"
+      WORK="$(mktemp -d /tmp/codex-security.XXXXXXXX)"        # private (0700), unpredictable
+      CLI_DIR="$(mktemp -d /tmp/codex-security-cli.XXXXXXXX)"
+      trap 'rm -rf -- "$WORK" "$CLI_DIR"' EXIT
+      chown node:node "$CLI_DIR"
+      env -i PATH="$PATH" DEBIAN_FRONTEND=noninteractive \
+        sh -c 'apt-get update -qq && apt-get install -y -qq --no-install-recommends git python3 ca-certificates >/dev/null'
+      env -i PATH="$PATH" HOME="$CLI_DIR" setpriv --reuid=node --regid=node --init-groups \
+        npm install --prefix "$CLI_DIR" --ignore-scripts --no-audit --no-fund "@openai/codex-security@${CODEX_SECURITY_VERSION}"
+  script:
+    - |
+      set -eu
+      CODEX_SECURITY_BIN="$CLI_DIR/node_modules/.bin/codex-security"
+      RESULTS_DIR="$WORK/results"
+      SCAN_JSON="$WORK/scan.json"            # outside the checkout: the scan refuses a dirty tree
       ARTIFACT_DIR="codex-security-artifacts"
       BASE_REVISION="$(git merge-base "$CI_MERGE_REQUEST_DIFF_BASE_SHA" "$CI_COMMIT_SHA")"
-      SCAN_JSON="/tmp/codex-security-scan-$CI_JOB_ID.json"   # outside the checkout: the scan refuses a dirty tree
       install -d -m 700 "$RESULTS_DIR" "$ARTIFACT_DIR/results"   # empty dirs are invisible to git
 
       set -- scan . --diff "$BASE_REVISION" --head "$CI_COMMIT_SHA" \
@@ -76,12 +95,11 @@ codex-security:
         --fail-on-severity "${CODEX_SECURITY_FAIL_ON:-high}" \
         --effort "${CODEX_SECURITY_EFFORT:-low}"
       if [ -n "${CODEX_SECURITY_MAX_COST:-}" ]; then set -- "$@" --max-cost "$CODEX_SECURITY_MAX_COST"; fi
-      # shellcheck disable=SC2086 — space-separated flags by contract
+      set -f   # extra flags are split on spaces, never globbed
+      # shellcheck disable=SC2086
       if [ -n "${CODEX_SECURITY_EXTRA_ARGS:-}" ]; then set -- "$@" $CODEX_SECURITY_EXTRA_ARGS; fi
+      set +f
 
-      # The key reaches the scanner process only, never the job environment.
-      codex_security_api_key="$CODEX_SECURITY_API_KEY"
-      unset CODEX_SECURITY_API_KEY
       set +e
       OPENAI_API_KEY="$codex_security_api_key" "$CODEX_SECURITY_BIN" "$@" > "$SCAN_JSON"
       scan_exit="$?"
