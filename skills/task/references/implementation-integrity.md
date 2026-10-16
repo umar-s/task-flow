@@ -164,7 +164,9 @@ What phase 7 and phase 8 report must be:
   (test users by role, not by name). The gate's `ci/scan-text.sh` scans the text
   you are about to post; use it when the repo has it.
 - **Anchored to the reviewed commit, by command, not by memory.** Take the sha
-  from the reviewer's `REVIEWED <sha>` line the moment the report arrives (write it
+  the moment the report arrives — from the `reviewed` row of the report header
+  when `xreview.sh` wrote it (the script moves the reviewer's machine lines
+  there), else from the reviewer's last-but-one line `REVIEWED <sha>` (write it
   into the state file if a session hand-over is possible), then:
   ```bash
   git merge-base --is-ancestor <review-sha> HEAD || echo "re-reviewed: required"

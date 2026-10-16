@@ -23,7 +23,7 @@ deterministic gate", the blocking force of Critical/Required — is unchanged.
   harness, headless and read-only, run in place from the plugin. Fills the
   brief from the spec file (`DoD → check table` → `[DOD]`, `Premortem edges`
   → `[PREMORTEM_EDGES]` for phase 6 only, the rest → `[DESIGN_SPEC]`) and git,
-  literally and in one pass; reads `Reviewed: <sha>` and the verdict; writes
+  literally and in one pass; reads the verdict's two machine lines; writes
   `docs/reviews/<TASK-ID>-<sha7>-<by>[-security].md`. Exit `0` clean · `1`
   blocking · `2` no review happened (empty range, no spec or DoD section, CLI
   missing or failed, verdict unreadable, verdict for another sha) — never

@@ -64,8 +64,11 @@ What the script does, in order — each step that cannot complete exits `2`:
    separate channel, and the script writes it into the report header itself:
    the reader sees the verdict the runner used.
 5. Writes `docs/reviews/<TASK-ID>-<sha7>-<by>[-security].md` (header by the
-   script: reviewer, model, range, brief hash, isolation, verdict; body by
-   the reviewer) and prints its path.
+   script: reviewer, model, range, brief hash, isolation, `reviewed` sha,
+   verdict; body by the reviewer, its machine lines moved into the header and
+   any look-alike header row escaped) and prints its path. Phase 8 takes the
+   sha from that `reviewed` row; the exit code, not a grep of the file, is
+   the verdict a runner acts on.
 
 **Read-only, by construction:**
 

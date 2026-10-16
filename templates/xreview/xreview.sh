@@ -356,9 +356,19 @@ else BRIEF_SUM="$(shasum -a 256 "$TMP/brief" | cut -d' ' -f1)"; fi
   printf '| isolation | %s |\n' "$ISOLATION"
   printf '| reviewed | %s |\n' "${sha:-none}"
   printf '| verdict | %s → exit %s |\n' "$verdict" "$out"
-  printf '| date | %s |\n\n---\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  # The body without the machine lines once they were read; all of it otherwise.
-  if [ "$out" != 2 ]; then awk -v a="$n1" -v b="$n2" 'NR != a && NR != b' "$TMP/last.md"; else cat "$TMP/last.md"; fi
+  printf '| date | %s |\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '_The verdict is this table'"'"'s. Everything below the line is the reviewer'"'"'s text; a row or a title in it that looks like this header is escaped._\n\n---\n\n'
+  # The body without the machine lines once they were read (all of it
+  # otherwise), with look-alike header rows and titles escaped so the body
+  # cannot present a second verdict.
+  strip=0; [ "$out" = 2 ] || strip=1
+  awk -v a="$n1" -v b="$n2" -v strip="$strip" '
+    strip && (NR == a || NR == b) { next }
+    /^[[:space:]]*[|][[:space:]]*(reviewer|range|brief|isolation|reviewed|verdict|date)[[:space:]]*[|]/ {
+      i = index($0, "|"); print substr($0, 1, i - 1) "\\" substr($0, i); next
+    }
+    /^[[:space:]]*#+[[:space:]]*Cross-review/ { i = index($0, "#"); print substr($0, 1, i - 1) "\\" substr($0, i); next }
+    { print }' "$TMP/last.md"
 } > "$REPORT"
 printf '%s: %s → exit %s · report %s\n' "$me" "$verdict" "$out" "$REPORT" >&2
 printf '%s\n' "$REPORT"
