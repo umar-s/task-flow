@@ -147,6 +147,12 @@ SEC_NOSUM=$(answer secnosum "Всё хорошо.
 REVIEWED $SHORT")
 SEC_PROSE=$(answer secprose "Critical: 0 | High: 0 | Medium: 0 | Low: 0
 REVIEWED $SHORT")
+SEC_OVERFLOW=$(answer secoverflow "REVIEWED $SHORT
+SUMMARY critical=0 high=9223372036854775808 medium=0 low=0")
+SEC_OVERFLOW2=$(answer secoverflow2 "REVIEWED $SHORT
+SUMMARY critical=9223372036854775807 high=1 medium=0 low=0")
+SEC_ZEROS=$(answer seczeros "REVIEWED $SHORT
+SUMMARY critical=000 high=00 medium=5 low=0")
 
 # 1. verdict → exit, both reviewers, report named <TASK>-<sha7>-<by>
 run 0 codex-yes "STUB_ANSWER=$YES" -- --by codex --task T-1 --base main
@@ -186,6 +192,9 @@ for kase in security-echoed:SEC_ECHOED security-trailing-dot:SEC_DOTTED security
   v="${kase#*:}"; f="${!v}"
   run 2 "${kase%%:*}" "STUB_ANSWER=$f" -- --by codex --task T-1 --base main --kind security
 done
+run 1 security-overflow-high "STUB_ANSWER=$SEC_OVERFLOW" -- --by codex --task T-1 --base main --kind security
+run 1 security-overflow-sum "STUB_ANSWER=$SEC_OVERFLOW2" -- --by codex --task T-1 --base main --kind security
+run 0 security-all-zero-digits "STUB_ANSWER=$SEC_ZEROS" -- --by codex --task T-1 --base main --kind security
 run 2 code-verdict-for-security "STUB_ANSWER=$YES" -- --by codex --task T-1 --base main --kind security
 run 2 security-summary-for-code "STUB_ANSWER=$SEC_CLEAN" -- --by codex --task T-1 --base main
 # 4. no review happened → 2, and the reviewer is never called on a bad range

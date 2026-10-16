@@ -333,7 +333,8 @@ elif [ "$KIND" = code ]; then
 elif printf '%s\n' "$t2" | grep -qxE 'SUMMARY critical=[0-9]+ high=[0-9]+ medium=[0-9]+ low=[0-9]+'; then
   c="$(printf '%s' "$t2" | sed -E 's/^SUMMARY critical=([0-9]+) .*/\1/')"
   h="$(printf '%s' "$t2" | sed -E 's/^SUMMARY critical=[0-9]+ high=([0-9]+) .*/\1/')"
-  if [ $((10#$c + 10#$h)) -gt 0 ]; then verdict="Critical $c / High $h"; out=1; else verdict="Critical 0 / High 0"; out=0; fi
+  # No arithmetic: a count past 2^63 wraps to 0 and would read as clean.
+  case "$c$h" in *[1-9]*) verdict="Critical $c / High $h"; out=1 ;; *) verdict="Critical 0 / High 0"; out=0 ;; esac
 else
   why="the last line is not 'SUMMARY critical=N high=N medium=N low=N'"
 fi
