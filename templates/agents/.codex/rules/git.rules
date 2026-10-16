@@ -34,10 +34,3 @@ prefix_rule(
     match = [["git", "push", "--force", "origin", "main"], ["git", "push", "-f"], ["git", "push", "--delete", "origin", "x"]],
     not_match = [["git", "push", "origin", "main"]],
 )
-
-prefix_rule(
-    pattern = ["glab", "mr", "create"],
-    decision = "allow",
-    justification = "the builder opens the MR; merging stays with a person",
-    match = [["glab", "mr", "create", "--fill"]],
-)

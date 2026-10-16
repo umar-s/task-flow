@@ -295,6 +295,7 @@ grep -q '^sandbox_mode = "read-only"' "$AG/.codex/agents/reviewer.toml" || err "
 grep -q '^developer_instructions = """' "$AG/.codex/agents/reviewer.toml" || err "$AG reviewer role lacks developer_instructions (Codex ignores the role without them)"
 grep -q 'decision = "forbidden"' "$AG/.codex/rules/git.rules" || err "$AG/.codex/rules/git.rules lost the forbidden force-push rule"
 grep -q 'belongs to the prediction-protocol gate' "$AG/.codex/rules/git.rules" || err "$AG/.codex/rules/git.rules no longer names what a prefix rule cannot see"
+grep -q 'glab' "$AG/.codex/rules/git.rules" && err "$AG/.codex/rules/git.rules grants glab again (no requirement asks for it)"
 for r in README.md README.ru.md; do
   grep -qF '$task-flow:task' "$r" || err "$r does not show the Codex invocation"
   grep -q 'xreview' "$r" || err "$r does not describe the cross-model review"

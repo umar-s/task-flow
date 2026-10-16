@@ -36,7 +36,7 @@ if command -v codex >/dev/null; then
   done <<'EOF'
 allow|git push origin feature/x
 allow|git commit -m x
-allow|glab mr create --fill
+none|glab mr create --fill
 forbidden|git push --force origin main
 forbidden|git push -f
 forbidden|git push --force-with-lease
