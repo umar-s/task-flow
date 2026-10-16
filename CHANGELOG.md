@@ -23,22 +23,45 @@ deterministic gate", the blocking force of Critical/Required — is unchanged.
   harness, headless and read-only, run in place from the plugin. Fills the
   brief from the spec file (`DoD → check table` → `[DOD]`, `Premortem edges`
   → `[PREMORTEM_EDGES]` for phase 6 only, the rest → `[DESIGN_SPEC]`) and git,
-  literally and in one pass; runs `codex exec -s read-only --ephemeral` or
-  `claude -p --tools Read,Grep,Glob,Bash --permission-mode dontAsk` with a
-  read-only git allowlist; reads `Reviewed: <sha>` and the verdict; writes
+  literally and in one pass; reads `Reviewed: <sha>` and the verdict; writes
   `docs/reviews/<TASK-ID>-<sha7>-<by>[-security].md`. Exit `0` clean · `1`
   blocking · `2` no review happened (empty range, no spec or DoD section, CLI
   missing or failed, verdict unreadable, verdict for another sha) — never
   read as clean. `--brief-only` prints the filled brief for an interactive
   subagent.
+- **Read-only by construction.** Codex: `codex exec -s read-only
+  --ignore-rules --ephemeral` — an execpolicy `allow` would run the matched
+  command outside the sandbox. Claude Code: `claude -p --tools
+  Read,Grep,Glob --permission-mode dontAsk --strict-mcp-config
+  --disable-slash-commands` — no shell (an allowlisted `git diff
+  --output=<file>` writes), no MCP server, no skills; the range material
+  (stat, log, status, full diff, fenced longer than any backtick run inside,
+  capped by `XREVIEW_MAX_DIFF_BYTES` and refused — not truncated — above it;
+  6b without the spec's own diff) is attached to the brief, and the checkout
+  must be at the head under review. `XREVIEW_ALLOW` grants a shell for
+  exactly the listed rules.
+- **No repository config reaches the reviewer.** A `.claude/settings.json`
+  or `settings.local.json` committed in the diff ran its SessionStart hook
+  and its `apiKeyHelper` command when a `claude -p` reviewer started (lab,
+  2026-10-16); the Claude reviewer now loads no settings file
+  (`--setting-sources ""`, `disableAllHooks`; OAuth unaffected). The same
+  hook in `.codex/hooks.json` did not run under `--ignore-user-config`.
 - **Isolation from the author's session, by default.** Measured 2026-10-16:
-  `claude -p` ran 9 SessionStart hooks of user plugins, with
-  `--setting-sources project,local` none; `codex exec` ran 4, with
-  `--ignore-user-config` none — memory plugins replay the implementation
-  story, which is exactly the briefing the dispatch rule forbids.
-  `XREVIEW_ISOLATE=0` opts out. The reviewer's environment drops the author
-  session's ids, plugin paths, `PP_SESSION` / `PREDICT` and the parent's
-  messaging socket and token.
+  `claude -p` ran 9 SessionStart hooks of user plugins, with the user's
+  settings left out none; `codex exec` ran 4, with `--ignore-user-config`
+  none — memory plugins replay the implementation story, which is exactly
+  the briefing the dispatch rule forbids. `XREVIEW_ISOLATE=0` brings the
+  user's own settings and plugins back, never MCP, `.rules` or repository
+  settings. The reviewer's environment drops the session variable families
+  (`CLAUDE_CODE_*`, `CLAUDE_PLUGIN_*`, `PP_*`, `CODEX_SANDBOX*`, the session
+  ids, `PREDICT`, the parent's messaging socket and token) and keeps the
+  reviewer's own auth (`CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_*`, …,
+  `XREVIEW_KEEP_ENV`); `--effort` is checked against the known levels.
+- **The verdict a reader sees is the verdict parsed.** A field is a line
+  starting with its label in its own section (`### Assessment`; the 6b
+  counts in `### Summary`), outside fences, HTML comments and indented code,
+  its value taken whole; an echoed placeholder, a longer word or sha, or two
+  disagreeing values are exit 2.
 - `skills/task/references/cross-review.md` — who reviews (the harness that
   did not write the diff), the script's steps and flags, where it can run,
   the delta re-review by the same other model, the docs-only commit rule
@@ -59,26 +82,36 @@ deterministic gate", the blocking force of Critical/Required — is unchanged.
   any finding); `--effort low`, optional `--max-cost`; both jobs in `.post`
   ordered by `needs:` (an include cannot rely on the project's `stages:`);
   the scan JSON written outside the checkout (a committed-diff scan refuses a
-  dirty tree); the gate rejects an unreadable exit code. The shell variant
-  checks Node / Python / git first, keeps the CLI in per-job directories
-  removed in `after_script`, and allows `CODEX_SECURITY_AUTH=chatgpt` for a
-  private self-hosted runner. Marked an **LLM scanner, not a layer of the
-  gate** in the skill, `ci/README.md` and both READMEs.
+  dirty tree); the gate rejects an unreadable exit code; the key is captured
+  and unset as the first command, installs run under `env -i` (docker: npm as
+  the unprivileged `node` user, so it cannot read root's initial
+  environment), a missing key fails before any install; temporary paths come
+  from `mktemp -d` and an EXIT trap, never from the guessable `CI_JOB_ID`;
+  `CODEX_SECURITY_EXTRA_ARGS` is split with globbing off. The shell variant
+  checks Node / Python / git first and allows `CODEX_SECURITY_AUTH=chatgpt`
+  for a private self-hosted runner. Marked an **LLM scanner, not a layer of
+  the gate** in the skill, `ci/README.md` and both READMEs.
 - `templates/agents/` — `AGENTS.md.skeleton` (task-flow bindings,
   `## Code Review Rules`), `CLAUDE.md.skeleton` (`@AGENTS.md` first),
   `.codex/config.toml.skeleton`, `.codex/agents/reviewer.toml` (read-only
   role; `developer_instructions` are mandatory or Codex ignores the role),
-  `.codex/rules/git.rules` (commit and plain push escalate; `--force`, `-f`,
-  `--force-with-lease`, `--mirror`, `--delete` right after `push` are
-  forbidden; a flag after the refspec is the prediction gate's — the rule
-  file says so).
-- Tests: `tests/xreview.sh` (70 controls with stub CLIs: verdict → exit, sha
-  mismatch, translated labels, empty range, missing spec / DoD, failing or
-  silent CLI, literal slots, read-only and isolation flags, env scrub);
-  `tests/agents-templates.sh` (execpolicy decisions incl. the documented
-  residue, a broken rule example, TOML parse; SKIPPED without codex);
-  `scripts/codex-security-mock.sh` — manual acceptance of both includes with
-  `--mock` (docker variant in the pinned image, shell variant on the host).
+  `.codex/rules/git.rules` (commit is allowed out of the sandbox; a push
+  **prompts** — a person approves it, under `codex exec` it fails and the
+  runner pushes; `--force`, `-f`, `--force-with-lease`, `--mirror`,
+  `--delete` right after `push` are forbidden; a prefix rule cannot see
+  `--force-with-lease=<ref>`, `-fu` or a flag after the refspec, which is why
+  no push is auto-allowed — the rule file says so).
+- Tests: `tests/xreview.sh` (126 controls with stub CLIs: verdict → exit,
+  strict and rendered-text field parsing, sha mismatch, translated labels,
+  empty range, missing spec / DoD, failing or silent CLI, literal slots,
+  read-only and isolation flags, the attached range material, env scrub by
+  family); `tests/agents-templates.sh` (20: execpolicy decisions, no push
+  auto-allowed in any form, a broken rule example, TOML parse; SKIPPED
+  locally without codex, a failure under CI — `check.yml` installs
+  `@openai/codex@0.162.1`); `scripts/codex-security-mock.sh` — manual
+  acceptance of both includes with `--mock` (docker variant in the pinned
+  image, shell variant on the host), including an npm shim that records what
+  the install step can see.
 - `lint.sh`: pins for the Harness sections (with a 16-line cap), the
   instruction-file bindings, `ci-gate`'s `$ROOT`, step 7's "not a gate",
   phase 6's other-model-first dispatch, `cross-review.md`, the parsable
@@ -100,9 +133,9 @@ deterministic gate", the blocking force of Critical/Required — is unchanged.
 - `decompose` phase 5 dispatches "the harness's fresh subagent" (was: the
   Agent tool); phase 7 discovers tracker tools with ToolSearch or Codex's
   tool list.
-- Review briefs: the Assessment / Summary label lines are pinned in English
-  (a runner parses them; a live Claude reviewer answered in English and a
-  translated label would read as no verdict); 6b ends with
+- Review briefs: the `### Assessment` / `### Summary` headings and their
+  label lines are pinned in English, as plain text (a runner parses them; a
+  translated label reads as no verdict); 6b ends with
   `**Reviewed:** [HEAD_SHA]`; another revision is read with
   `git show <rev>:<path>` — a read-only sandbox cannot add a worktree; the
   project's conventions are its instruction file.
@@ -111,32 +144,59 @@ deterministic gate", the blocking force of Critical/Required — is unchanged.
   Codex install, a harness table, cross-review and Codex Security paragraphs.
 
 ### Acceptance record
-- `scripts/lint.sh`, `scripts/release-check.sh`, `tests/run.sh` (incl. 70
-  xreview controls, 14 agents-template controls); three mutants of
+- `scripts/lint.sh`, `scripts/release-check.sh`, `tests/run.sh` (incl. 126
+  xreview controls, 20 agents-template controls); three mutants of
   `xreview.sh` (unreadable verdict → 0, no empty-range check, no isolation)
-  each turn the suite red.
+  each turn the suite red, and every parser control added by a review round
+  was red on the parser before it.
 - Live, on a lab repository with a planted defect (DoD: invalid input raises
   `ValueError`; the code returned a default): `--by codex` (gpt-6.1-sol) and
   `--by claude` (opus) each found the swallowed error, the off-by-one at both
   boundaries and the missing tests independently — verdicts `With fixes` /
   `No`, exit 1, `Reviewed:` equal to HEAD, checkout untouched; `--kind
-  security` both ways parsed (`Critical 0 / High 0` → exit 0).
-- `scripts/codex-security-mock.sh`: 17/17 — SARIF 2.1.0, scan exit 1 recorded
+  security` both ways parsed; the shell-less Claude reviewer found the same
+  defects from the attached material. On a lab diff carrying a
+  `.claude/settings.json` hook, a committed `settings.local.json` with a hook
+  and an `apiKeyHelper`, a project MCP server and a `.codex/hooks.json` hook,
+  both reviewers ran without any of them executing (marker files absent).
+  Every real report of the session replays through the final parser to its
+  recorded verdict.
+- `scripts/codex-security-mock.sh`: 20/20 — SARIF 2.1.0, scan exit 1 recorded
   and restored by the gate, missing / garbled artifact → 2, no key → 2 before
-  any scan, pinned CLI version installed; shell variant: Python < 3.10 → 2
-  before installing, mock scan → exit 1, per-job directories removed.
-- `codex execpolicy check` on `git.rules`: plain push allow, `push --force …`
-  forbidden, `push origin main --force` allow (the documented residue); a
-  rule whose example does not match fails to load. `reviewer.toml` loads
-  without a warning; the same role without `developer_instructions` is
-  ignored with "malformed agent role definition".
+  any install, pinned CLI version installed, npm saw no key and could not
+  read PID 1's environment; shell variant: Python < 3.10 → 2 before
+  installing, npm without the key, mock scan → exit 1, the private work
+  directory removed.
+- `codex execpolicy check` on `git.rules`: commit allow, plain push prompt,
+  `push --force …` forbidden, `--force-with-lease=<ref>` / `-fu` / a flag
+  after the refspec prompt (never allow); a rule whose example does not match
+  fails to load. A user `.rules` allow ran a command outside the reviewer's
+  read-only sandbox under `--ignore-user-config` alone, not with
+  `--ignore-rules`. `reviewer.toml` loads without a warning; the same role
+  without `developer_instructions` is ignored with "malformed agent role
+  definition".
+
+### Review record
+Built by Claude, reviewed by Codex through `xreview.sh` itself, plus the
+background security review of each commit. Round 1 (`No`): seven findings
+F1–F7 — a writing git command in the Claude allowlist, the API key visible
+to installs, force forms past `git.rules`, a lenient verdict parser, scrub
+by name, an unrequested `glab` grant, execpolicy checks skipped in CI. The
+security review added guessable `/tmp` paths, repository settings and
+`.rules` reaching the reviewers, and a parser that counted text a reader
+does not see. Round 2 (`With fixes`): MCP tools left to the Claude reviewer,
+a one-character field boundary, stale release notes. One commit per
+finding (`fix(review): …`); the record is in the design spec, §6.
 
 ### Supply-chain self-check
 `git diff v1.11.0 -- skills templates` plus the new files, grepped for
 network, credentials, `rm -rf`, `eval`, base64:
 - `CODEX_SECURITY_API_KEY` (both Codex Security includes): read from the
-  protected CI variable, handed to the scanner process alone as
-  `OPENAI_API_KEY`, unset from the job environment before the scan.
+  protected CI variable into a shell variable and unset as the first command
+  of the job, before any child process; handed back only to the scanner, as
+  `OPENAI_API_KEY`. Residue: on a shell runner every process of the job runs
+  as the runner user and could read the job's initial environment from
+  `/proc` (the include says so; docker runs npm as another user).
 - Network the grep does not name: the includes run `apt-get install git
   python3 ca-certificates` (docker variant) and `npm install
   @openai/codex-security@0.1.31 --ignore-scripts` (top-level pin; the
@@ -145,9 +205,11 @@ network, credentials, `rm -rf`, `eval`, base64:
   sends the brief — spec text and commit subjects — and whatever files the
   reviewer reads to that vendor's API: the same exposure as running that CLI
   in the repository by hand.
-- `rm -rf`: `xreview.sh` removes its own `mktemp -d` directory on exit; the
-  shell include's `after_script` removes the three per-job paths named by
-  `$CI_JOB_ID` under `$TMPDIR`.
+- `rm -rf`: `xreview.sh` removes its own `mktemp -d` directory on exit; both
+  includes remove their own `mktemp -d` directories in an EXIT trap.
+- `.github/workflows/check.yml` (this repository's CI, not shipped) installs
+  `@openai/codex@0.162.1` with `--ignore-scripts` for the execpolicy checks;
+  no credentials.
 - `fetch` / `https`: only prose (`git fetch` before a review, the selftest's
   pinned-scanner fetch); no `eval`, no base64.
 

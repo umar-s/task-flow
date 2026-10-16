@@ -76,25 +76,46 @@ Bindings читаются из `AGENTS.md` (Codex читает только ег
   `[WHAT_CHANGED]` — файл автора или темы коммитов диапазона.
   Подстановка буквальная (awk `index`/`substr`), содержимое спеки никогда
   не исполняется.
-- **Read-only:** Codex — `codex exec -s read-only`; Claude — `claude -p
-  --tools Read,Grep,Glob,Bash --permission-mode dontAsk` + allowlist
-  read-only git-команд; Edit/Write/Agent в сессии ревьюера не существуют.
+- **Read-only:** Codex — `codex exec -s read-only --ignore-rules` (`allow`
+  из `.rules` выпускает команду из песочницы — проверено); Claude —
+  `claude -p --tools Read,Grep,Glob --permission-mode dontAsk
+  --strict-mcp-config --disable-slash-commands`: **без shell** (разрешённый
+  `git diff --output=<file>` пишет в checkout, git принимает сокращения
+  длинных опций — allowlist не закрывается), без MCP (`--tools` ограничивает
+  только встроенные), без skills; материалы диапазона (stat, log, status,
+  дифф; для 6b — без диффа самой спеки) прикладываются к брифу, checkout
+  обязан стоять на ревьюируемом head. `XREVIEW_ALLOW` даёт shell ровно под
+  перечисленные правила.
+- **Никаких файлов настроек из репозитория у Claude-ревьюера:**
+  `--setting-sources ""` + `disableAllHooks` — закоммиченный в диффе
+  `.claude/settings.json` или `settings.local.json` исполняет хуки и
+  `apiKeyHelper` при старте сессии (оба проверены на lab-репозитории
+  2026-10-16); OAuth при этом работает. У Codex проектный слой под
+  `--ignore-user-config` не грузится (хук из `.codex/hooks.json` не
+  исполнился).
 - **Изоляция от памяти автора (по умолчанию).** Измерено 2026-10-16:
   `claude -p` по умолчанию запускает 9 SessionStart-хуков пользовательских
   плагинов (claude-mem подмешивает историю проекта, т.е. рассказ автора),
-  `--setting-sources project,local` — 0; `codex exec` по умолчанию — 4
+  без пользовательских настроек — 0; `codex exec` по умолчанию — 4
   SessionStart-хука, `--ignore-user-config` — 0. Ревьюер, которому
   плагин памяти пересказал реализацию, — ровно тот брифинг автором, который
-  запрещает dispatch-правило. `XREVIEW_ISOLATE=0` — осознанный опт-аут.
-- **Env без чужой сессии:** снимаются `CLAUDECODE`, `CLAUDE_CODE_*`,
-  `CLAUDE_PLUGIN_*`, `CLAUDE_ENV_FILE`, `CODEX_SESSION_ID`, `CODEX_THREAD_ID`,
-  `PP_SESSION`, `PREDICT` — ревьюер не наследует идентичность сессии автора
-  (факт 16 стека: переменные утекают во вложенный харнесс).
+  запрещает dispatch-правило. `XREVIEW_ISOLATE=0` — осознанный опт-аут:
+  возвращает пользовательские настройки и плагины, но не MCP, не `.rules` и
+  не файлы настроек из репозитория.
+- **Env без чужой сессии:** снимаются **семейства** `CLAUDE_CODE_*`,
+  `CLAUDE_PLUGIN_*`, `PP_*`, `CODEX_SANDBOX*` и имена `CLAUDECODE`,
+  `CLAUDE_ENV_FILE`, `CODEX_SESSION_ID`, `CODEX_THREAD_ID`, `PREDICT`, …;
+  остаются переменные авторизации ревьюера (`CLAUDE_CODE_OAUTH_TOKEN`,
+  `CLAUDE_CODE_USE_*`, …) и `XREVIEW_KEEP_ENV` — ревьюер не наследует
+  идентичность сессии автора и её канал сообщений (факт 16 стека).
 - **Вердикт → exit:** `code` — `Ready to merge?` `Yes` → 0, `No`/`With fixes`
-  → 1; `security` — `Critical: N | High: N`, сумма > 0 → 1. Не распознан
-  вердикт, `Reviewed:` ≠ HEAD, пустой диапазон, нет спеки/секции DoD, CLI
-  не найден, ревьюер упал → **2** (fail closed: непрочитанный вердикт — не
-  чистое ревью).
+  → 1; `security` — `Critical: N | High: N | Medium: N | Low: N`, Critical +
+  High > 0 → 1. Поле — строка, начинающаяся с метки, в своей секции
+  (`### Assessment`, у 6b счётчики — `### Summary`), в тексте, который видит
+  читатель отрендеренного отчёта (не fence, не комментарий, не отступ),
+  значение целиком. Не распознан вердикт, два разных значения, `Reviewed:` ≠
+  HEAD, пустой диапазон, нет спеки/секции DoD, CLI не найден, ревьюер упал
+  → **2** (fail closed: непрочитанный вердикт — не чистое ревью).
 - Отчёт `docs/reviews/<TASK>-<sha7>-<by>[-security].md`: шапка от скрипта
   (ревьюер, модель, base/head, sha256 брифа, exit) + ответ модели.
 - Коммит отчёта двигает HEAD: правило — коммит, меняющий только
@@ -188,3 +209,14 @@ force» (кросс-ревью Codex 2026-10-16 показало обход `all
 5. `reviewer.toml` грузится Codex без предупреждения; намеренно битый — с
    предупреждением (негативный контроль).
 6. yamllint по `templates/ci-gate/gitlab/` (CI делает), `claude plugin validate .`.
+
+## 6. Перекрёстное ревью этого релиза (xreview на самом себе)
+
+Строил Claude, ревьюил Codex (gpt-6.1-sol, effort high) через сам
+`xreview.sh`; параллельно — фоновый security-review коммитов.
+
+| Раунд | Вердикт | Находки → фикс |
+|---|---|---|
+| 1 · `946e855..536b596` | No | F1 `git diff --output` у Claude-ревьюера → без shell, материалы диапазона в брифе; F2 ключ виден `apt-get`/`npm` → снят первой строкой, установка под `env -i`, npm под `node`; F3 `--force-with-lease=…`/`-fu` обходят forbidden → push = prompt; F4 эхо плейсхолдера/«Yesterday»/длинный sha → строгий разбор; F5 scrub по списку → по семействам; F6 лишний grant `glab` → убран; F7 execpolicy-проверки молча пропускались в CI → pinned Codex CLI в CI, skip под CI = fail |
+| фон (security) | — | S2 предсказуемые пути из `CI_JOB_ID` в общем `/tmp` → `mktemp -d` + trap; S3 `settings.local.json` (хуки, `apiKeyHelper`) и пользовательские `.rules` → `--setting-sources ""` + `disableAllHooks`, `--ignore-rules`; S4 fail-open парсера (отступ, HTML-комментарий, вложенный fence) → разбор видимого текста по секциям |
+| 2 · `536b596..86825a6` | With fixes | D1 MCP-инструменты у Claude-ревьюера → `--strict-mcp-config` с пустым списком (заодно найдено: хук из `.claude/settings.json` диффа исполнялся); D2 граница поля в один символ, битый summary выпадал → целое значение, противоречие = 2; D3 CHANGELOG/спека отставали от кода → этот раздел и CHANGELOG |
