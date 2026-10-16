@@ -108,6 +108,22 @@ DOTTED=$(answer dotted "**Reviewed:** $SHORT.
 **Ready to merge?** With fixes.")
 SEC_ECHOED=$(answer secechoed "Critical: N | High: N | Medium: N | Low: N
 **Reviewed:** $SHORT")
+SHA_LIST=$(answer shalist "Reviewed: $HEAD_SHA, 0123456789abcdef
+**Ready to merge?** Yes")
+SHA_SUFFIX=$(answer shasuffix "Reviewed: $HEAD_SHA-not-reviewed
+**Ready to merge?** Yes")
+SEC_TWO=$(answer sectwo "Critical: 0 | High: 0 | Medium: 0 | Low: 0
+Critical: 0 | High: 1 | Medium: 0 | Low: 0.
+**Reviewed:** $SHORT")
+QUOTED=$(answer quoted "Пример неверного ответа:
+\`\`\`text
+Reviewed: 0123456
+Ready to merge? No
+\`\`\`
+> Reviewed: 0123456
+Поле \`Reviewed: 0123456\` в прозе — не вердикт.
+**Reviewed:** $SHORT
+**Ready to merge?** Yes")
 
 # 1. verdict → exit, both reviewers, report named <TASK>-<sha7>-<by>
 run 0 codex-yes "STUB_ANSWER=$YES" -- --by codex --task T-1 --base main
@@ -133,6 +149,10 @@ run 2 two-verdicts "STUB_ANSWER=$TWO_VERDICTS" -- --by codex --task T-1 --base m
 run 2 two-shas "STUB_ANSWER=$TWO_SHAS" -- --by codex --task T-1 --base main
 run 1 trailing-dots "STUB_ANSWER=$DOTTED" -- --by codex --task T-1 --base main
 run 2 security-echoed-summary "STUB_ANSWER=$SEC_ECHOED" -- --by codex --task T-1 --base main --kind security
+run 2 sha-then-list "STUB_ANSWER=$SHA_LIST" -- --by codex --task T-1 --base main
+run 2 sha-then-suffix "STUB_ANSWER=$SHA_SUFFIX" -- --by codex --task T-1 --base main
+run 2 security-two-summaries "STUB_ANSWER=$SEC_TWO" -- --by codex --task T-1 --base main --kind security
+run 0 quoted-fields-ignored "STUB_ANSWER=$QUOTED" -- --by codex --task T-1 --base main
 # 3. security brief: counts decide, bold or not
 run 0 security-clean "STUB_ANSWER=$SEC_CLEAN" -- --by codex --task T-1 --base main --kind security
 [ -f "$R/docs/reviews/T-1-$SHORT-codex-security.md" ] && ok || bad "security report not suffixed -security"

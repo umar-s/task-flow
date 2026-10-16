@@ -300,46 +300,57 @@ if [ "$rrc" != 0 ] || [ ! -s "$TMP/last.md" ]; then
   exit 2
 fi
 
-# Verdict. A verdict attaches to the commit it saw. Parsing is strict: every
-# field must be the whole value on its line and agree with itself — an echoed
-# placeholder, a longer word or a longer sha is "unreadable", never clean.
+# Verdict. A verdict attaches to the commit it saw. The fields are lines that
+# START with their label (bold allowed), outside code fences — a field quoted
+# in prose, a blockquote or a fence is not the reviewer's verdict. Each value
+# is taken whole: anything but one clean value is BAD, and BAD or two
+# disagreeing values are "unreadable" (2), never clean.
+awk '
+  /^[[:space:]]*(```|~~~)/ { fence = !fence; next }
+  fence { next }
+  {
+    line = $0; gsub(/\*/, "", line); sub(/^[[:space:]]+/, "", line)
+    if (line ~ /^Reviewed:/) {
+      v = substr(line, 10); gsub(/`/, "", v); sub(/^[[:space:]]+/, "", v); sub(/[[:space:].]+$/, "", v)
+      print "R " ((v ~ /^[0-9a-f]+$/ && length(v) >= 7 && length(v) <= 40) ? v : "BAD")
+    } else if (line ~ /^Ready to merge\?/) {
+      v = tolower(substr(line, 16)); sub(/^[[:space:]]+/, "", v); sub(/[[:space:].]+$/, "", v)
+      print "V " ((v == "yes" || v == "no" || v == "with fixes") ? v : "BAD")
+    } else if (line ~ /^Critical:/) {
+      v = line; sub(/[[:space:].]+$/, "", v)
+      if (v ~ /^Critical:[[:space:]]*[0-9]+[[:space:]]*\|[[:space:]]*High:[[:space:]]*[0-9]+[[:space:]]*\|[[:space:]]*Medium:[[:space:]]*[0-9]+[[:space:]]*\|[[:space:]]*Low:[[:space:]]*[0-9]+$/) {
+        split(v, f, "|"); c = f[1]; h = f[2]; gsub(/[^0-9]/, "", c); gsub(/[^0-9]/, "", h)
+        print "S " c " " h
+      } else print "S BAD"
+    }
+  }' "$TMP/last.md" > "$TMP/fields"
+field() { sed -n "s/^$1 //p" "$TMP/fields" | sort -u; }
+count() { printf '%s' "$1" | grep -c . || true; }  # lint: allow (an empty list counts as 0)
 verdict="unreadable"; out=2; why=""
-shas="$(awk '{
-  line = $0
-  while ((i = index(line, "Reviewed:")) > 0) {
-    rest = substr(line, i + 9); sub(/^[*` \t]*/, "", rest)
-    if (match(rest, /^[0-9a-f]+/) && substr(rest, RLENGTH + 1, 1) !~ /[0-9A-Za-z_]/) print substr(rest, 1, RLENGTH)
-    else print "BAD"
-    line = substr(line, i + 9)
-  }
-}' "$TMP/last.md" | sort -u)"
-nshas="$(printf '%s' "$shas" | grep -c . || true)"  # lint: allow (an empty list counts as 0)
-if [ "$nshas" = 0 ]; then
+shas="$(field R)"
+if [ "$(count "$shas")" = 0 ]; then
   why="no 'Reviewed: <sha>' line"
-elif [ "$nshas" != 1 ] || [ "$shas" = BAD ]; then
+elif [ "$(count "$shas")" != 1 ] || [ "$shas" = BAD ]; then
   why="the 'Reviewed:' field is not one clean sha ($(printf '%s' "$shas" | tr '\n' ' '))"
-elif [ "${#shas}" -lt 7 ] || [ "${#shas}" -gt 40 ] || [ "${HEAD_SHA#"$shas"}" = "$HEAD_SHA" ]; then
+elif [ "${HEAD_SHA#"$shas"}" = "$HEAD_SHA" ]; then
   why="the report says Reviewed: $shas, the range head is $HEAD_SHA"
 elif [ "$KIND" = code ]; then
-  vals="$(awk '{
-    line = $0; i = index(line, "Ready to merge?"); if (!i) next
-    v = substr(line, i + 15); sub(/^[* \t]*/, "", v); sub(/[*. \t]*$/, "", v)
-    print tolower(v)
-  }' "$TMP/last.md" | sort -u)"
-  case "$vals" in
-    yes) verdict="ready to merge"; out=0 ;;
-    no) verdict="not ready"; out=1 ;;
-    "with fixes") verdict="ready with fixes"; out=1 ;;
-    "") why="no 'Ready to merge? Yes|No|With fixes' line" ;;
-    *) why="the verdict line is not exactly Yes, No or With fixes ($(printf '%s' "$vals" | tr '\n' '/'))" ;;
+  vals="$(field V)"
+  case "$(count "$vals"):$vals" in
+    1:yes) verdict="ready to merge"; out=0 ;;
+    1:no) verdict="not ready"; out=1 ;;
+    "1:with fixes") verdict="ready with fixes"; out=1 ;;
+    0:*) why="no 'Ready to merge? Yes|No|With fixes' line" ;;
+    *) why="the verdict is not one of Yes, No, With fixes ($(printf '%s' "$vals" | tr '\n' '/'))" ;;
   esac
 else
-  sums="$(tr -d '*' < "$TMP/last.md" | sed -nE 's/^[[:space:]]*Critical:[[:space:]]*([0-9]+)[[:space:]]*\|[[:space:]]*High:[[:space:]]*([0-9]+)[[:space:]]*\|[[:space:]]*Medium:[[:space:]]*[0-9]+[[:space:]]*\|[[:space:]]*Low:[[:space:]]*[0-9]+[[:space:]]*$/\1 \2/p' | sort -u)"
-  case "$(printf '%s' "$sums" | grep -c . || true)" in  # lint: allow (an empty list counts as 0)
-    1) c="${sums% *}"; h="${sums#* }"
+  sums="$(field S)"
+  case "$(count "$sums"):$sums" in
+    1:BAD) why="the summary line is not 'Critical: N | High: N | Medium: N | Low: N'" ;;
+    1:*) c="${sums% *}"; h="${sums#* }"
        if [ $((c + h)) -gt 0 ]; then verdict="Critical $c / High $h"; out=1; else verdict="Critical 0 / High 0"; out=0; fi ;;
-    0) why="no 'Critical: N | High: N | Medium: N | Low: N' summary line" ;;
-    *) why="summary lines disagree ($(printf '%s' "$sums" | tr '\n' '/'))" ;;
+    0:*) why="no 'Critical: N | High: N | Medium: N | Low: N' summary line" ;;
+    *) why="summary lines disagree or are malformed ($(printf '%s' "$sums" | tr '\n' '/'))" ;;
   esac
 fi
 [ "$out" != 2 ] || verdict="unreadable: $why"
