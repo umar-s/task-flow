@@ -188,7 +188,7 @@ printf '%s' "$OUT" | grep -q 'DoD-1' && ok || bad "--brief-only did not print th
 # 6. read-only and isolated by default; no session identity crosses over
 run 0 codex-flags "STUB_ANSWER=$YES" CLAUDECODE=1 CLAUDE_CODE_SESSION_ID=author CLAUDE_CODE_MESSAGING_TOKEN=tok PP_SESSION=pp CODEX_SESSION_ID=cx PREDICT=/x -- --by codex --task T-1 --base main
 A="$STUB_LOG/argv"
-for f in exec -s read-only --ignore-user-config --ephemeral; do grep -qxF -- "$f" "$A" && ok || bad "codex argv lacks $f"; done
+for f in exec -s read-only --ignore-user-config --ignore-rules --ephemeral; do grep -qxF -- "$f" "$A" && ok || bad "codex argv lacks $f"; done
 for v in CLAUDECODE CLAUDE_CODE_SESSION_ID CLAUDE_CODE_MESSAGING_TOKEN PP_SESSION CODEX_SESSION_ID PREDICT; do
   grep -q "^$v=" "$STUB_LOG/env" && bad "the reviewer inherited $v" || ok
 done
@@ -206,7 +206,9 @@ run 2 bad-effort "STUB_ANSWER=$YES" -- --by codex --task T-1 --base main --effor
 [ ! -e "$STUB_LOG/argv" ] && ok || bad "an unvalidated --effort reached the reviewer CLI"
 run 0 claude-flags "STUB_ANSWER=$YES" -- --by claude --task T-1 --base main --model opus
 A="$STUB_LOG/argv"
-for f in -p --setting-sources local --permission-mode dontAsk --tools Read,Grep,Glob --no-session-persistence --model opus \
+grep -A1 -xF -- --setting-sources "$A" | tail -n 1 | grep -qx '' && ok || bad "the isolated claude reviewer still loads a settings file (hooks, apiKeyHelper from the diff)"
+grep -qxF '{"disableAllHooks":true}' "$A" && ok || bad "the isolated claude reviewer does not switch hooks off"
+for f in -p --permission-mode dontAsk --tools Read,Grep,Glob --no-session-persistence --model opus \
          --strict-mcp-config '{"mcpServers":{}}' --disable-slash-commands; do
   grep -qxF -- "$f" "$A" && ok || bad "claude argv lacks $f"
 done
@@ -247,10 +249,10 @@ grep -qxE '(Edit|Write|MultiEdit|NotebookEdit|Agent)' "$A" && bad "claude review
 grep -A1 -xF -- --tools "$A" | tail -n 1 | grep -qE 'Edit|Write|Agent' && bad "--tools offers a write or dispatch tool" || ok
 run 0 not-isolated "STUB_ANSWER=$YES" XREVIEW_ISOLATE=0 -- --by codex --task T-1 --base main
 grep -qxF -- --ignore-user-config "$STUB_LOG/argv" && bad "XREVIEW_ISOLATE=0 still isolates" || ok
+grep -qxF -- --ignore-rules "$STUB_LOG/argv" && ok || bad "XREVIEW_ISOLATE=0 lets .rules lift the codex reviewer out of read-only"
 run 0 claude-not-isolated "STUB_ANSWER=$YES" XREVIEW_ISOLATE=0 -- --by claude --task T-1 --base main
 A="$STUB_LOG/argv"
-grep -qxF 'user,local' "$A" && ok || bad "XREVIEW_ISOLATE=0 does not bring the user's plugins back"
-grep -qxF 'project' "$A" || grep -qE '^(project|.*,project)(,|$)' "$A" && bad "the project's settings (hooks from the diff) reach the claude reviewer" || ok
+grep -A1 -xF -- --setting-sources "$A" | tail -n 1 | grep -qx 'user' && ok || bad "XREVIEW_ISOLATE=0 is not 'the user's own settings only' (project/local files come from the diff)"
 grep -qxF -- --strict-mcp-config "$A" && ok || bad "XREVIEW_ISOLATE=0 lets MCP servers (write tools) back in"
 git -C "$R" diff --quiet && ok || bad "the review modified a tracked file"
 

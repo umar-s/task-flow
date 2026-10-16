@@ -257,13 +257,13 @@ if grep -nE '\|\| true|2>/dev/null' templates/xreview/*.sh | grep -v 'lint: allo
   err "fail-open idiom in templates/xreview (mark a deliberate one with '# lint: allow')"
   grep -nE '\|\| true|2>/dev/null' templates/xreview/*.sh | grep -v 'lint: allow' >&2
 fi
-for w in 'exec -s read-only' '--ignore-user-config' '--setting-sources local' '--strict-mcp-config' '--disable-slash-commands' '--permission-mode dontAsk' \
+for w in 'exec -s read-only --ignore-rules' '--ignore-user-config' '--setting-sources ""' '"disableAllHooks":true' '--strict-mcp-config' '--disable-slash-commands' '--permission-mode dontAsk' \
          'compgen -e' 'CLAUDE_CODE_*|CLAUDE_PLUGIN_*' 'PP_*' 'CODEX_SESSION_ID' 'empty range'; do
   grep -qF -- "$w" "$XS" || err "$XS lost '$w'"
 done
 grep -q '^  TOOLS="Read,Grep,Glob"$' "$XS" || err "$XS: the claude reviewer's default tool set is not Read,Grep,Glob"
 grep -q 'Bash(git' "$XS" && err "$XS allowlists git commands for the claude reviewer again (git diff --output writes)"
-grep -q 'setting-sources project' "$XS" && err "$XS loads the project's settings into the claude reviewer (a hook in the diff runs at session start)"
+grep -qE 'setting-sources [^"]*(project|local)' "$XS" && err "$XS loads a project/local settings file into the claude reviewer (hooks and apiKeyHelper from the diff run at session start)"
 CSD=templates/ci-gate/gitlab/codex-security.gitlab-ci.yml; CSS=templates/ci-gate/gitlab/codex-security.shell.gitlab-ci.yml
 for f in "$CSD" "$CSS"; do
   [ -f "$f" ] || { err "$f missing"; continue; }

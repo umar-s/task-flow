@@ -249,7 +249,9 @@ ISOLATION="off (XREVIEW_ISOLATE=0)"
 if [ "$BY" = codex ]; then
   BIN="${XREVIEW_CODEX_BIN:-codex}"
   command -v "$BIN" >/dev/null || die "reviewer CLI not found: $BIN (install Codex CLI, or review with --by claude)"
-  ARGS=(exec -s read-only -C "$REPO_ROOT" --ephemeral --color never -o "$TMP/last.md")
+  # --ignore-rules always: an execpolicy `allow` (user or project .rules) runs
+  # the matched command OUTSIDE the read-only sandbox — observed 2026-10-16.
+  ARGS=(exec -s read-only --ignore-rules -C "$REPO_ROOT" --ephemeral --color never -o "$TMP/last.md")
   if [ "$ISOLATE" = 1 ]; then ARGS+=(--ignore-user-config); ISOLATION="on (--ignore-user-config)"; fi
   [ -z "${XREVIEW_CODEX_PROFILE:-}" ] || ARGS+=(-p "$XREVIEW_CODEX_PROFILE")
   [ -z "$MODEL" ] || ARGS+=(-m "$MODEL")
@@ -273,12 +275,14 @@ else
     --permission-mode dontAsk --append-system-prompt
     "Write the review in Russian, as the brief's Output format says. Keep code, paths, identifiers and the English Assessment/Summary label lines exactly as the brief shows them.")
   # Whatever the isolation: no MCP server (--tools limits only the built-in set,
-  # and an MCP tool can write), no skills, and never the project's settings —
-  # the diff under review can add a .claude/settings.json whose SessionStart
-  # hook would run when this session starts (observed 2026-10-16).
+  # and an MCP tool can write), no skills, and no settings file the diff can
+  # carry — a committed .claude/settings.json or settings.local.json runs its
+  # hooks and its apiKeyHelper command when this session starts (both observed
+  # 2026-10-16). Isolated: no settings file at all (OAuth still works) and
+  # hooks off; XREVIEW_ISOLATE=0: the user's own settings only.
   ARGS+=(--strict-mcp-config --mcp-config '{"mcpServers":{}}' --disable-slash-commands)
-  if [ "$ISOLATE" = 1 ]; then ARGS+=(--setting-sources local); ISOLATION="on (--setting-sources local)"
-  else ARGS+=(--setting-sources user,local); fi
+  if [ "$ISOLATE" = 1 ]; then ARGS+=(--setting-sources "" --settings '{"disableAllHooks":true}'); ISOLATION="on (no settings files, hooks off)"
+  else ARGS+=(--setting-sources user); fi
   [ -z "$MODEL" ] || ARGS+=(--model "$MODEL")
   [ -z "$EFFORT" ] || ARGS+=(--effort "$EFFORT")
   ARGS+=(--allowedTools "${ALLOW[@]}")

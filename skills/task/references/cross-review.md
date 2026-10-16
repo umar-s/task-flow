@@ -65,8 +65,8 @@ What the script does, in order — each step that cannot complete exits `2`:
 
 | Reviewer | How |
 |---|---|
-| Codex | `codex exec -s read-only --ephemeral` — the sandbox refuses writes and network for every command the model runs |
-| Claude Code | `claude -p --tools Read,Grep,Glob --permission-mode dontAsk --strict-mcp-config --disable-slash-commands --setting-sources local` — no shell (an allowlisted `git diff --output=<file>` writes, and git accepts abbreviated long options, so the range material is attached instead), no MCP server (`--tools` limits only the built-in set), no skills, and never the project's settings: the diff under review can add a `.claude/settings.json` hook that would run when the reviewer starts (observed 2026-10-16; the same hook in `.codex/hooks.json` did not run under `--ignore-user-config`) |
+| Codex | `codex exec -s read-only --ignore-rules --ephemeral` — the sandbox refuses writes and network for every command the model runs; `--ignore-rules` because an execpolicy `allow` (user or project `.rules`) runs the matched command outside the sandbox (observed 2026-10-16) |
+| Claude Code | `claude -p --tools Read,Grep,Glob --permission-mode dontAsk --strict-mcp-config --disable-slash-commands --setting-sources "" --settings '{"disableAllHooks":true}'` — no shell (an allowlisted `git diff --output=<file>` writes, and git accepts abbreviated long options, so the range material is attached instead), no MCP server (`--tools` limits only the built-in set), no skills, and no settings file: the diff under review can commit a `.claude/settings.json` or `settings.local.json` whose hooks and `apiKeyHelper` command run when the reviewer starts (both observed 2026-10-16; the same hook in `.codex/hooks.json` did not run under `--ignore-user-config`) |
 
 `XREVIEW_ALLOW='Bash(make test)'` gives the Claude reviewer a shell for
 exactly those rules, when it should run the project's test command — a
@@ -80,8 +80,9 @@ recent history — the implementation story — at session start. Measured on
 2026-10-16: `claude -p` ran 9 SessionStart hooks of user plugins, with the
 user's settings left out none; `codex exec` ran 4, with
 `--ignore-user-config` none. The project's own instruction file still loads.
-`XREVIEW_ISOLATE=0` brings the user's plugins back — only with a reason in the
-evidence block; it never brings back MCP servers or the project's settings.
+`XREVIEW_ISOLATE=0` brings the user's own settings and plugins back — only
+with a reason in the evidence block; it never brings back MCP servers,
+execpolicy rules, or a settings file from the repository.
 
 **No session identity crosses over.** The reviewer's environment drops the
 author session's ids, plugin paths, prediction-protocol variables and the
