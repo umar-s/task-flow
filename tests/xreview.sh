@@ -186,7 +186,8 @@ run 2 bad-effort "STUB_ANSWER=$YES" -- --by codex --task T-1 --base main --effor
 [ ! -e "$STUB_LOG/argv" ] && ok || bad "an unvalidated --effort reached the reviewer CLI"
 run 0 claude-flags "STUB_ANSWER=$YES" -- --by claude --task T-1 --base main --model opus
 A="$STUB_LOG/argv"
-for f in -p --setting-sources project,local --permission-mode dontAsk --tools Read,Grep,Glob --no-session-persistence --model opus; do
+for f in -p --setting-sources local --permission-mode dontAsk --tools Read,Grep,Glob --no-session-persistence --model opus \
+         --strict-mcp-config '{"mcpServers":{}}' --disable-slash-commands; do
   grep -qxF -- "$f" "$A" && ok || bad "claude argv lacks $f"
 done
 grep -q '^Bash' "$A" && bad "the claude reviewer has a shell by default (git diff --output writes)" || ok
@@ -226,6 +227,11 @@ grep -qxE '(Edit|Write|MultiEdit|NotebookEdit|Agent)' "$A" && bad "claude review
 grep -A1 -xF -- --tools "$A" | tail -n 1 | grep -qE 'Edit|Write|Agent' && bad "--tools offers a write or dispatch tool" || ok
 run 0 not-isolated "STUB_ANSWER=$YES" XREVIEW_ISOLATE=0 -- --by codex --task T-1 --base main
 grep -qxF -- --ignore-user-config "$STUB_LOG/argv" && bad "XREVIEW_ISOLATE=0 still isolates" || ok
+run 0 claude-not-isolated "STUB_ANSWER=$YES" XREVIEW_ISOLATE=0 -- --by claude --task T-1 --base main
+A="$STUB_LOG/argv"
+grep -qxF 'user,local' "$A" && ok || bad "XREVIEW_ISOLATE=0 does not bring the user's plugins back"
+grep -qxF 'project' "$A" || grep -qE '^(project|.*,project)(,|$)' "$A" && bad "the project's settings (hooks from the diff) reach the claude reviewer" || ok
+grep -qxF -- --strict-mcp-config "$A" && ok || bad "XREVIEW_ISOLATE=0 lets MCP servers (write tools) back in"
 git -C "$R" diff --quiet && ok || bad "the review modified a tracked file"
 
 echo "tests/xreview: $pass passed, $fail failed"

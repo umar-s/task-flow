@@ -66,7 +66,7 @@ What the script does, in order — each step that cannot complete exits `2`:
 | Reviewer | How |
 |---|---|
 | Codex | `codex exec -s read-only --ephemeral` — the sandbox refuses writes and network for every command the model runs |
-| Claude Code | `claude -p --tools Read,Grep,Glob --permission-mode dontAsk` — no shell at all: an allowlisted git command is not read-only (`git diff --output=<file>` writes, and git accepts abbreviated long options), so the range material is attached instead; Edit, Write and Agent do not exist in the session |
+| Claude Code | `claude -p --tools Read,Grep,Glob --permission-mode dontAsk --strict-mcp-config --disable-slash-commands --setting-sources local` — no shell (an allowlisted `git diff --output=<file>` writes, and git accepts abbreviated long options, so the range material is attached instead), no MCP server (`--tools` limits only the built-in set), no skills, and never the project's settings: the diff under review can add a `.claude/settings.json` hook that would run when the reviewer starts (observed 2026-10-16; the same hook in `.codex/hooks.json` did not run under `--ignore-user-config`) |
 
 `XREVIEW_ALLOW='Bash(make test)'` gives the Claude reviewer a shell for
 exactly those rules, when it should run the project's test command — a
@@ -77,11 +77,11 @@ not truncated: split the review.
 **Isolated from the author's memory, by default.** A reviewer CLI started
 normally loads the user's plugins, and memory plugins replay the project's
 recent history — the implementation story — at session start. Measured on
-2026-10-16: `claude -p` ran 9 SessionStart hooks of user plugins, with
-`--setting-sources project,local` none; `codex exec` ran 4, with
-`--ignore-user-config` none. The script uses both flags; the project's own
-instruction file and project-level settings still load. `XREVIEW_ISOLATE=0`
-turns isolation off — only with a reason in the evidence block.
+2026-10-16: `claude -p` ran 9 SessionStart hooks of user plugins, with the
+user's settings left out none; `codex exec` ran 4, with
+`--ignore-user-config` none. The project's own instruction file still loads.
+`XREVIEW_ISOLATE=0` brings the user's plugins back — only with a reason in the
+evidence block; it never brings back MCP servers or the project's settings.
 
 **No session identity crosses over.** The reviewer's environment drops the
 author session's ids, plugin paths, prediction-protocol variables and the

@@ -272,7 +272,13 @@ else
   ARGS=(-p --output-format text --no-session-persistence --tools "$TOOLS"
     --permission-mode dontAsk --append-system-prompt
     "Write the review in Russian, as the brief's Output format says. Keep code, paths, identifiers and the English Assessment/Summary label lines exactly as the brief shows them.")
-  if [ "$ISOLATE" = 1 ]; then ARGS+=(--setting-sources project,local); ISOLATION="on (--setting-sources project,local)"; fi
+  # Whatever the isolation: no MCP server (--tools limits only the built-in set,
+  # and an MCP tool can write), no skills, and never the project's settings —
+  # the diff under review can add a .claude/settings.json whose SessionStart
+  # hook would run when this session starts (observed 2026-10-16).
+  ARGS+=(--strict-mcp-config --mcp-config '{"mcpServers":{}}' --disable-slash-commands)
+  if [ "$ISOLATE" = 1 ]; then ARGS+=(--setting-sources local); ISOLATION="on (--setting-sources local)"
+  else ARGS+=(--setting-sources user,local); fi
   [ -z "$MODEL" ] || ARGS+=(--model "$MODEL")
   [ -z "$EFFORT" ] || ARGS+=(--effort "$EFFORT")
   ARGS+=(--allowedTools "${ALLOW[@]}")
