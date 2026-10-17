@@ -272,6 +272,7 @@ grep -qF 'gh api --paginate "repos/$repo/issues/$n/dependencies/blocked_by' "$TW
 grep -q 'command -v codex' "$TW" && grep -q 'command -v claude' "$TW" || err "$TW: the harnesses a wave needs must be on PATH before any worktree exists (a missing CLI closes its window at once)"
 grep -q 'not started again' "$TW" && grep -q 'is checked out at' "$TW" || err "$TW: a live task window must not get a second agent, and a branch held by another worktree must stop the plan"
 grep -q 'task-wave.lock' "$TW" && grep -q 'git rev-parse --git-common-dir' "$TW" || err "$TW: one launcher per repository — the lock in the git common dir serialises the window check and the start"
+grep -qF 'issues+=("$((10#' "$TW" || err "$TW: an issue number must be read as canonical decimal (02 and 2 are one issue)"
 grep -q 'launch_path=' "$TW" && grep -q 'abs "$(command -v claude)"' "$TW" || err "$TW: the CLI path and the PATH entries must be absolute — the window starts in another directory"
 grep -q 'BASH32_IMAGE' .github/workflows/check.yml || err "check.yml no longer runs the wave launcher's controls under bash 3.2"
 grep -q 'run_with_path="env PATH=' "$TW" || err "$TW: the window must run the checked CLI by absolute path with the launcher's PATH (a tmux window's environment can differ)"

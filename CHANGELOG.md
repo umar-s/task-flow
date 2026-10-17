@@ -43,7 +43,7 @@ tictactoe lab ran its wave 2 as one Claude Code task beside one Codex task.
   skipped, not guessed. A task whose window `#<N>` is still alive in the wave's
   session is not started again — no second agent in one checkout; once that
   window is gone the worktree is resumed in a new one; an issue number given
-  twice is planned once, and one launcher runs per repository at a time (an
+  twice — as `2`, `#2` or `02` — is planned once, and one launcher runs per repository at a time (an
   atomic `mkdir` lock in the git common dir, released on exit; a concurrent run
   is refused). The window runs the CLI by the absolute path the plan checked,
   with the launcher's PATH — both made absolute against the launcher's
@@ -55,7 +55,7 @@ tictactoe lab ran its wave 2 as one Claude Code task beside one Codex task.
 - `docs/superpowers/specs/2026-10-17-task-flow-1-13-0-wave-launcher.md`: the
   DoD and the premortem edges (E1–E23), each mapped to a control or an explicit
   exclusion.
-- `tests/task-wave.sh`: 39 controls with a stub `gh` that runs the script's own
+- `tests/task-wave.sh`: 40 controls with a stub `gh` that runs the script's own
   `-q` filters through `jq` over fixtures and serves GitHub's pages unless
   `--paginate` (100 issues, 30 blockers by default; the ready fixture sits past
   item 100 of its label and item 200 of all open issues, another issue's open
@@ -63,7 +63,8 @@ tictactoe lab ran its wave 2 as one Claude Code task beside one Codex task.
   the first was printed), a `git` wrapper counting fetches, stub `claude`/`codex`
   recording argv, cwd and every launch, and a private tmux server
   (`TMUX_TMPDIR`); `--base` is checked against a real commit only `develop`
-  has. Thirty mutations of the script — a relative CLI path, a relative PATH
+  has. Thirty-one mutations of the script — leading zeros kept, a relative CLI
+  path, a relative PATH
   entry kept, a bare CLI name, an absolute path
   without the launcher's PATH, no lock, a lock never released,
   duplicate numbers not merged, a
@@ -86,7 +87,7 @@ tictactoe lab ran its wave 2 as one Claude Code task beside one Codex task.
 - `.github/workflows/check.yml`: installs tmux when the runner lacks it, so the
   launcher's controls run in CI rather than skip; and runs `tests/task-wave.sh`
   again under bash 3.2.57 (macOS's `/bin/bash`) in a `bash:3.2` image pinned by
-  digest — 39/39 there too.
+  digest — 40/40 there too.
 
 ### Changed
 - `decompose` Handoff: a wave's tasks can run side by side, one session each,
@@ -131,7 +132,11 @@ resolves — fixed by making the CLI path and every PATH entry absolute; and
 "empty arrays under `set -u` break bash 3.2". Measured in bash 3.2.57: `${#a[@]}`
 on an empty array is fine, `"${a[@]}"` is what fails, and the launcher only
 expands arrays it has made non-empty — the whole suite passes there; it now
-runs under bash 3.2 in CI so that stays measured rather than argued.
+runs under bash 3.2 in CI so that stays measured rather than argued. Round 9 —
+two Required: `2 02` named one issue twice past the deduplication (numbers
+compared as strings) — now read as canonical decimal; and the controls counting
+launches read the stub's file right after the launcher returned, a race on a
+slow runner — they now wait for the expected count and watch for an extra one.
 
 ## [1.12.0] — 2026-10-16
 

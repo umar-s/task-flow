@@ -22,7 +22,8 @@ while [ $# -gt 0 ]; do
     --base) [ $# -ge 2 ] || die "--base needs a branch"; base="$2"; shift 2 ;;
     -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
     -*) die "unknown option $1" ;;
-    *) [[ "$1" =~ ^#?[0-9]+$ ]] || die "not an issue number: $1"; issues+=("${1#\#}"); shift ;;
+    *) [[ "$1" =~ ^#?[0-9]+$ ]] || die "not an issue number: $1"
+       issues+=("$((10#${1#\#}))"); shift ;;   # canonical decimal: 02 and #2 are #2, deduplicated below
   esac
 done
 

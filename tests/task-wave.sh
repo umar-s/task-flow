@@ -97,6 +97,18 @@ chmod +x "$TMP/bin/"*
 ln -s "$(command -v bash)" "$TMP/bin/tw-interp"
 export PATH="$TMP/bin:$PATH" FX="$F" STUB_LOG="$TMP/log"
 fetches() { if [ -f "$STUB_LOG/fetches" ]; then wc -l < "$STUB_LOG/fetches" | tr -d ' '; else echo 0; fi; }
+# settle FILE N — the stub CLIs write from inside tmux, after the launcher returned:
+# wait (bounded, 4 s) until FILE has N launches, then 0.5 s more so an extra launch
+# would show, and print the count.
+settle() {
+  local c=0 i
+  for i in $(seq 1 20); do
+    c=0; [ -f "$1" ] && c="$(wc -l < "$1" | tr -d ' ')"
+    [ "$c" -ge "$2" ] && break; sleep 0.2
+  done
+  sleep 0.5; c=0; [ -f "$1" ] && c="$(wc -l < "$1" | tr -d ' ')"
+  echo "$c"
+}
 
 # --- a repository with an origin: main, and develop one commit ahead
 git init -q --bare "$TMP/origin.git"
@@ -171,12 +183,12 @@ bash "$TW" 2 5 >/dev/null 2>"$TMP/err"; rc=$?
 check "task-5 held by another worktree → rc 2, #2 not started, no fetch" '[ $rc -eq 2 ] && grep -q "task-5 is checked out at" "$TMP/err" && [ ! -e "$TMP/w/lab-2" ] && ! tmux has-session -t =wave-lab 2>/dev/null && [ "$(fetches)" = 0 ]'
 git worktree remove --force "$TMP/w/elsewhere"; git branch -q -D task-5
 
-# 5c. a number named twice → one plan entry, one window, one launch (new worktree, then resumed)
-bash "$TW" 2 2 >/dev/null 2>&1; rc=$?
-check "'2 2' on a new worktree → one window, one claude launch" '[ $rc -eq 0 ] && [ "$(tmux list-windows -t =wave-lab | wc -l)" -eq 1 ] && [ "$(wc -l < "$STUB_LOG/launches-claude-lab-2")" -eq 1 ]'
+# 5c. a number named twice — also as #2 or 02 — → one plan entry, one window, one launch
+bash "$TW" 2 2 02 >/dev/null 2>&1; rc=$?; n="$(settle "$STUB_LOG/launches-claude-lab-2" 1)"
+check "'2 2 02' on a new worktree → one window, one claude launch" '[ $rc -eq 0 ] && [ "$(tmux list-windows -t =wave-lab | wc -l)" -eq 1 ] && [ "$n" -eq 1 ] && [ ! -e "$TMP/w/lab-02" ]'
 tmux kill-server >/dev/null 2>&1 || true
-bash "$TW" 2 '#2' >/dev/null 2>&1; rc=$?
-check "'2 #2' on the existing worktree → one window, one more launch" '[ $rc -eq 0 ] && [ "$(tmux list-windows -t =wave-lab | wc -l)" -eq 1 ] && [ "$(wc -l < "$STUB_LOG/launches-claude-lab-2")" -eq 2 ]'
+bash "$TW" 2 '#2' 002 >/dev/null 2>&1; rc=$?; n="$(settle "$STUB_LOG/launches-claude-lab-2" 2)"
+check "'2 #2 002' on the existing worktree → one window, one more launch" '[ $rc -eq 0 ] && [ "$(tmux list-windows -t =wave-lab | wc -l)" -eq 1 ] && [ "$n" -eq 2 ]'
 tmux kill-server >/dev/null 2>&1 || true; git worktree remove --force "$TMP/w/lab-2"; git branch -q -D task-2
 rm -f "$STUB_LOG/fetches" "$STUB_LOG/claude-lab-2" "$STUB_LOG/launches-claude-lab-2"
 
@@ -192,7 +204,10 @@ check "codex ran in lab-5 with \$task-flow:task #5" '[ "$(sed -n 1p "$STUB_LOG/c
 # 7. a second run while #2's agent is still running: no second agent in the same checkout
 out="$(bash "$TW" 2)"; rc=$?
 check "#2 already running → not started again" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -q "#2 is already running"'
-check "still two windows and one claude launch in lab-2" '[ "$(tmux list-windows -t =wave-lab | wc -l)" -eq 2 ] && [ "$(wc -l < "$STUB_LOG/launches-claude-lab-2")" -eq 1 ]'
+out="$(bash "$TW" 02)"; rc=$?
+check "02 is #2, already running → not started again" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -q "#2 is already running"'
+n="$(settle "$STUB_LOG/launches-claude-lab-2" 1)"
+check "still two windows and one claude launch in lab-2" '[ "$(tmux list-windows -t =wave-lab | wc -l)" -eq 2 ] && [ "$n" -eq 1 ]'
 # … and once that window is gone (the agent exited), the same worktree is resumed in a new one
 tmux kill-window -t "=wave-lab:#2"
 out="$(bash "$TW" 2)"
@@ -204,9 +219,9 @@ GH_SLOW=1 bash "$TW" 2 >"$TMP/a.out" 2>"$TMP/a.err" & pa=$!
 sleep 0.3
 GH_SLOW=1 bash "$TW" 2 >"$TMP/b.out" 2>"$TMP/b.err"; rb=$?
 wait $pa; ra=$?
-for i in $(seq 1 20); do [ -s "$STUB_LOG/launches-claude-lab-2" ] && break; sleep 0.2; done; sleep 0.5
+n="$(settle "$STUB_LOG/launches-claude-lab-2" 1)"
 check "concurrent run: first starts #2, second refused by the lock" '[ $ra -eq 0 ] && [ $rb -eq 2 ] && grep -q "another task-wave holds" "$TMP/b.err"'
-check "concurrent run: one window #2, one launch" '[ "$(tmux list-windows -t =wave-lab -F "#{window_name}" | grep -cx "#2")" -eq 1 ] && [ "$(wc -l < "$STUB_LOG/launches-claude-lab-2")" -eq 1 ]'
+check "concurrent run: one window #2, one launch" '[ "$(tmux list-windows -t =wave-lab -F "#{window_name}" | grep -cx "#2")" -eq 1 ] && [ "$n" -eq 1 ]'
 check "the lock is released after a run" '[ ! -e "$(git rev-parse --git-common-dir)/task-wave.lock" ]'
 
 # 8. a branch left behind by a removed worktree is reused, not re-created from base
