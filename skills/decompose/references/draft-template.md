@@ -69,14 +69,18 @@ inner ` ```mermaid ` fence survives untouched when you copy it out.
 
 ## Tasks
 
-| ID | Name | SP | depends_on | wave | REQ |
-|---|---|---|---|---|---|
-| `<TASK-ID-1>` | <verb + object> | <1\|2\|3\|5\|8\|13> | `[]` | 1 | [REQ-NN] |
-| `<TASK-ID-2>` | <verb + object> | <1\|2\|3\|5\|8\|13> | [`<TASK-ID-1>`] | 2 | [REQ-NN] |
-| `<TASK-ID-3>` | <verb + object> | <1\|2\|3\|5\|8\|13> | [`<TASK-ID-1>`] | 2 | [REQ-NN, REQ-NN] |
-| `<TASK-ID-4>` | <verb + object> | <1\|2\|3\|5\|8\|13> | [`<TASK-ID-3>`] | 3 | [REQ-NN] |
+| ID | Name | SP | depends_on | wave | REQ | builder |
+|---|---|---|---|---|---|---|
+| `<TASK-ID-1>` | <verb + object> | <1\|2\|3\|5\|8\|13> | `[]` | 1 | [REQ-NN] | <claude\|codex\|—> |
+| `<TASK-ID-2>` | <verb + object> | <1\|2\|3\|5\|8\|13> | [`<TASK-ID-1>`] | 2 | [REQ-NN] | <claude\|codex\|—> |
+| `<TASK-ID-3>` | <verb + object> | <1\|2\|3\|5\|8\|13> | [`<TASK-ID-1>`] | 2 | [REQ-NN, REQ-NN] | <claude\|codex\|—> |
+| `<TASK-ID-4>` | <verb + object> | <1\|2\|3\|5\|8\|13> | [`<TASK-ID-3>`] | 3 | [REQ-NN] | <claude\|codex\|—> |
 <!-- one row per task; wave = max(wave of each depends_on entry) + 1,
-     a task with depends_on: [] is always wave 1 -->
+     a task with depends_on: [] is always wave 1.
+     builder = which harness builds it (the other model reviews): a dispatch
+     annotation the approval assigns — like wave it lives only in this table,
+     it is not a seventh author field and no card carries it; "—" until assigned.
+     Phase 7 writes it as the tag/label builder:<claude|codex>. -->
 
 ## Task cards
 

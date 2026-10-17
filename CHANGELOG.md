@@ -9,6 +9,131 @@ below is tagged `vX.Y.Z` in git. Installs track the default branch (the
 marketplace entry pins no ref), so a release tag marks history rather than a
 download.
 
+## [1.14.0] — 2026-10-17
+
+The wave launcher on YouTrack, and `decompose` writes who builds each task.
+`templates/wave/task-wave.sh` stays one file with one launcher core: the lock,
+the worktree and branch checks, the live-window check, the session owner and
+the absolute CLI paths are shared. Only the tracker reads are adapters, chosen
+by `--tracker github|youtrack` (else `TASK_WAVE_TRACKER`, else `github`;
+1.13.0's behaviour is unchanged without it). Every YouTrack rule below was
+measured on a live instance first (spec:
+`docs/superpowers/specs/2026-10-17-task-flow-1-14-0-youtrack-wave.md`).
+
+### Added
+- **`--tracker youtrack`.** Needs `curl` and `jq`, not `gh`, so it works with
+  GitLab or any git remote.
+  - Configuration: `YOUTRACK_URL` (`https://` only — the token goes with every
+    request) and `YOUTRACK_TOKEN_VAR`, the *name* of the variable that holds
+    the token. The token reaches `curl` on stdin (`--config -`) and never its
+    command line.
+  - Ready set: unresolved issues of `--project KEY` and/or subtasks of
+    `--epic ID`, tagged `builder:claude` or `builder:codex`, with no unresolved
+    issue on a blocker link (`YOUTRACK_BLOCKER_LINKS`, default
+    `is required for` — the issues the task `depends on`).
+  - Explicit ids take the server's `idReadable`, so `dev-05` and `DEV-5` are
+    one task.
+  - Naming: worktree `../<repo>-DEV-481`, branch `task-DEV-481`, window
+    `DEV-481`. The base is `origin/HEAD` unless `--base` is given; if
+    `origin/HEAD` is unset, the run is refused.
+- `decompose`: the draft's task table has a `builder` column. Like `wave`, it
+  is a dispatch annotation, not a seventh author field, and the approval may
+  assign it without a re-approval. Phase 7 shows it in the dry-run, writes it
+  as a YouTrack tag (`tag builder:<x>`, which creates the tag on first use) or
+  a GitHub label, and reads it back: the tag that was sent, and not the other
+  one. The adapter contract gains `tags?` on create, update and read.
+
+### Fixed before release — what a live YouTrack does that a guess would miss
+- With no `$top`, a search returns at most 500 issues and says nothing (the
+  project measured has 1505). Every search therefore sends `$top=100` and pages
+  with `$skip` until a short page. One control uses a server whose default
+  page is 42, so dropping `$top` fails even where the default would hide it.
+- A query that names a tag which does not exist yet returns `400 invalid_query`,
+  not an empty list. Tags are filtered on the client and never put in the query.
+- An unknown link name is not refused: YouTrack runs the words as a text search,
+  which finds nothing, so every blocked task would read as ready. On an instance
+  without `Blocks`, `blocks: DEV-1557` returned DEV-1557 itself by its title.
+  Blocker link names are now checked against `/api/issueLinkTypes` first.
+- A wrong base URL (`/youtrack` on a root install) answers `200` with HTML.
+  Every answer must be 2xx and parse as the JSON shape expected; anything else
+  stops the run with "refusing to guess".
+- A blocker read that failed inside an `if` condition (where `set -e` is off)
+  would have read as "no blocker". It now exits by hand.
+- A missing `grep` broke the page count, so paging stopped silently after the
+  first page. Pages are now counted with `jq length` on the body that was
+  already checked.
+- **A tracker id could run a command.** tmux 3.4 expands formats in a window
+  name, and `#(…)` runs: measured, `new-window -n '#(touch …)'` created the
+  file. An `idReadable` like `#(…)-1` from the server would have become a
+  window name and run on the user's machine. This was found by the automated
+  security review of the commit. Two layers fix it:
+  - every server id must be a plain `KEY-N` or the run stops (it also becomes
+    a path and a branch name, so `../..` is refused as well);
+  - every `#` in a window name is doubled (`##` is a literal `#`), on GitHub's
+    `#N` too.
+- Codex review, round 1 (three Required findings):
+  - a `3xx` with a JSON body passed, because `curl -f` fails only on ≥ 400.
+    The status is now read with `-w '%{http_code}'`, and only `2xx` goes on;
+  - `YOUTRACK_BLOCKER_LINKS=';'` skipped every name, so every task read as
+    ready. The list is now parsed once and must name at least one link;
+  - the builder was "added, never replacing", so a reassignment left both
+    builder tags, which the read-back refuses and the launcher skips. The
+    builder is now exclusive: a change removes the other builder tag and keeps
+    every other tag or label. YouTrack takes `untag builder:claude tag
+    builder:codex` as one command, which was checked with the non-applying
+    `commands/assist`. GitHub uses `--remove-label` with `--add-label`.
+
+  New controls cover each finding: a 302 on a blocker read, truncated JSON,
+  `;` and blanks as the link list, `#(touch …)` and `../..` as a server id
+  (nothing ran and no session exists), and no `jq` on PATH.
+- Codex review, round 2 (one Required finding): the JSON check was not a single
+  document. `jq` reads a stream, so a blocker read that answered `[]\n[]`
+  passed and the task read as ready. A tag of the wrong shape passed the check
+  and then broke the transform after it with rc 5. Now an answer must be
+  exactly one document (`jq -s 'length == 1'`) of the full shape every later
+  read relies on: issue ids and tag names as strings, link names as strings or
+  null. Each transform also stops with rc 2. Both reproductions are controls.
+- Codex review, round 3 (two Required findings):
+  - `tags:false` passed the check, because `false // []` is `[]` in jq, and
+    the task was skipped as "no builder" with rc 0. The shape is now tested on
+    the raw field (`null`, or an array of `{name: string}`), and link-type names
+    the same way;
+  - an issue with both builder tags had its blockers read before it was
+    skipped. A blocked one disappeared without a message, and a failed blocker
+    read stopped the whole wave. It is now skipped first, with its name, on
+    YouTrack and on GitHub alike: an issue found in both label lists carries
+    both labels, which was 1.13.0's behaviour too.
+- Codex review, round 4: ready to merge. Its one nit was fixed without a new
+  round: `--help` printed one line of code (`set -euo pipefail`) after the
+  comment.
+
+### Tests
+- `tests/task-wave.sh`: 102 controls, 59 of them new (1.13.0 had 43). A stub `curl`
+  (bash + jq, so it runs in the bash:3.2 image) serves a fixture db with the
+  behaviour measured above:
+  - the silent cap, and a default page of 42;
+  - 400 on a tag or an unknown id in a query, 404 on an unknown GET, and a text
+    search for an unknown link name;
+  - HTML instead of JSON, and a failure on page 2;
+  - an argv that must never hold the token.
+- 21 mutations of the new guards, each one caught. The `#` doubling in window
+  names has no mutation that can be caught, because the id check refuses every
+  input that could reach it. It is the second layer, pinned by lint.
+- Live on a YouTrack instance against a fixture epic (DEV-1554…1559, made for
+  this with the owner's consent), first as a dry run and then as a real launch
+  with stub CLIs. Ready, blocked, untagged, both-tags and canonical-id cases
+  behaved as the stub does; the worktrees came from `origin/HEAD`, the prompts
+  arrived byte for byte, and a re-run reported "already running".
+
+### Supply self-check
+- New capability: `templates/wave/task-wave.sh` makes **network requests** —
+  `curl` GETs to `YOUTRACK_URL`, `/api/issues…` and `/api/issueLinkTypes` only,
+  over `https://` only — and **reads a credential** from the environment
+  variable that `YOUTRACK_TOKEN_VAR` names, which goes to curl's stdin and
+  nowhere else. Nothing is written to the tracker, nothing is deleted, no
+  `eval` and no `base64`. `decompose`'s tag write is a model action under phase
+  7's dry-run, confirmation and read-back, not a script.
+
 ## [1.13.0] — 2026-10-17
 
 A wave of tasks in parallel. `decompose` already proves that one wave's tasks
@@ -1047,6 +1172,7 @@ Donor audit of the `hybrid-plan` / `hybrid-review` skill set —
   tool-agnostic migration-guard and protected-branch rules into any repo —
   GitLab and GitHub CI, pre-commit hooks, failing closed.
 
+[1.14.0]: https://github.com/umar-s/task-flow/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/umar-s/task-flow/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/umar-s/task-flow/compare/v1.11.0...v1.12.0
 [1.11.0]: https://github.com/umar-s/task-flow/compare/v1.10.0...v1.11.0
