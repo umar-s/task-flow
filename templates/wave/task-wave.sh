@@ -98,12 +98,18 @@ fi
 # Plan every task first; anything that cannot be started safely stops the run
 # before a single worktree or window exists.
 plan_n=(); plan_wt=(); plan_mode=(); plan_cmd=(); need_claude=0; need_codex=0
+# A tmux server keeps the environment it started with, so a window may not see
+# this shell's PATH: run the CLI by the absolute path checked here, with this PATH.
+claude_bin=claude; codex_bin=codex
+if command -v claude >/dev/null; then claude_bin="$(command -v claude)"; fi
+if command -v codex >/dev/null; then codex_bin="$(command -v codex)"; fi
+run_with_path="env PATH=$(printf %q "$PATH")"
 for n in "${issues[@]}"; do
   builder="$(gh issue view "$n" --json labels -q '[.labels[].name | select(. == "builder:claude" or . == "builder:codex")] | unique | join(" ")')" \
     || die "gh cannot read #$n"
   case "$builder" in
-    builder:claude) cmd="claude $(printf %q "/task-flow:task #$n")"; need_claude=1 ;;
-    builder:codex)  cmd="codex $(printf %q "\$task-flow:task #$n")"; need_codex=1 ;;
+    builder:claude) cmd="$run_with_path $(printf %q "$claude_bin") $(printf %q "/task-flow:task #$n")"; need_claude=1 ;;
+    builder:codex)  cmd="$run_with_path $(printf %q "$codex_bin") $(printf %q "\$task-flow:task #$n")"; need_codex=1 ;;
     "") echo "task-wave: #$n has no builder:claude or builder:codex label — skipped"; continue ;;
     *)  echo "task-wave: #$n has both builder labels — skipped (keep one)"; continue ;;
   esac

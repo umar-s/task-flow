@@ -52,6 +52,10 @@ one interactive tmux window per task, Claude Code or Codex by the issue's
 17. Round 6 fix holds: one launcher per repository at a time — an atomic
     `mkdir` lock in the git common dir, taken before the window check and released
     on exit; a second concurrent run is refused (rc 2), never a second agent.
+18. Round 7 fix holds: the window runs the CLI by the absolute path the plan
+    checked, with the launcher's PATH (`env PATH=… /abs/cli …`), so a window
+    whose environment differs from the launcher's still runs it — including a CLI
+    whose `#!/usr/bin/env <interp>` lives outside `/usr/bin:/bin`.
 
 ## Premortem edges
 
@@ -81,3 +85,4 @@ Imagined failures of the launcher, each mapped to the control in
 | E19 | `task-N` is checked out in another worktree; `git worktree add` fails mid-run and the wave starts half-way | case 5b: refused in the plan, #2 not started, no fetch |
 | E20 | The same issue named twice on the command line starts two agents in one checkout | case 5c: `2 2` (new worktree) and `2 #2` (resumed) → one window, one launch |
 | E21 | Two launchers run at once; both see no window #N and both start an agent in one checkout | case 7b: concurrent runs on a resumable task → one starts, the other is refused by the lock; one window, one launch; the lock is released after |
+| E22 | The window's environment differs from the launcher's (tmux version, update-environment, default-command); the checked CLI or its `env` interpreter is not found there | case 10: a tmux shim runs the client with `PATH=/usr/bin:/bin`, the stubs' interpreter lives only in the test bin (as node in nvm's) → the CLI still runs. Measured: tmux 3.4 gives a new window the creating client's PATH, so the shim models the other setups |

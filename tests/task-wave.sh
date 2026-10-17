@@ -88,10 +88,13 @@ case "$2" in
 esac
 EOF
 printf '#!/usr/bin/env bash\ncase " $* " in *" fetch "*) echo fetch >> "$STUB_LOG/fetches" ;; esac\nexec %q "$@"\n' "$REAL_GIT" > "$TMP/bin/git"
+# the stub CLIs' interpreter lives only in $TMP/bin, as node lives in nvm's bin for
+# the real ones (`#!/usr/bin/env node`): a window without the launcher's PATH cannot run them
 for a in claude codex; do
-  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$PWD" "$@" > "$STUB_LOG/%s-$(basename "$PWD")"; echo x >> "$STUB_LOG/launches-%s-$(basename "$PWD")"; sleep 60\n' "$a" "$a" > "$TMP/bin/$a"
+  printf '#!/usr/bin/env tw-interp\nprintf "%%s\\n" "$PWD" "$@" > "$STUB_LOG/%s-$(basename "$PWD")"; echo x >> "$STUB_LOG/launches-%s-$(basename "$PWD")"; sleep 60\n' "$a" "$a" > "$TMP/bin/$a"
 done
 chmod +x "$TMP/bin/"*
+ln -s "$(command -v bash)" "$TMP/bin/tw-interp"
 export PATH="$TMP/bin:$PATH" FX="$F" STUB_LOG="$TMP/log"
 fetches() { if [ -f "$STUB_LOG/fetches" ]; then wc -l < "$STUB_LOG/fetches" | tr -d ' '; else echo 0; fi; }
 
@@ -216,6 +219,19 @@ check "branch task-5 without worktree → reused" 'printf "%s" "$out" | grep -q 
 tmux kill-server >/dev/null 2>&1 || true
 out="$(bash "$TW" --base develop 350)"; rc=$?
 check "--base develop: worktree lab-350 at origin/develop, not main" '[ $rc -eq 0 ] && [ "$(git -C "$TMP/w/lab-350" rev-parse HEAD)" = "$DEVELOP_SHA" ] && [ "$DEVELOP_SHA" != "$MAIN_SHA" ]'
+
+# 10. the window's environment is not the launcher's. tmux 3.4 hands a new window the
+#     creating client's PATH (measured), but a window can get another one (other tmux
+#     versions, update-environment, default-command). A tmux shim that runs the real
+#     client with PATH=/usr/bin:/bin models that; the window must still run the CLI the
+#     launcher checked — by absolute path, with the launcher's PATH.
+tmux kill-server >/dev/null 2>&1 || true
+mkdir -p "$TMP/tmuxshim"; REAL_TMUX="$(command -v tmux)"
+printf '#!/bin/sh\nexec env PATH=/usr/bin:/bin %s "$@"\n' "$REAL_TMUX" > "$TMP/tmuxshim/tmux"; chmod +x "$TMP/tmuxshim/tmux"
+rm -f "$STUB_LOG/launches-claude-lab-2"
+PATH="$TMP/tmuxshim:$PATH" bash "$TW" 2 >/dev/null 2>&1; rc=$?
+for i in $(seq 1 20); do [ -s "$STUB_LOG/launches-claude-lab-2" ] && break; sleep 0.2; done
+check "window with a stripped PATH still runs the checked claude" '[ $rc -eq 0 ] && [ -s "$STUB_LOG/launches-claude-lab-2" ]'
 
 echo "tests/task-wave: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

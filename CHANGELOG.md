@@ -45,14 +45,16 @@ tictactoe lab ran its wave 2 as one Claude Code task beside one Codex task.
   window is gone the worktree is resumed in a new one; an issue number given
   twice is planned once, and one launcher runs per repository at a time (an
   atomic `mkdir` lock in the git common dir, released on exit; a concurrent run
-  is refused). A `task-<N>` branch
+  is refused). The window runs the CLI by the absolute path the plan checked,
+  with the launcher's PATH, so a tmux whose window environment differs still
+  finds it and its `#!/usr/bin/env` interpreter. A `task-<N>` branch
   checked out in some other worktree stops the plan before anything starts. A
   dry run does not fetch. Tracker: GitHub Issues through `gh` (the blocked-by
   API).
 - `docs/superpowers/specs/2026-10-17-task-flow-1-13-0-wave-launcher.md`: the
-  DoD and the premortem edges (E1–E21), each mapped to a control or an explicit
+  DoD and the premortem edges (E1–E22), each mapped to a control or an explicit
   exclusion.
-- `tests/task-wave.sh`: 37 controls with a stub `gh` that runs the script's own
+- `tests/task-wave.sh`: 38 controls with a stub `gh` that runs the script's own
   `-q` filters through `jq` over fixtures and serves GitHub's pages unless
   `--paginate` (100 issues, 30 blockers by default; the ready fixture sits past
   item 100 of its label and item 200 of all open issues, another issue's open
@@ -60,7 +62,8 @@ tictactoe lab ran its wave 2 as one Claude Code task beside one Codex task.
   the first was printed), a `git` wrapper counting fetches, stub `claude`/`codex`
   recording argv, cwd and every launch, and a private tmux server
   (`TMUX_TMPDIR`); `--base` is checked against a real commit only `develop`
-  has. Twenty-six mutations of the script — no lock, a lock never released,
+  has. Twenty-eight mutations of the script — a bare CLI name, an absolute path
+  without the launcher's PATH, no lock, a lock never released,
   duplicate numbers not merged, a
   live task window ignored, a
   branch held elsewhere ignored, the harness check dropped or partial, both labels resolved to
@@ -112,7 +115,12 @@ now refused or skipped in the plan. Round 5 — one Required: the same number
 given twice (`2 2`) still reached two windows in one worktree; numbers are now
 merged before the plan. Round 6 — one Required: two launchers started at once
 could both pass the live-window check; a repository-wide lock now serialises
-the check and the start, with a concurrent control.
+the check and the start, with a concurrent control. Round 7 — one Required: a
+window could run with the tmux server's environment rather than the launcher's,
+so a CLI checked on the launcher's PATH might not start there. Measured here,
+tmux 3.4 gives a new window the creating client's PATH; the fix (absolute path
+and the launcher's PATH) covers the setups where that does not hold, and a
+tmux shim that strips the client's PATH reproduces them in the controls.
 
 ## [1.12.0] — 2026-10-16
 

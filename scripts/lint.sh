@@ -272,6 +272,7 @@ grep -qF 'gh api --paginate "repos/$repo/issues/$n/dependencies/blocked_by' "$TW
 grep -q 'command -v codex' "$TW" && grep -q 'command -v claude' "$TW" || err "$TW: the harnesses a wave needs must be on PATH before any worktree exists (a missing CLI closes its window at once)"
 grep -q 'not started again' "$TW" && grep -q 'is checked out at' "$TW" || err "$TW: a live task window must not get a second agent, and a branch held by another worktree must stop the plan"
 grep -q 'task-wave.lock' "$TW" && grep -q 'git rev-parse --git-common-dir' "$TW" || err "$TW: one launcher per repository — the lock in the git common dir serialises the window check and the start"
+grep -q 'run_with_path="env PATH=' "$TW" || err "$TW: the window must run the checked CLI by absolute path with the launcher's PATH (a tmux window's environment can differ)"
 grep -q 'worktree list --porcelain' "$TW" || err "$TW: an existing directory is resumed only when it is this repository's worktree on task-<N>"
 grep -qE '^[^#]*\b(gh pr merge|git push)\b' "$TW" && err "$TW must not merge or push — sessions stay interactive and \`task\` owns landing"
 grep -q 'templates/wave/task-wave.sh' skills/decompose/SKILL.md || err "decompose Handoff no longer names the wave launcher"
