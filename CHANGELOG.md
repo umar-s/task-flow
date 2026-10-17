@@ -32,10 +32,12 @@ download.
   window's environment, so what it does is the project's own choice.
 
 ### Tests
-- `tests/task-wave.sh`: 150 controls (+9, group Z4): launcher by name and by
-  relative path, a real run through both launchers into the CLI behind them,
-  missing launcher in the plan and in the real run, exported function, plain
-  file, empty value, flag value, and the default when unset.
+- `tests/task-wave.sh`: 151 controls (+10, group Z4): launcher by name and by
+  relative path; a real run through both launchers, with `TASK_WAVE_*_ARGS`,
+  where each launcher's argv (flags, `--`, prompt) equals the argv of the CLI
+  behind it in full; missing launcher in the plan and in the real run, exported
+  function, plain file, empty value, flag value, and the default when unset.
+  Each of the 8 new mutations of the launcher code fails the suite.
 
 ## [1.14.3] — 2026-10-17
 

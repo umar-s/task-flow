@@ -650,9 +650,12 @@ chmod +x "$TMP/lbin/wrap-claude" "$TMP/lbin/wrap-codex" "$TMP/w/lab/rel/cx"
 out="$(PATH="$TMP/lbin:$PATH" TASK_WAVE_CLAUDE_BIN=wrap-claude TASK_WAVE_CODEX_BIN=rel/cx yt --dry-run DEV-7 DEV-5)"; rc=$?
 check "a launcher by name and by relative path: the plan runs each by its absolute path" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -qF " $TMP/lbin/wrap-claude -- /task-flow:task\\ DEV-7" && printf "%s" "$out" | grep -qF " $TMP/w/lab/rel/cx -- \\\$task-flow:task\\ DEV-5" && ! printf "%s" "$out" | grep -q "not on PATH"'
 rm -f "$STUB_LOG/claude-lab-DEV-7" "$STUB_LOG/codex-lab-DEV-5" "$STUB_LOG/via-claude-lab-DEV-7" "$STUB_LOG/via-codex-lab-DEV-5"
-( PATH="$TMP/lbin:$PATH" TASK_WAVE_CLAUDE_BIN=wrap-claude TASK_WAVE_CODEX_BIN="$TMP/lbin/wrap-codex" yt DEV-7 DEV-5 >/dev/null 2>&1 ); rc=$?
+( PATH="$TMP/lbin:$PATH" TASK_WAVE_CLAUDE_BIN=wrap-claude TASK_WAVE_CODEX_BIN="$TMP/lbin/wrap-codex" TASK_WAVE_CLAUDE_ARGS='--settings /s.json' TASK_WAVE_CODEX_ARGS='-p builder -i /i.png' yt DEV-7 DEV-5 >/dev/null 2>&1 ); rc=$?
 waitfile "$STUB_LOG/claude-lab-DEV-7"; waitfile "$STUB_LOG/codex-lab-DEV-5"
-check "each window runs its launcher, and the CLI behind it gets the prompt after --" '[ $rc -eq 0 ] && [ "$(tr "\n" "|" < "$STUB_LOG/via-claude-lab-DEV-7")" = "--|/task-flow:task DEV-7|" ] && [ "$(sed -n 2,3p "$STUB_LOG/claude-lab-DEV-7" | tr "\n" "|")" = "--|/task-flow:task DEV-7|" ] && [ "$(tr "\n" "|" < "$STUB_LOG/via-codex-lab-DEV-5")" = "--|\$task-flow:task DEV-5|" ] && [ "$(sed -n 2,3p "$STUB_LOG/codex-lab-DEV-5" | tr "\n" "|")" = "--|\$task-flow:task DEV-5|" ]'
+# the launcher gets the whole command line — flags, --, prompt — and the CLI behind it the
+# same, nothing added or lost (the CLI's log starts with its cwd, dropped here)
+check "claude window: launcher argv = flags, --, prompt; the CLI's argv identical" '[ $rc -eq 0 ] && [ "$(tr "\n" "|" < "$STUB_LOG/via-claude-lab-DEV-7")" = "--settings|/s.json|--|/task-flow:task DEV-7|" ] && [ "$(sed 1d "$STUB_LOG/claude-lab-DEV-7" | tr "\n" "|")" = "$(tr "\n" "|" < "$STUB_LOG/via-claude-lab-DEV-7")" ]'
+check "codex window: launcher argv = flags, --, prompt; the CLI's argv identical" '[ "$(tr "\n" "|" < "$STUB_LOG/via-codex-lab-DEV-5")" = "-p|builder|-i|/i.png|--|\$task-flow:task DEV-5|" ] && [ "$(sed 1d "$STUB_LOG/codex-lab-DEV-5" | tr "\n" "|")" = "$(tr "\n" "|" < "$STUB_LOG/via-codex-lab-DEV-5")" ]'
 tmux kill-server >/dev/null 2>&1 || true
 TASK_WAVE_CLAUDE_BIN=no-such-launcher yt --dry-run DEV-7 >"$TMP/out" 2>&1; rc=$?
 check "a launcher not on PATH: the dry run names it and its variable" '[ $rc -eq 0 ] && grep -q "not on PATH: no-such-launcher (TASK_WAVE_CLAUDE_BIN)" "$TMP/out"'
