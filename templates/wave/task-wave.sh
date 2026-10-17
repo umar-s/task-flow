@@ -94,16 +94,24 @@ yt_get() {
     || die "YouTrack did not answer ${1%%\?*} — refusing to guess that it is ready"
   code="${out##*$'\n'}"; body="${out%$'\n'*}"
   case "$code" in 2[0-9][0-9]) ;; *) die "YouTrack answered ${1%%\?*} with HTTP $code — refusing to guess that it is ready" ;; esac
-  printf '%s' "$body" | jq -e "$2" >/dev/null 2>&1 \
+  # exactly one JSON document (jq reads a stream: "[]\n[]" would pass a plain
+  # test), of the shape every later read relies on — so no transform below can fail
+  printf '%s' "$body" | jq -e -s "length == 1 and (.[0] | $2)" >/dev/null 2>&1 \
     || die "YouTrack answered ${1%%\?*} with something that is not the expected JSON — is YOUTRACK_URL the instance root? refusing to guess"   # lint: allow — jq's own message is not the point
   printf '%s' "$body"
 }
+# The shapes the reads rely on: an issue has a string idReadable and, if any,
+# tags that are objects with a string name; a link type has string-or-null names.
+yt_issue='type == "object" and (.idReadable | type) == "string" and ((.tags // []) | type == "array" and all(.[]; type == "object" and (.name | type) == "string"))'
+yt_list="type == \"array\" and all(.[]; $yt_issue)"
+yt_ltypes='type == "array" and all(.[]; type == "object" and ((.sourceToTarget // "") | type) == "string" and ((.targetToSource // "") | type) == "string")'
 # yt_page <query> <top> <skip> — one page of a search (a JSON array). $top is always
 # sent: without it YouTrack silently returns at most 500 issues.
-yt_page() { yt_get "/api/issues?query=$(yt_uri "$1")&fields=idReadable,tags(name)&\$top=$2&\$skip=$3" 'type == "array"'; }
-# "<id>\t<builder tags>" per issue of a page
-yt_tsv='.[] | [.idReadable, ([.tags[]?.name | select(. == "builder:claude" or . == "builder:codex")] | unique | join(" "))] | @tsv'
-yt_search() { yt_page "$@" | jq -r "$yt_tsv"; }
+yt_page() { yt_get "/api/issues?query=$(yt_uri "$1")&fields=idReadable,tags(name)&\$top=$2&\$skip=$3" "$yt_list"; }
+# "<id>\t<builder tags>" per issue
+yt_row='[.idReadable, ([(.tags // [])[].name | select(. == "builder:claude" or . == "builder:codex")] | unique | join(" "))] | @tsv'
+yt_tsv=".[] | $yt_row"
+yt_search() { local body; body="$(yt_page "$@")" || exit 2; printf '%s' "$body" | jq -r "$yt_tsv" || die "cannot read a YouTrack search answer — refusing to guess"; }
 # yt_blocked <id> — 0 when some link in YOUTRACK_BLOCKER_LINKS names an unresolved issue.
 # It runs as an `if` condition, where set -e is off: a failed read must exit by hand,
 # or an unreadable blocker list would read as "no blocker" — ready.
@@ -152,16 +160,17 @@ else
   if [ ${#raw[@]} -gt 0 ]; then
     # explicit ids: the server's idReadable is the id (dev-05 is DEV-5); unknown → stop
     for a in "${raw[@]}"; do
-      line="$(yt_get "/api/issues/$(yt_uri "$a")?fields=idReadable,tags(name)" 'type == "object" and (.idReadable | type) == "string"' \
-        | jq -r '[.idReadable, ([.tags[]?.name | select(. == "builder:claude" or . == "builder:codex")] | unique | join(" "))] | @tsv')"
+      body="$(yt_get "/api/issues/$(yt_uri "$a")?fields=idReadable,tags(name)" "$yt_issue")"
+      line="$(printf '%s' "$body" | jq -r "$yt_row")" || die "cannot read YouTrack issue $a — refusing to guess"
       yt_canon "${line%%	*}"; issues+=("${line%%	*}"); builders+=("${line#*	}")
     done
   else
     # Every blocker link name must be one of this instance's link names: YouTrack
     # does not refuse an unknown one — it searches the words as text, which finds
     # nothing, and every blocked task would read as ready.
-    names="$(yt_get "/api/issueLinkTypes?fields=sourceToTarget,targetToSource&\$top=200" 'type == "array"' \
-      | jq -r '.[] | .sourceToTarget, .targetToSource | select(. != null and . != "")')"
+    body="$(yt_get "/api/issueLinkTypes?fields=sourceToTarget,targetToSource&\$top=200" "$yt_ltypes")"
+    names="$(printf '%s' "$body" | jq -r '.[] | .sourceToTarget, .targetToSource | select(. != null and . != "")')" \
+      || die "cannot read YouTrack's link types — refusing to guess"
     for l in "${yt_names[@]}"; do
       known=0
       while IFS= read -r t; do [ "$t" = "$l" ] && known=1; done <<EOF
@@ -173,8 +182,8 @@ EOF
     skip=0; cand=""
     while :; do
       body="$(yt_page "$q" 100 $skip)"
-      count="$(printf '%s' "$body" | jq length)"
-      page="$(printf '%s' "$body" | jq -r "$yt_tsv")"
+      count="$(printf '%s' "$body" | jq length)" || die "cannot read a YouTrack search answer — refusing to guess"
+      page="$(printf '%s' "$body" | jq -r "$yt_tsv")" || die "cannot read a YouTrack search answer — refusing to guess"
       [ -z "$page" ] || cand="$cand$page"$'\n'
       [ "$count" -lt 100 ] && break   # a short page ends the list
       skip=$((skip + 100))

@@ -286,7 +286,8 @@ grep -qF '&\$top=$2&\$skip=$3' "$TW" || err "$TW: every YouTrack search must sen
 grep -qF 'curl -sS --max-time 30 --config -' "$TW" || err "$TW: the YouTrack token must reach curl on stdin (--config -), never on its command line"
 grep -qE '^[^#]*(-H|--header)[ =]*"?Authorization' "$TW" && err "$TW passes the YouTrack token on curl's command line (visible in ps)"
 grep -qF '|| exit 2' "$TW" && grep -q 'set -e is off' "$TW" || err "$TW: yt_blocked runs as an if condition — a failed blocker read must exit by hand, or it reads as ready"
-grep -qF "jq -e \"\$2\"" "$TW" || err "$TW: a YouTrack answer must be checked for its JSON shape (a wrong base URL answers 200 with HTML)"
+grep -qF 'jq -e -s "length == 1 and (.[0] | $2)"' "$TW" && grep -q '^yt_issue=.*all(.\[\]; type == "object" and (.name | type) == "string")' "$TW" \
+  || err "$TW: a YouTrack answer must be exactly one JSON document of the shape the reads rely on (a wrong base URL answers 200 with HTML; jq reads a stream)"
 grep -q 'https://?\*' "$TW" || err "$TW: YOUTRACK_URL must be https:// — the token goes with every request"
 grep -qF '"${line%%' "$TW" || err "$TW: an explicit YouTrack id must take the server's idReadable (dev-05 and DEV-5 are one task)"
 grep -qE '^[^#]*q=.*tag:' "$TW" && err "$TW puts a tag in the YouTrack search — an unknown tag is a 400, not an empty list; filter tags on the client"

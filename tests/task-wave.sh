@@ -317,6 +317,8 @@ done; unset IFS
 [ -n "${YT_FAIL:-}" ] && case "$path $query" in *"$YT_FAIL"*) err 500 ;; esac
 [ -n "${YT_3XX:-}" ] && case "$path $query" in *"$YT_3XX"*) emit '[]' 302 ;; esac        # a redirect with a JSON body
 [ -n "${YT_TRUNC:-}" ] && case "$path $query" in *"$YT_TRUNC"*) emit '[{"idReadable":"DEV-2","tags":[' 200 ;; esac
+[ -n "${YT_DOUBLE:-}" ] && case "$path $query" in *"$YT_DOUBLE"*) emit $'[]\n[]' 200 ;; esac     # two JSON documents
+[ -n "${YT_BADTAGS:-}" ] && case "$path $query" in *"$YT_BADTAGS"*) emit '{"idReadable":"DEV-5","tags":["wrong-shape"]}' 200 ;; esac
 [ -n "${YT_HTML:-}" ] && emit '<!doctype html><html><body>YouTrack</body></html>' 200
 canon() { jq -rn --arg i "$1" '$i | ascii_upcase | capture("^(?<k>[A-Z][A-Z0-9_]*)-0*(?<n>[0-9]+)$") | "\(.k)-\(.n)"'; }
 case "$path" in
@@ -426,6 +428,10 @@ YT_3XX='is required for: DEV-3' yt --dry-run --epic DEV-1 >"$TMP/out" 2>"$TMP/er
 check "youtrack: a 302 with a JSON [] on a blocker read → rc 2, not 'no blocker'" '[ $rc -eq 2 ] && grep -q "HTTP 302" "$TMP/err" && ! grep -q "^DEV-3 " "$TMP/out"'
 YT_TRUNC='#Unresolved sort by' yt --dry-run --epic DEV-1 >/dev/null 2>"$TMP/err"; rc=$?
 check "youtrack: truncated JSON → rc 2" '[ $rc -eq 2 ] && grep -q "not the expected JSON" "$TMP/err"'
+YT_DOUBLE='is required for: DEV-3' yt --dry-run --epic DEV-1 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "youtrack: two JSON documents on a blocker read → rc 2, DEV-3 not ready" '[ $rc -eq 2 ] && grep -q "not the expected JSON" "$TMP/err" && ! grep -q "^DEV-3 " "$TMP/out"'
+YT_BADTAGS='/api/issues/DEV-5' yt --dry-run DEV-5 >/dev/null 2>"$TMP/err"; rc=$?
+check "youtrack: tags of the wrong shape → rc 2 (not jq's rc 5)" '[ $rc -eq 2 ] && grep -q "not the expected JSON" "$TMP/err"'
 for links in ';' ' ; ;'; do
   YOUTRACK_BLOCKER_LINKS="$links" yt --dry-run --epic DEV-1 >"$TMP/out" 2>"$TMP/err"; rc=$?
   check "youtrack: YOUTRACK_BLOCKER_LINKS='$links' names no link → rc 2, DEV-3 not ready" '[ $rc -eq 2 ] && grep -q "names no link" "$TMP/err" && ! grep -q "^DEV-3 " "$TMP/out"'
