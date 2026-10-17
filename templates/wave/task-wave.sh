@@ -77,10 +77,12 @@ if [ -z "$base" ]; then
   base="$(git -C "$root" config --get task-wave.base)" || base=""   # lint: allow — unset is the common case
   base_src="git config task-wave.base"
 fi
-if [ -n "$base" ]; then
-  case "$base" in -*) die "$base_src: '$base' is not a branch name" ;; esac
+# check_base — run once, on the final base, whichever source gave it (a tracker's
+# default branch included): it becomes a git ref, a worktree's start and a plan line
+check_base() {
+  case "$base" in ""|-*) die "$base_src: '$base' is not a branch name" ;; esac
   git check-ref-format --branch "$base" >/dev/null 2>&1 || die "$base_src: '$base' is not a branch name"   # lint: allow — git's own message is not the point
-fi
+}
 
 # --- YouTrack adapter: configuration, then every read through yt_get, which
 # stops the run on anything but a 2xx JSON answer of the expected shape.
@@ -239,6 +241,7 @@ EOF
   fi
 fi
 
+check_base
 echo "task-wave: base origin/$base ($base_src)"
 
 # One entry per issue: an issue named twice must not get two agents in one checkout.

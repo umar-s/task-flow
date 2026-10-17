@@ -36,7 +36,7 @@ download.
   that range fell out of step twice when the header grew.
 
 ### Tests
-- `tests/task-wave.sh`: 118 controls (1.14.1 had 107). New ones:
+- `tests/task-wave.sh`: 120 controls (1.14.1 had 107). New ones:
   - `task-wave.base` on YouTrack with no remote read, and on GitHub instead of
     `gh`'s default branch;
   - `--base` winning over the config;
@@ -45,9 +45,14 @@ download.
   - the base's source named in the plan;
   - the extra flags arriving one per argument, before the prompt, with
     `$(touch …)` and `;touch …` left unrun;
-  - the Codex flags appearing in the planned command.
-- Four mutations, each one caught: config ignored, branch name unchecked,
-  flags unquoted, and the Claude flags dropped.
+  - the Codex flags appearing in the planned command;
+  - `bad..name` as the tracker's own default branch, from `gh` or from
+    `ls-remote`, refused.
+- Five mutations, each one caught: config ignored, branch name unchecked, the
+  final base check skipped, flags unquoted, and the Claude flags dropped.
+- Codex review through `xreview.sh`. Round 1 found that the branch-name check
+  ran before the tracker's default branch was filled in, so `bad..name` from
+  `gh` passed. It is now one check on the final base, whatever its source.
 
 ### Supply self-check
 - New subprocess calls: `git config --get` and `git check-ref-format`, both

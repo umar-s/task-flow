@@ -60,7 +60,7 @@ done
 set -- "${args[@]}"
 [ -n "${GH_FAIL:-}" ] && case "$*" in *"$GH_FAIL"*) echo "gh: simulated failure" >&2; exit 1 ;; esac
 case "$1 $2" in
-  "repo view")  jq -r "$q" "$FX/repo.json"; exit ;;
+  "repo view")  jq --arg b "${GH_DEFAULT_BRANCH:-main}" '.defaultBranchRef.name = $b' "$FX/repo.json" | jq -r "$q"; exit ;;
   "issue view") [ -n "${GH_SLOW:-}" ] && sleep "$GH_SLOW"
                 [ -f "$FX/issue-$3.json" ] || exit 4; jq -r "$q" "$FX/issue-$3.json"; exit ;;
   "issue list") jq -r '.[:200]' "$FX/open.json" | jq -r "$q"; exit ;;     # gh's --limit 200 truncation
@@ -539,6 +539,11 @@ yt --dry-run --base 'x..y' DEV-7 >/dev/null 2>"$TMP/err"; rc=$?
 check "--base 'x..y' is not a branch name → rc 2" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err"'
 out="$(yt --dry-run DEV-7)"
 check "without task-wave.base the remote's default again, source named" 'printf "%s" "$out" | grep -q "base origin/main (origin.s default branch)"'
+# a tracker's default branch is checked like any other base (Codex review, 1.14.2)
+GIT_LSREMOTE_OUT='ref: refs/heads/bad..name\tHEAD\n' yt --dry-run DEV-7 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "youtrack: origin's default branch 'bad..name' → rc 2, nothing planned" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err" && ! grep -q "^DEV-" "$TMP/out"'
+GH_DEFAULT_BRANCH='bad..name' bash "$TW" --dry-run 370 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "github: a default branch 'bad..name' from gh → rc 2, nothing planned" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err" && ! grep -q "^#370 " "$TMP/out"'
 
 # Z2. extra flags for the CLI in the window (a worktree does not see the workstation's
 #     .claude/settings*.json or .mcp.json): TASK_WAVE_CLAUDE_ARGS / TASK_WAVE_CODEX_ARGS,
