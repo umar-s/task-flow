@@ -288,6 +288,7 @@ jq -n '
     {id: "DEV-4", parent: "DEV-1", tags: ["bug"]},
     {id: "DEV-5", parent: "DEV-1", tags: ["builder:codex", "bug"]},
     {id: "DEV-6", parent: "DEV-1", tags: ["builder:claude", "builder:codex"]},
+    {id: "DEV-8", parent: "DEV-1", tags: ["builder:codex", "builder:claude"], blockers: ["DEV-2"]},
     {id: "DEV-7", parent: "DEV-50", tags: ["builder:claude"]},
     {id: "OPS-1", project: "OPS", tags: ["builder:claude"]} ]
   + [range(1000; 1600) | {id: "DEV-\(.)", tags: ["bug"]}]
@@ -319,6 +320,7 @@ done; unset IFS
 [ -n "${YT_TRUNC:-}" ] && case "$path $query" in *"$YT_TRUNC"*) emit '[{"idReadable":"DEV-2","tags":[' 200 ;; esac
 [ -n "${YT_DOUBLE:-}" ] && case "$path $query" in *"$YT_DOUBLE"*) emit $'[]\n[]' 200 ;; esac     # two JSON documents
 [ -n "${YT_BADTAGS:-}" ] && case "$path $query" in *"$YT_BADTAGS"*) emit '{"idReadable":"DEV-5","tags":["wrong-shape"]}' 200 ;; esac
+[ -n "${YT_FALSETAGS:-}" ] && case "$path $query" in *"$YT_FALSETAGS"*) emit '{"idReadable":"DEV-5","tags":false}' 200 ;; esac
 [ -n "${YT_HTML:-}" ] && emit '<!doctype html><html><body>YouTrack</body></html>' 200
 canon() { jq -rn --arg i "$1" '$i | ascii_upcase | capture("^(?<k>[A-Z][A-Z0-9_]*)-0*(?<n>[0-9]+)$") | "\(.k)-\(.n)"'; }
 case "$path" in
@@ -432,6 +434,16 @@ YT_DOUBLE='is required for: DEV-3' yt --dry-run --epic DEV-1 >"$TMP/out" 2>"$TMP
 check "youtrack: two JSON documents on a blocker read → rc 2, DEV-3 not ready" '[ $rc -eq 2 ] && grep -q "not the expected JSON" "$TMP/err" && ! grep -q "^DEV-3 " "$TMP/out"'
 YT_BADTAGS='/api/issues/DEV-5' yt --dry-run DEV-5 >/dev/null 2>"$TMP/err"; rc=$?
 check "youtrack: tags of the wrong shape → rc 2 (not jq's rc 5)" '[ $rc -eq 2 ] && grep -q "not the expected JSON" "$TMP/err"'
+YT_FALSETAGS='/api/issues/DEV-5' yt --dry-run DEV-5 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "youtrack: tags:false (false // [] is []) → rc 2, not a skip" '[ $rc -eq 2 ] && grep -q "not the expected JSON" "$TMP/err" && ! grep -q "has no builder" "$TMP/out"'
+# both builder tags: skipped before the blockers are read — named even when blocked,
+# and a failing blocker read of such an issue does not stop the wave
+out="$(yt --dry-run --epic DEV-1)"
+check "youtrack: DEV-8 (both tags, blocked) is named as skipped" 'printf "%s" "$out" | grep -q "DEV-8 has both builder"'
+out="$(YT_FAIL='is required for: DEV-6' yt --dry-run --epic DEV-1)"; rc=$?
+check "youtrack: a failing blocker read of a both-tags issue does not stop the wave" '[ $rc -eq 0 ] && [ "$(ytids "$out")" = "DEV-2 DEV-5 " ] && printf "%s" "$out" | grep -q "DEV-6 has both builder"'
+out="$(GH_FAIL='issues/380/dependencies' bash "$TW" --dry-run)"; rc=$?
+check "github: a failing blocker read of #380 (both labels) does not stop the wave; #380 named" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -q "#380 has both builder labels"'
 for links in ';' ' ; ;'; do
   YOUTRACK_BLOCKER_LINKS="$links" yt --dry-run --epic DEV-1 >"$TMP/out" 2>"$TMP/err"; rc=$?
   check "youtrack: YOUTRACK_BLOCKER_LINKS='$links' names no link → rc 2, DEV-3 not ready" '[ $rc -eq 2 ] && grep -q "names no link" "$TMP/err" && ! grep -q "^DEV-3 " "$TMP/out"'

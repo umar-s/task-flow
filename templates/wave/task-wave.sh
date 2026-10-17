@@ -102,9 +102,10 @@ yt_get() {
 }
 # The shapes the reads rely on: an issue has a string idReadable and, if any,
 # tags that are objects with a string name; a link type has string-or-null names.
-yt_issue='type == "object" and (.idReadable | type) == "string" and ((.tags // []) | type == "array" and all(.[]; type == "object" and (.name | type) == "string"))'
+# (`//` is not used for the test: `false // []` is [] — a boolean would pass.)
+yt_issue='type == "object" and (.idReadable | type) == "string" and (.tags == null or (.tags | type == "array" and all(.[]; type == "object" and (.name | type) == "string")))'
 yt_list="type == \"array\" and all(.[]; $yt_issue)"
-yt_ltypes='type == "array" and all(.[]; type == "object" and ((.sourceToTarget // "") | type) == "string" and ((.targetToSource // "") | type) == "string")'
+yt_ltypes='type == "array" and all(.[]; type == "object" and (.sourceToTarget == null or (.sourceToTarget | type) == "string") and (.targetToSource == null or (.targetToSource | type) == "string"))'
 # yt_page <query> <top> <skip> — one page of a search (a JSON array). $top is always
 # sent: without it YouTrack silently returns at most 500 issues.
 yt_page() { yt_get "/api/issues?query=$(yt_uri "$1")&fields=idReadable,tags(name)&\$top=$2&\$skip=$3" "$yt_list"; }
@@ -142,7 +143,10 @@ if [ "$tracker" = github ]; then
         -q '.[] | select(.pull_request == null) | .number')" || die "gh cannot list the issues labelled $label"
       labelled="$labelled $page"
     done
+    # an issue in both label lists carries both labels: skipped before its blockers are read
+    both=" $(printf '%s\n' $labelled | awk 'NF && seen[$1]++ == 1 { printf "%s ", $1 }')"
     for n in $(printf '%s\n' $labelled | sort -nu); do
+      case "$both" in *" $n "*) echo "task-wave: #$n has both builder labels — skipped (keep one)"; continue ;; esac
       # every page of blockers (30 per page by default); ready = no open one on any page
       open="$(gh api --paginate "repos/$repo/issues/$n/dependencies/blocked_by?per_page=100" \
         -q '.[] | select(.state == "open") | .number')" \
@@ -192,6 +196,9 @@ EOF
       [ -n "$id" ] || continue
       yt_canon "$id"
       [ -n "$tags" ] || continue
+      # both builder tags: skipped here, before its blockers are read — it is no
+      # candidate, so neither its blockers nor a failure to read them matter
+      case "$tags" in *" "*) echo "task-wave: $id has both builder labels — skipped (keep one)"; continue ;; esac
       if yt_blocked "$id"; then continue; fi
       issues+=("$id"); builders+=("$tags")
     done <<EOF

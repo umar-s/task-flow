@@ -93,9 +93,19 @@ measured on a live instance first (spec:
   exactly one document (`jq -s 'length == 1'`) of the full shape every later
   read relies on: issue ids and tag names as strings, link names as strings or
   null. Each transform also stops with rc 2. Both reproductions are controls.
+- Codex review, round 3 (two Required findings):
+  - `tags:false` passed the check, because `false // []` is `[]` in jq, and
+    the task was skipped as "no builder" with rc 0. The shape is now tested on
+    the raw field (`null`, or an array of `{name: string}`), and link-type names
+    the same way;
+  - an issue with both builder tags had its blockers read before it was
+    skipped. A blocked one disappeared without a message, and a failed blocker
+    read stopped the whole wave. It is now skipped first, with its name, on
+    YouTrack and on GitHub alike: an issue found in both label lists carries
+    both labels, which was 1.13.0's behaviour too.
 
 ### Tests
-- `tests/task-wave.sh`: 98 controls, 55 of them new (1.13.0 had 43). A stub `curl`
+- `tests/task-wave.sh`: 102 controls, 59 of them new (1.13.0 had 43). A stub `curl`
   (bash + jq, so it runs in the bash:3.2 image) serves a fixture db with the
   behaviour measured above:
   - the silent cap, and a default page of 42;
@@ -103,7 +113,7 @@ measured on a live instance first (spec:
     search for an unknown link name;
   - HTML instead of JSON, and a failure on page 2;
   - an argv that must never hold the token.
-- 18 mutations of the new guards, each one caught. The `#` doubling in window
+- 21 mutations of the new guards, each one caught. The `#` doubling in window
   names has no mutation that can be caught, because the id check refuses every
   input that could reach it. It is the second layer, pinned by lint.
 - Live on a YouTrack instance against a fixture epic (DEV-1554…1559, made for
