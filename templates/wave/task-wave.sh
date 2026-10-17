@@ -317,6 +317,11 @@ claude_bin=claude; codex_bin=codex
 if command -v claude >/dev/null; then claude_bin="$(abs "$(command -v claude)")"; fi
 if command -v codex >/dev/null; then codex_bin="$(abs "$(command -v codex)")"; fi
 run_with_path="env PATH=$(printf %q "$launch_path")"
+# one line each — `read` would keep the first line and drop the rest silently; checked
+# here, not in cli_args, which runs inside $( ) where a die would not stop the run
+case "${TASK_WAVE_CLAUDE_ARGS:-}${TASK_WAVE_CODEX_ARGS:-}" in
+  *$'\n'*) die "TASK_WAVE_CLAUDE_ARGS / TASK_WAVE_CODEX_ARGS hold a line break — put every flag on one line" ;;
+esac
 # cli_args "<flags>" — TASK_WAVE_CLAUDE_ARGS / TASK_WAVE_CODEX_ARGS for the CLI in the
 # window (a worktree does not see the workstation's .claude/settings*.json or
 # .mcp.json): split on blanks, every flag quoted on its own — never shell-parsed, so

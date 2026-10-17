@@ -51,8 +51,10 @@ download.
   - `--base '@{-1}'` (checkout shorthand) refused;
   - `HEAD` refused, from `--base` and from the config (here with a stale
     `origin/HEAD`);
-  - a bad base with an empty ready set refused, on both trackers.
-- Eight mutations, each one caught:
+  - a bad base with an empty ready set refused, on both trackers;
+  - `TASK_WAVE_CLAUDE_ARGS` with a line break refused, where before only the
+    first line would have been kept.
+- Nine mutations, each one caught:
   - the config ignored;
   - the branch-name check removed;
   - the check done with `--branch` alone (`@{-1}` passes);
@@ -60,8 +62,9 @@ download.
   - the check not run;
   - the YouTrack check run only after the backlog;
   - the flags unquoted;
-  - the Claude flags dropped.
-- Codex review through `xreview.sh`, four rounds:
+  - the Claude flags dropped;
+  - the line-break check removed.
+- Codex review through `xreview.sh`, five rounds:
   - round 1: the branch-name check ran before the tracker's default branch was
     filled in, so `bad..name` from `gh` passed;
   - round 2: `git check-ref-format --branch` accepts `@{-1}` and answers with
@@ -73,7 +76,12 @@ download.
     which may be stale;
   - now both `git check-ref-format "refs/heads/<base>"` and `--branch` must
     pass. The check runs once per tracker, right after the base is chosen and
-    before the backlog is read.
+    before the backlog is read;
+  - round 4 had no Critical or Required finding. Its one nit was about
+    behaviour, so it got a fix and a delta round: a multi-line
+    `TASK_WAVE_*_ARGS` was cut to its first line without a word, and is now
+    refused. The check sits at the top level, because inside `$( )` a `die`
+    would not stop the run.
 
 ### Supply self-check
 - New subprocess calls: `git config --get` and `git check-ref-format`, both

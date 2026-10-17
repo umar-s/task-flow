@@ -577,6 +577,8 @@ check "TASK_WAVE_CLAUDE_ARGS reach claude as separate literal flags before the p
 check "TASK_WAVE_CLAUDE_ARGS are not shell-parsed: nothing ran" '[ ! -e "$STUB_LOG/pwned1" ] && [ ! -e "$STUB_LOG/pwned2" ]'
 out="$(TASK_WAVE_CODEX_ARGS='-p builder' yt --dry-run DEV-5)"
 check "TASK_WAVE_CODEX_ARGS appear in the codex command" 'printf "%s" "$out" | grep -qF "codex -p builder \\\$task-flow:task\\ DEV-5"'
+TASK_WAVE_CLAUDE_ARGS=$'--settings /a.json\n--mcp-config /b.json' yt --dry-run DEV-7 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "TASK_WAVE_CLAUDE_ARGS with a line break → rc 2, not the first line only" '[ $rc -eq 2 ] && grep -q "line break" "$TMP/err" && ! grep -q "^DEV-7 " "$TMP/out"'
 tmux kill-server >/dev/null 2>&1 || true
 
 echo "tests/task-wave: $pass passed, $fail failed"
