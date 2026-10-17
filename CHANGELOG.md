@@ -36,7 +36,7 @@ download.
   that range fell out of step twice when the header grew.
 
 ### Tests
-- `tests/task-wave.sh`: 120 controls (1.14.1 had 107). New ones:
+- `tests/task-wave.sh`: 124 controls (1.14.1 had 107). New ones:
   - `task-wave.base` on YouTrack with no remote read, and on GitHub instead of
     `gh`'s default branch;
   - `--base` winning over the config;
@@ -47,12 +47,21 @@ download.
     `$(touch …)` and `;touch …` left unrun;
   - the Codex flags appearing in the planned command;
   - `bad..name` as the tracker's own default branch, from `gh` or from
-    `ls-remote`, refused.
-- Five mutations, each one caught: config ignored, branch name unchecked, the
-  final base check skipped, flags unquoted, and the Claude flags dropped.
-- Codex review through `xreview.sh`. Round 1 found that the branch-name check
-  ran before the tracker's default branch was filled in, so `bad..name` from
-  `gh` passed. It is now one check on the final base, whatever its source.
+    `ls-remote`, refused;
+  - `--base '@{-1}'` (checkout shorthand) refused;
+  - a bad base with an empty ready set refused, on both trackers.
+- Seven mutations, each one caught: config ignored, branch name unchecked, the
+  base check skipped, the check done with `--branch`, flags unquoted, the Claude
+  flags dropped, and the earlier "check after the tracker default" form.
+- Codex review through `xreview.sh`, three rounds:
+  - round 1: the branch-name check ran before the tracker's default branch was
+    filled in, so `bad..name` from `gh` passed;
+  - round 2: `git check-ref-format --branch` accepts `@{-1}` and answers with
+    the branch it resolves to, while the launcher used the literal string. Also,
+    an empty ready set exited before the check, so whether a base passed
+    depended on the backlog;
+  - now the literal `refs/heads/<base>` is checked once per tracker, right after
+    the base is chosen and before the backlog is read.
 
 ### Supply self-check
 - New subprocess calls: `git config --get` and `git check-ref-format`, both

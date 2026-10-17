@@ -70,6 +70,7 @@ case "$2" in
   repos/o/lab/issues\?*)
     label="${2##*labels=}"; label="${label%%&*}"
     sel="$(jq --arg l "$label" '[.[] | select(any(.labels[]; .name == $l))]' "$FX/open.json")"
+    [ -n "${GH_EMPTY:-}" ] && sel='[]'                     # an empty backlog
     [ $pag = 1 ] || sel="$(printf '%s' "$sel" | jq '.[:100]')"
     printf '%s' "$sel" | jq -r "$q" ;;
   repos/o/lab/issues/*/dependencies/blocked_by*)
@@ -544,6 +545,19 @@ GIT_LSREMOTE_OUT='ref: refs/heads/bad..name\tHEAD\n' yt --dry-run DEV-7 >"$TMP/o
 check "youtrack: origin's default branch 'bad..name' → rc 2, nothing planned" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err" && ! grep -q "^DEV-" "$TMP/out"'
 GH_DEFAULT_BRANCH='bad..name' bash "$TW" --dry-run 370 >"$TMP/out" 2>"$TMP/err"; rc=$?
 check "github: a default branch 'bad..name' from gh → rc 2, nothing planned" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err" && ! grep -q "^#370 " "$TMP/out"'
+# checkout shorthand: git check-ref-format --branch '@{-1}' answers with the previous
+# branch, rc 0 — the literal refs/heads/@{-1} is not a ref (Codex review, 1.14.2)
+git checkout -q -b tw-prev && git checkout -q main
+yt --dry-run --base '@{-1}' DEV-7 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "--base '@{-1}' (checkout shorthand) → rc 2, nothing planned" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err" && ! grep -q "^DEV-" "$TMP/out"'
+git branch -q -D tw-prev
+# a base is checked before the backlog is read: an empty ready set does not hide a bad one
+yt --dry-run --base 'bad..name' --epic DEV-90 >/dev/null 2>"$TMP/err"; rc=$?
+check "youtrack: empty ready set (--epic DEV-90) with --base bad..name → rc 2" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err"'
+GH_EMPTY=1 bash "$TW" --dry-run --base 'bad..name' >/dev/null 2>"$TMP/err"; rc=$?
+check "github: empty ready set with --base bad..name → rc 2" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err"'
+out="$(GH_EMPTY=1 bash "$TW" --dry-run)"; rc=$?
+check "github: empty ready set with a good base → rc 0, 'no ready task'" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -q "no ready task"'
 
 # Z2. extra flags for the CLI in the window (a worktree does not see the workstation's
 #     .claude/settings*.json or .mcp.json): TASK_WAVE_CLAUDE_ARGS / TASK_WAVE_CODEX_ARGS,
