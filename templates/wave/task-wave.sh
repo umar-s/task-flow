@@ -72,17 +72,28 @@ if [ "$tracker" = youtrack ]; then
   yt_token="${!yt_var:-}"
   [ -n "$yt_token" ] || die "\$$yt_var is empty — export the YouTrack token in it (YOUTRACK_TOKEN_VAR names the variable)"
   [[ "$yt_token" =~ ^[A-Za-z0-9._:+/=-]+$ ]] || die "\$$yt_var holds characters a YouTrack token does not have"
-  yt_links="${YOUTRACK_BLOCKER_LINKS:-is required for}"
+  # the blocker link names, parsed once: the same list is validated and queried,
+  # and an empty one (";" or blanks) is refused — no name would mean no blocker
+  yt_names=(); rest="${YOUTRACK_BLOCKER_LINKS:-is required for};"
+  while [ -n "$rest" ]; do
+    l="${rest%%;*}"; rest="${rest#*;}"
+    case "$l" in *[![:space:]]*) yt_names+=("$l") ;; esac
+  done
+  [ ${#yt_names[@]} -gt 0 ] || die "YOUTRACK_BLOCKER_LINKS names no link — a wave without a blocker check would start blocked tasks"
   [ ${#raw[@]} -gt 0 ] || [ -n "$project$epic" ] || die "name the wave: --project KEY and/or --epic ID (or explicit issue ids)"
 fi
 yt_uri() { jq -rn --arg s "$1" '$s | @uri'; }
 # yt_get <path?query> <jq shape test> — the body, or a stop. The token reaches
 # curl on stdin (--config -): never on a command line, in ps or in a log.
 yt_get() {
-  local body
-  body="$(printf 'header = "Authorization: Bearer %s"\nheader = "Accept: application/json"\n' "$yt_token" \
-    | curl -fsS --max-time 30 --config - "$yt_url$1")" \
+  local out body code
+  # no -f: curl fails only on >= 400, and a 3xx with a JSON body would pass — the
+  # status is read here and only 2xx goes on
+  out="$(printf 'header = "Authorization: Bearer %s"\nheader = "Accept: application/json"\n' "$yt_token" \
+    | curl -sS --max-time 30 --config - -w '\n%{http_code}' "$yt_url$1")" \
     || die "YouTrack did not answer ${1%%\?*} — refusing to guess that it is ready"
+  code="${out##*$'\n'}"; body="${out%$'\n'*}"
+  case "$code" in 2[0-9][0-9]) ;; *) die "YouTrack answered ${1%%\?*} with HTTP $code — refusing to guess that it is ready" ;; esac
   printf '%s' "$body" | jq -e "$2" >/dev/null 2>&1 \
     || die "YouTrack answered ${1%%\?*} with something that is not the expected JSON — is YOUTRACK_URL the instance root? refusing to guess"   # lint: allow — jq's own message is not the point
   printf '%s' "$body"
@@ -97,14 +108,17 @@ yt_search() { yt_page "$@" | jq -r "$yt_tsv"; }
 # It runs as an `if` condition, where set -e is off: a failed read must exit by hand,
 # or an unreadable blocker list would read as "no blocker" — ready.
 yt_blocked() {
-  local rest="$yt_links;" l hit
-  while [ -n "$rest" ]; do
-    l="${rest%%;*}"; rest="${rest#*;}"; [ -n "$l" ] || continue
+  local l hit
+  for l in "${yt_names[@]}"; do
     hit="$(yt_search "$l: $1 #Unresolved" 1 0)" || exit 2
     [ -z "$hit" ] || return 0
   done
   return 1
 }
+# yt_canon <idReadable> — the server's id is data, not trusted: it becomes a path,
+# a branch and a tmux window name (tmux runs #(…) in a window name), so it must be
+# a plain YouTrack id or the run stops
+yt_canon() { [[ "$1" =~ $yt_id ]] || die "YouTrack returned an issue id that is not KEY-N: $(printf %q "$1") — refusing to use it"; }
 
 # The ready set (and, on YouTrack, each task's builder tags and canonical id).
 builders=()
@@ -140,7 +154,7 @@ else
     for a in "${raw[@]}"; do
       line="$(yt_get "/api/issues/$(yt_uri "$a")?fields=idReadable,tags(name)" 'type == "object" and (.idReadable | type) == "string"' \
         | jq -r '[.idReadable, ([.tags[]?.name | select(. == "builder:claude" or . == "builder:codex")] | unique | join(" "))] | @tsv')"
-      issues+=("${line%%	*}"); builders+=("${line#*	}")
+      yt_canon "${line%%	*}"; issues+=("${line%%	*}"); builders+=("${line#*	}")
     done
   else
     # Every blocker link name must be one of this instance's link names: YouTrack
@@ -148,9 +162,7 @@ else
     # nothing, and every blocked task would read as ready.
     names="$(yt_get "/api/issueLinkTypes?fields=sourceToTarget,targetToSource&\$top=200" 'type == "array"' \
       | jq -r '.[] | .sourceToTarget, .targetToSource | select(. != null and . != "")')"
-    rest="$yt_links;"
-    while [ -n "$rest" ]; do
-      l="${rest%%;*}"; rest="${rest#*;}"; [ -n "$l" ] || continue
+    for l in "${yt_names[@]}"; do
       known=0
       while IFS= read -r t; do [ "$t" = "$l" ] && known=1; done <<EOF
 $names
@@ -168,7 +180,9 @@ EOF
       skip=$((skip + 100))
     done
     while IFS='	' read -r id tags; do
-      [ -n "$id" ] && [ -n "$tags" ] || continue
+      [ -n "$id" ] || continue
+      yt_canon "$id"
+      [ -n "$tags" ] || continue
       if yt_blocked "$id"; then continue; fi
       issues+=("$id"); builders+=("$tags")
     done <<EOF
@@ -275,7 +289,9 @@ while [ $i -lt ${#issues[@]} ]; do
     mode=new; how="git worktree add $wt -b $br origin/$base"
   fi
   printf '%s %s → %s\n    %s\n    tmux window %s: %s\n' "$label" "$builder" "$wt" "$how" "$label" "$cmd"
-  plan_n+=("$n"); plan_wt+=("$wt"); plan_mode+=("$mode"); plan_cmd+=("$cmd"); plan_win+=("$label")
+  # tmux expands formats in a window name — #(…) runs a command — so every # is
+  # doubled (## is a literal #): the name shows, and is listed, as $label
+  plan_n+=("$n"); plan_wt+=("$wt"); plan_mode+=("$mode"); plan_cmd+=("$cmd"); plan_win+=("${label//\#/##}")
 done
 [ ${#plan_n[@]} -gt 0 ] || exit 0
 # A window whose CLI is missing would close at once with "command not found",

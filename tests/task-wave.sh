@@ -297,8 +297,14 @@ jq -n '
 cat > "$TMP/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 cfg="$(cat)"; printf '%s\n' "$*" >> "$STUB_LOG/curl-argv"
-err() { echo "curl: (22) The requested URL returned error: $1" >&2; exit 22; }
-url=""; for a in "$@"; do case "$a" in https://*|http://*) url="$a" ;; esac; done
+# like curl: -f turns an HTTP error into exit 22; without it the body comes back,
+# and -w '\n%{http_code}' appends the status
+fflag=0; wflag=0; url=""
+for a in "$@"; do
+  case "$a" in https://*|http://*) url="$a" ;; -w) wflag=1 ;; --*) ;; -*f*) fflag=1 ;; esac
+done
+emit() { printf '%s' "$1"; [ $wflag = 1 ] && printf '\n%s' "$2"; exit 0; }
+err() { [ $fflag = 1 ] && { echo "curl: (22) The requested URL returned error: $1" >&2; exit 22; }; emit '{"error":"stub"}' "$1"; }
 case "$cfg" in *"Authorization: Bearer $YT_EXPECT_TOKEN\""*) ;; *) err 401 ;; esac
 rest="${url#https://yt.test}"; [ "$rest" != "$url" ] || err 404
 path="${rest%%\?*}"; qs=""; case "$rest" in *\?*) qs="${rest#*\?}" ;; esac
@@ -309,23 +315,27 @@ IFS='&'; for kv in $qs; do
   case "$k" in query) query="$(dec "$v")" ;; '$top') top="$v" ;; '$skip') skip="$v" ;; esac
 done; unset IFS
 [ -n "${YT_FAIL:-}" ] && case "$path $query" in *"$YT_FAIL"*) err 500 ;; esac
-[ -n "${YT_HTML:-}" ] && { echo '<!doctype html><html><body>YouTrack</body></html>'; exit 0; }
+[ -n "${YT_3XX:-}" ] && case "$path $query" in *"$YT_3XX"*) emit '[]' 302 ;; esac        # a redirect with a JSON body
+[ -n "${YT_TRUNC:-}" ] && case "$path $query" in *"$YT_TRUNC"*) emit '[{"idReadable":"DEV-2","tags":[' 200 ;; esac
+[ -n "${YT_HTML:-}" ] && emit '<!doctype html><html><body>YouTrack</body></html>' 200
 canon() { jq -rn --arg i "$1" '$i | ascii_upcase | capture("^(?<k>[A-Z][A-Z0-9_]*)-0*(?<n>[0-9]+)$") | "\(.k)-\(.n)"'; }
 case "$path" in
   /api/issueLinkTypes)
-    if [ -n "${YT_NO_BLOCKS:-}" ]; then echo '[{"sourceToTarget":"is required for","targetToSource":"depends on"}]'
-    else echo '[{"sourceToTarget":"relates to","targetToSource":""},{"sourceToTarget":"is required for","targetToSource":"depends on"},{"sourceToTarget":"blocks","targetToSource":"blocked by"}]'; fi ;;
+    if [ -n "${YT_NO_BLOCKS:-}" ]; then emit '[{"sourceToTarget":"is required for","targetToSource":"depends on"}]' 200
+    else emit '[{"sourceToTarget":"relates to","targetToSource":""},{"sourceToTarget":"is required for","targetToSource":"depends on"},{"sourceToTarget":"blocks","targetToSource":"blocked by"}]' 200; fi ;;
   /api/issues/*)
     id="$(canon "${path#/api/issues/}")" || err 404
     out="$(jq --arg i "$id" '.[] | select(.id == $i) | {idReadable: .id, resolved: (if .resolved then 1 else null end), tags: [.tags[] | {name: .}]}' "$YT_DB")"
-    [ -n "$out" ] || err 404; printf '%s\n' "$out" ;;
+    [ -n "$out" ] || err 404
+    [ -n "${YT_EVIL:-}" ] && out="$(printf '%s' "$out" | jq --arg e "$YT_EVIL" '.idReadable = $e')"
+    emit "$out" 200 ;;
   /api/issues)
     [ -n "$top" ] || top="${YT_DEFAULT_TOP:-500}"              # the silent cap (500 measured; other builds differ)
     case "$query" in *tag:*) err 400 ;; esac
     re_list='^(project: ([^ ]+) )?(subtask of: ([^ ]+) )?#Unresolved sort by: created asc$'
     re_block='^(is required for|blocks): ([^ ]+) #Unresolved$'
     re_other='^[a-z][a-z ]*: [^ ]+ #Unresolved$'            # an unknown link name: YouTrack searches it as text
-    if [ -n "${YT_NO_BLOCKS:-}" ] && [[ $query == blocks:* ]]; then echo '[]'; exit 0; fi
+    if [ -n "${YT_NO_BLOCKS:-}" ] && [[ $query == blocks:* ]]; then emit '[]' 200; fi
     if [[ $query =~ $re_list ]]; then
       sel="$(jq --arg p "${BASH_REMATCH[2]}" --arg e "${BASH_REMATCH[4]}" \
         '[.[] | select(.resolved | not) | select($p == "" or .project == $p) | select($e == "" or .parent == $e)]' "$YT_DB")"
@@ -336,7 +346,9 @@ case "$path" in
     elif [[ $query =~ $re_other ]]; then sel='[]'                   # measured: no 400, a text search that finds nothing
     else err 400; fi
     [ -n "${YT_FAIL_PAGE2:-}" ] && [ "$skip" -ge 100 ] && case "$query" in *"$YT_FAIL_PAGE2"*) err 502 ;; esac
-    printf '%s' "$sel" | jq --argjson s "$skip" --argjson t "$top" '[.[$s:($s + $t)][] | {idReadable: .id, tags: [.tags[] | {name: .}]}]' ;;
+    out="$(printf '%s' "$sel" | jq --argjson s "$skip" --argjson t "$top" '[.[$s:($s + $t)][] | {idReadable: .id, tags: [.tags[] | {name: .}]}]')"
+    [ -n "${YT_EVIL:-}" ] && out="$(printf '%s' "$out" | jq --arg e "$YT_EVIL" 'if length > 0 then .[0].idReadable = $e else . end')"
+    emit "$out" 200 ;;
   *) err 404 ;;
 esac
 EOF
@@ -410,6 +422,21 @@ YT_FAIL_PAGE2='project: DEV' yt --dry-run --project DEV >/dev/null 2>"$TMP/err";
 check "youtrack: the list fails on page 2 → rc 2" '[ $rc -eq 2 ]'
 YT_HTML=1 yt --dry-run --epic DEV-1 >/dev/null 2>"$TMP/err"; rc=$?
 check "youtrack: an HTML page (wrong base URL) → rc 2 naming YOUTRACK_URL" '[ $rc -eq 2 ] && grep -q "YOUTRACK_URL" "$TMP/err"'
+YT_3XX='is required for: DEV-3' yt --dry-run --epic DEV-1 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "youtrack: a 302 with a JSON [] on a blocker read → rc 2, not 'no blocker'" '[ $rc -eq 2 ] && grep -q "HTTP 302" "$TMP/err" && ! grep -q "^DEV-3 " "$TMP/out"'
+YT_TRUNC='#Unresolved sort by' yt --dry-run --epic DEV-1 >/dev/null 2>"$TMP/err"; rc=$?
+check "youtrack: truncated JSON → rc 2" '[ $rc -eq 2 ] && grep -q "not the expected JSON" "$TMP/err"'
+for links in ';' ' ; ;'; do
+  YOUTRACK_BLOCKER_LINKS="$links" yt --dry-run --epic DEV-1 >"$TMP/out" 2>"$TMP/err"; rc=$?
+  check "youtrack: YOUTRACK_BLOCKER_LINKS='$links' names no link → rc 2, DEV-3 not ready" '[ $rc -eq 2 ] && grep -q "names no link" "$TMP/err" && ! grep -q "^DEV-3 " "$TMP/out"'
+done
+# a server-side id is data: #(…) in a tmux window name runs a command (tmux 3.4, measured)
+for args in "--epic DEV-1" "DEV-5"; do
+  YT_EVIL="#(touch $STUB_LOG/pwned)-1" yt $args >/dev/null 2>"$TMP/err"; rc=$?
+  check "youtrack: idReadable '#(touch …)-1' ($args) → rc 2, nothing ran, no session" '[ $rc -eq 2 ] && grep -q "not KEY-N" "$TMP/err" && [ ! -e "$STUB_LOG/pwned" ] && ! tmux has-session -t =wave-lab 2>/dev/null'
+done
+YT_EVIL="../../escape-1" yt --dry-run DEV-5 >/dev/null 2>&1; rc=$?
+check "youtrack: idReadable with a path → rc 2" '[ $rc -eq 2 ]'
 
 # Y8. explicit ids: canonical from the server, deduplicated; unknown → stop; readiness not checked
 out="$(yt --dry-run dev-5 DEV-05 DEV-5)"; rc=$?
@@ -429,6 +456,11 @@ for c in jq dirname basename bash awk sort seq sed tr wc tmux; do ln -sf "$(comm
 ln -sf "$TMP/bin/git" "$TMP/nocurl/git"
 PATH="$TMP/nocurl" "$TMP/nocurl/bash" "$TW" --tracker youtrack --dry-run --epic DEV-1 >/dev/null 2>"$TMP/err"; rc=$?
 check "youtrack without curl → rc 2" '[ $rc -eq 2 ] && grep -q "curl is not on PATH" "$TMP/err"'
+mkdir -p "$TMP/nojq"
+for c in dirname basename bash awk sort seq sed tr wc tmux; do ln -sf "$(command -v $c)" "$TMP/nojq/$c"; done
+ln -sf "$TMP/bin/git" "$TMP/nojq/git"; ln -sf "$TMP/bin/curl" "$TMP/nojq/curl"
+PATH="$TMP/nojq" "$TMP/nojq/bash" "$TW" --tracker youtrack --dry-run --epic DEV-1 >/dev/null 2>"$TMP/err"; rc=$?
+check "youtrack without jq → rc 2" '[ $rc -eq 2 ] && grep -q "jq is not on PATH" "$TMP/err"'
 for c in jq dirname basename bash awk sort seq sed tr wc tmux cat; do ln -sf "$(command -v $c)" "$TMP/nogh/$c"; done
 ln -sf "$TMP/bin/git" "$TMP/nogh/git"; ln -sf "$TMP/bin/curl" "$TMP/nogh/curl"
 out="$(PATH="$TMP/nogh" "$TMP/nogh/bash" "$TW" --tracker youtrack --dry-run --epic DEV-1)"; rc=$?

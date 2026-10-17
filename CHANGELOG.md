@@ -62,9 +62,33 @@ measured on a live instance first (spec:
 - A missing `grep` broke the page count, so paging stopped silently after the
   first page. Pages are now counted with `jq length` on the body that was
   already checked.
+- **A tracker id could run a command.** tmux 3.4 expands formats in a window
+  name, and `#(…)` runs: measured, `new-window -n '#(touch …)'` created the
+  file. An `idReadable` like `#(…)-1` from the server would have become a
+  window name and run on the user's machine. This was found by the automated
+  security review of the commit. Two layers fix it:
+  - every server id must be a plain `KEY-N` or the run stops (it also becomes
+    a path and a branch name, so `../..` is refused as well);
+  - every `#` in a window name is doubled (`##` is a literal `#`), on GitHub's
+    `#N` too.
+- Codex review, round 1 (three Required findings):
+  - a `3xx` with a JSON body passed, because `curl -f` fails only on ≥ 400.
+    The status is now read with `-w '%{http_code}'`, and only `2xx` goes on;
+  - `YOUTRACK_BLOCKER_LINKS=';'` skipped every name, so every task read as
+    ready. The list is now parsed once and must name at least one link;
+  - the builder was "added, never replacing", so a reassignment left both
+    builder tags, which the read-back refuses and the launcher skips. The
+    builder is now exclusive: a change removes the other builder tag and keeps
+    every other tag or label. YouTrack takes `untag builder:claude tag
+    builder:codex` as one command, which was checked with the non-applying
+    `commands/assist`. GitHub uses `--remove-label` with `--add-label`.
+
+  New controls cover each finding: a 302 on a blocker read, truncated JSON,
+  `;` and blanks as the link list, `#(touch …)` and `../..` as a server id
+  (nothing ran and no session exists), and no `jq` on PATH.
 
 ### Tests
-- `tests/task-wave.sh`: 88 controls, 45 of them new (1.13.0 had 43). A stub `curl`
+- `tests/task-wave.sh`: 96 controls, 53 of them new (1.13.0 had 43). A stub `curl`
   (bash + jq, so it runs in the bash:3.2 image) serves a fixture db with the
   behaviour measured above:
   - the silent cap, and a default page of 42;
@@ -72,7 +96,9 @@ measured on a live instance first (spec:
     search for an unknown link name;
   - HTML instead of JSON, and a failure on page 2;
   - an argv that must never hold the token.
-- 13 mutations of the new guards; each one is caught.
+- 16 mutations of the new guards, each one caught. The `#` doubling in window
+  names has no mutation that can be caught, because the id check refuses every
+  input that could reach it. It is the second layer, pinned by lint.
 - Live on a YouTrack instance against a fixture epic (DEV-1554…1559, made for
   this with the owner's consent), first as a dry run and then as a real launch
   with stub CLIs. Ready, blocked, untagged, both-tags and canonical-id cases

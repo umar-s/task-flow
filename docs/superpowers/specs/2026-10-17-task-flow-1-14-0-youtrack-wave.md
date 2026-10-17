@@ -107,6 +107,11 @@ YouTrack tag or a GitHub label, so a pushed epic is launchable without a hand st
   type would make every blocked task ready. Guard: every name in
   `YOUTRACK_BLOCKER_LINKS` must be a `sourceToTarget`/`targetToSource` of
   `/api/issueLinkTypes`, else rc 2. The stub now models the text search.
+- E16 (automated security review of the commit) A server id is data and becomes
+  a tmux window name — tmux 3.4 runs `#(…)` in `-n` (measured). Guard: a server
+  `idReadable` must match `KEY-N`; every `#` in a window name is doubled.
+- E17 (Codex round 1) `3xx` + JSON passed `curl -f`; `;` as the link list meant
+  no blocker check; an exclusive builder written as "add only" left both tags.
 - E15 (found in testing) `yt_blocked` runs as an `if` condition, where `set -e`
   is off: a failed read must `exit 2` by hand. A missing `grep` broke the page
   count and stopped paging silently — pages are counted with `jq length`.

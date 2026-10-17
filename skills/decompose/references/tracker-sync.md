@@ -60,10 +60,14 @@ markup: "markdown" | "jira-wiki" | "adf-via-markdown" | "plain"   # declared, de
 - **`tags` carries one thing only: the task's builder** — `builder:claude` or
   `builder:codex`, from the draft's `builder` column (the approval assigns it;
   empty = no tag). It is what `task` reads as the author (the other model
-  reviews) and what the wave launcher reads as the harness to start. Added,
-  never replacing the issue's other tags or labels. A YouTrack tag, a GitHub
-  label (`gh issue edit --add-label`); a tracker with neither says
-  `builder: not writable — set by hand` in the dry-run, and the sync continues.
+  reviews) and what the wave launcher reads as the harness to start. It is one
+  **exclusive** value: writing `builder:codex` also removes `builder:claude` (and
+  the reverse) — two builder tags make the launcher skip the task — while every
+  other tag or label stays. A change of builder is two operations, and the
+  dry-run lists both (`builder: claude → codex`). A YouTrack tag, a GitHub label
+  (`gh issue edit --remove-label builder:claude --add-label builder:codex`); a
+  tracker with neither says `builder: not writable — set by hand` in the
+  dry-run, and the sync continues.
 - **`read_issue` is what makes a write verifiable.** An `ok` from
   `create_issue`/`link` is a claim by the side that did the writing — the same
   axiom that makes this plugin's gate deterministic applies here (§9 step 7).
@@ -195,8 +199,9 @@ writes:
 - Every task's `summary` (from `name`), its full rendered `description`
   (from `context` + `requirements` + `dod` including `truths`, per §7),
   its resolved `estimate` value and which fallback rung produced it, its
-  builder tag (`builder:claude` / `builder:codex` / none), and its stable
-  idempotency key (§6).
+  builder tag (`builder:claude` / `builder:codex` / none; on an update that
+  changes it, `builder: claude → codex` — the old tag removed, the new added),
+  and its stable idempotency key (§6).
 - Every `link` call that would run: task → epic `parent` links and task →
   task `depends` links, listed by `<TASK-ID>` pair and type.
 - Tasks whose fields still carry a `<placeholder: …>`, listed by id: they are
@@ -305,7 +310,7 @@ illustrative only.
 | `link(from, to, "parent")` | YouTrack's native "subtask of" / epic-link command. |
 | `read_issue(<TASK-ID>)` | An issue-read MCP tool, or REST `GET /api/issues/{id}?fields=idReadable,summary,description,links(direction,linkType(name),issues(idReadable)),customFields(name,value(name,presentation))` — links and the Estimation field (a period value reads back as `presentation`) come back in the same read. |
 | `update_issue(<TASK-ID>, …)` | The same issue tool with the id, or REST `POST /api/issues/{id}` with the changed fields; links and estimate through `/api/commands`. |
-| `tags` (create / update) | The command `tag builder:claude` through a command tool or REST `POST /api/commands` — it creates the tag on first use. Never a tag in a search query before it exists: YouTrack answers an unknown tag with `400 invalid_query`, not an empty list. Read back as `tags(name)` on the issue read. |
+| `tags` (create / update) | The command `tag builder:claude` through a command tool or REST `POST /api/commands` — it creates the tag on first use; a change of builder is one command, `untag builder:claude tag builder:codex` (YouTrack parses it as the removal and the addition). Never a tag in a search query before it exists: YouTrack answers an unknown tag with `400 invalid_query`, not an empty list. Read back as `tags(name)` on the issue read. |
 | `search_issues(query)` | YouTrack's own query language through an issue-search tool: duplicates `project: <KEY> #Unresolved summary: {<words>}` (braces keep a multi-word phrase together); the §6 key lookup `project: <KEY> description: {decompose-id:<slug>#<n>}` with no state filter. The dry-run shows at most three duplicate hits per task. |
 | `markup` | `markdown` — YouTrack renders Markdown natively; nothing to convert. |
 
