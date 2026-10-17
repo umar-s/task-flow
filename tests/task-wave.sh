@@ -88,7 +88,7 @@ case "$2" in
   *) echo "gh stub: unexpected api: $2" >&2; exit 3 ;;
 esac
 EOF
-printf '#!/usr/bin/env bash\ncase " $* " in *" fetch "*) echo fetch >> "$STUB_LOG/fetches" ;; *" ls-remote "*) [ -n "${GIT_LSREMOTE_FAIL:-}" ] && { echo "fatal: Could not read from remote repository." >&2; exit 128; }; [ -n "${GIT_LSREMOTE_OUT+set}" ] && { printf "%%b" "$GIT_LSREMOTE_OUT"; exit 0; } ;; esac\nexec %q "$@"\n' "$REAL_GIT" > "$TMP/bin/git"
+printf '#!/usr/bin/env bash\ncase " $* " in *" fetch "*) echo fetch >> "$STUB_LOG/fetches" ;; *" config --get task-wave.base "*) [ -n "${GIT_CONFIG_FAIL:-}" ] && { echo "fatal: bad config line 1" >&2; exit 3; } ;; *" ls-remote "*) [ -n "${GIT_LSREMOTE_FAIL:-}" ] && { echo "fatal: Could not read from remote repository." >&2; exit 128; }; [ -n "${GIT_LSREMOTE_OUT+set}" ] && { printf "%%b" "$GIT_LSREMOTE_OUT"; exit 0; } ;; esac\nexec %q "$@"\n' "$REAL_GIT" > "$TMP/bin/git"
 # the stub CLIs' interpreter lives only in $TMP/bin, as node lives in nvm's bin for
 # the real ones (`#!/usr/bin/env node`): a window without the launcher's PATH cannot run them
 for a in claude codex; do
@@ -579,6 +579,16 @@ out="$(TASK_WAVE_CODEX_ARGS='-p builder' yt --dry-run DEV-5)"
 check "TASK_WAVE_CODEX_ARGS appear in the codex command" 'printf "%s" "$out" | grep -qF "codex -p builder \\\$task-flow:task\\ DEV-5"'
 TASK_WAVE_CLAUDE_ARGS=$'--settings /a.json\n--mcp-config /b.json' yt --dry-run DEV-7 >"$TMP/out" 2>"$TMP/err"; rc=$?
 check "TASK_WAVE_CLAUDE_ARGS with a line break → rc 2, not the first line only" '[ $rc -eq 2 ] && grep -q "line break" "$TMP/err" && ! grep -q "^DEV-7 " "$TMP/out"'
+# a base given empty is refused, never replaced by the next source (Codex review, 1.14.2)
+git config task-wave.base develop
+bash "$TW" --dry-run --base '' 370 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "--base '' (an unset variable) → rc 2, not task-wave.base" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err" && ! grep -q "^#370 " "$TMP/out"'
+git config task-wave.base ''
+yt --dry-run DEV-7 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "task-wave.base set empty → rc 2, not the remote's default" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err" && ! grep -q "^DEV-7 " "$TMP/out"'
+git config --unset task-wave.base
+GIT_CONFIG_FAIL=1 yt --dry-run DEV-7 >/dev/null 2>"$TMP/err"; rc=$?
+check "git config unreadable → rc 2, not 'unset'" '[ $rc -eq 2 ] && grep -q "cannot read git config task-wave.base" "$TMP/err"'
 tmux kill-server >/dev/null 2>&1 || true
 
 echo "tests/task-wave: $pass passed, $fail failed"

@@ -31,11 +31,11 @@
 set -euo pipefail
 
 die() { echo "task-wave: $*" >&2; exit 2; }
-dry=0; base=""; issues=(); raw=(); project=""; epic=""; tracker="${TASK_WAVE_TRACKER:-github}"
+dry=0; base=""; base_set=0; issues=(); raw=(); project=""; epic=""; tracker="${TASK_WAVE_TRACKER:-github}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) dry=1; shift ;;
-    --base) [ $# -ge 2 ] || die "--base needs a branch"; base="$2"; shift 2 ;;
+    --base) [ $# -ge 2 ] || die "--base needs a branch"; base="$2"; base_set=1; shift 2 ;;
     --tracker) [ $# -ge 2 ] || die "--tracker needs github or youtrack"; tracker="$2"; shift 2 ;;
     --project) [ $# -ge 2 ] || die "--project needs a project key"; project="$2"; shift 2 ;;
     --epic) [ $# -ge 2 ] || die "--epic needs an issue id"; epic="$2"; shift 2 ;;
@@ -72,10 +72,18 @@ root="$(cd "$root" && pwd -P)"; name="$(basename "$root")"
 # task-wave.base` (the integration branch where it is not the default one — in a
 # gitflow repository the default is often production), else the default branch the
 # tracker side reports (below). Whatever its source, it must be a branch name.
+# "Given" is tracked apart from "non-empty": a base given empty (an unset variable
+# in a --base "$X", or an empty task-wave.base) is refused by check_base — never
+# replaced by the next source.
 base_src="--base"
-if [ -z "$base" ]; then
-  base="$(git -C "$root" config --get task-wave.base)" || base=""   # lint: allow — unset is the common case
-  base_src="git config task-wave.base"
+if [ $base_set = 0 ]; then
+  # git config --get: 0 = set (possibly empty), 1 = not set, anything else = unreadable
+  cfg="$(git -C "$root" config --get task-wave.base)" && cfg_rc=0 || cfg_rc=$?
+  case $cfg_rc in
+    0) base="$cfg"; base_set=1; base_src="git config task-wave.base" ;;
+    1) ;;
+    *) die "cannot read git config task-wave.base (git config exit $cfg_rc) — refusing to guess the base" ;;
+  esac
 fi
 # check_base — run once, on the final base, whichever source gave it (a tracker's
 # default branch included): it becomes a git ref, a worktree's start and a plan line
@@ -163,7 +171,7 @@ yt_canon() { [[ "$1" =~ $yt_id ]] || die "YouTrack returned an issue id that is 
 builders=()
 if [ "$tracker" = github ]; then
   repo="$(gh repo view --json nameWithOwner -q .nameWithOwner)" || die "gh cannot read this repository"
-  if [ -z "$base" ]; then
+  if [ $base_set = 0 ]; then
     base="$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)" || die "gh cannot read the default branch"
     base_src="the repository's default branch"
   fi
@@ -190,7 +198,7 @@ if [ "$tracker" = github ]; then
     [ ${#issues[@]} -gt 0 ] || { echo "task-wave: no ready task in $repo (open, builder:claude|codex label, no open blocker)"; exit 0; }
   fi
 else
-  if [ -z "$base" ]; then
+  if [ $base_set = 0 ]; then
     # the remote's own default branch — the local origin/HEAD is a pointer cached at
     # clone or set-head time and can name a feature branch long after (measured)
     head="$(git -C "$root" ls-remote --symref origin HEAD)" \

@@ -36,7 +36,7 @@ download.
   that range fell out of step twice when the header grew.
 
 ### Tests
-- `tests/task-wave.sh`: 126 controls (1.14.1 had 107). New ones:
+- `tests/task-wave.sh`: 130 controls (1.14.1 had 107). New ones:
   - `task-wave.base` on YouTrack with no remote read, and on GitHub instead of
     `gh`'s default branch;
   - `--base` winning over the config;
@@ -53,8 +53,11 @@ download.
     `origin/HEAD`);
   - a bad base with an empty ready set refused, on both trackers;
   - `TASK_WAVE_CLAUDE_ARGS` with a line break refused, where before only the
-    first line would have been kept.
-- Nine mutations, each one caught:
+    first line would have been kept;
+  - a base given empty refused rather than replaced: `--base ''` while
+    `task-wave.base` is set, and `task-wave.base` set to the empty string;
+  - an unreadable git config refused, rather than read as "not set".
+- Eleven mutations, each one caught:
   - the config ignored;
   - the branch-name check removed;
   - the check done with `--branch` alone (`@{-1}` passes);
@@ -63,8 +66,10 @@ download.
   - the YouTrack check run only after the backlog;
   - the flags unquoted;
   - the Claude flags dropped;
-  - the line-break check removed.
-- Codex review through `xreview.sh`, five rounds:
+  - the line-break check removed;
+  - an empty config value falling through to the next source;
+  - an unreadable config read as "not set".
+- Codex review through `xreview.sh`, six rounds:
   - round 1: the branch-name check ran before the tracker's default branch was
     filled in, so `bad..name` from `gh` passed;
   - round 2: `git check-ref-format --branch` accepts `@{-1}` and answers with
@@ -81,7 +86,13 @@ download.
     behaviour, so it got a fix and a delta round: a multi-line
     `TASK_WAVE_*_ARGS` was cut to its first line without a word, and is now
     refused. The check sits at the top level, because inside `$( )` a `die`
-    would not stop the run.
+    would not stop the run;
+  - round 5: a base given empty (`--base ''`, an empty `task-wave.base`) was
+    silently replaced by the next source, so a misspelt variable would have
+    landed the wave on the default branch again. A base that is given is now
+    tracked apart from a non-empty one, so an empty one reaches the check and is
+    refused. `git config` exit 1 means "not set"; any other non-zero exit
+    stops the run.
 
 ### Supply self-check
 - New subprocess calls: `git config --get` and `git check-ref-format`, both
