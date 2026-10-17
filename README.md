@@ -216,7 +216,7 @@ There a ready task is an unresolved issue of the project and/or a subtask of
 the epic, tagged `builder:claude` or `builder:codex`, with no unresolved issue
 it `depends on` (`YOUTRACK_BLOCKER_LINKS` names other blocking links, e.g.
 `is required for;blocks`); worktree `../<repo>-DEV-481`, branch
-`task-DEV-481`, window `DEV-481`; base `origin/HEAD` unless `--base`. The token
+`task-DEV-481`, window `DEV-481`; base: origin's default branch as origin reports it (`git ls-remote`; a cached local `origin/HEAD` can be stale), unless `--base`. The token
 reaches `curl` on stdin, never its command line; every search is paged (the
 server returns at most 500 issues without an explicit page size), and an
 answer that is not the expected JSON stops the run. `decompose` writes the

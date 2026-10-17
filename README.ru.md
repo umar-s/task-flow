@@ -217,7 +217,7 @@ bash scripts/task-wave.sh --tracker youtrack --epic DEV-480 --dry-run   # или
 `builder:claude` или `builder:codex`, у которой нет нерешённых задач, от которых
 она `depends on` (`YOUTRACK_BLOCKER_LINKS` называет другие блокирующие связи,
 например `is required for;blocks`); worktree `../<repo>-DEV-481`, ветка
-`task-DEV-481`, окно `DEV-481`; база — `origin/HEAD`, если нет `--base`. Токен
+`task-DEV-481`, окно `DEV-481`; база — ветка по умолчанию, как её называет сам origin (`git ls-remote`; локальный `origin/HEAD` бывает устаревшим), если нет `--base`. Токен
 попадает в `curl` через stdin, никогда — в его командную строку; каждый поиск
 читается постранично (без явного размера страницы сервер отдаёт не больше 500
 задач), а ответ, который не является ожидаемым JSON, останавливает запуск.

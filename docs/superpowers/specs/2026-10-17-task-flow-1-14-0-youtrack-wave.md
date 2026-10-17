@@ -60,8 +60,11 @@ YouTrack tag or a GitHub label, so a pushed epic is launchable without a hand st
    worktree `../<repo>-DEV-481`, branch `task-DEV-481`, prompt
    `/task-flow:task DEV-481` / `$task-flow:task DEV-481`).
 8. Base branch: GitHub as before (`gh` default branch); YouTrack — `--base`, else
-   `origin/HEAD` (`git symbolic-ref`); unset → rc 2 naming `--base` and
-   `git remote set-head origin --auto`.
+   ~~`origin/HEAD` (`git symbolic-ref`); unset → rc 2 naming `--base` and
+   `git remote set-head origin --auto`~~ — amended in 1.14.1: origin's own
+   default branch (`git ls-remote --symref origin HEAD`); a failed read or an
+   answer without a symbolic HEAD → rc 2 naming `--base`; a stale local
+   `origin/HEAD` is reported, never used.
 9. Tool checks per tracker: github needs `gh`; youtrack needs `curl` and `jq` —
    missing → rc 2 before any request; `gh` is not needed for youtrack.
 10. `decompose`: the approval may give each task a builder; the draft's task
@@ -98,6 +101,10 @@ YouTrack tag or a GitHub label, so a pushed epic is launchable without a hand st
   shifts by one; the run may miss one task — it never starts a wrong one (every
   candidate's blockers are read individually). Accepted, named in the help text.
 - E10 `origin/HEAD` unset on a fresh GitLab clone → refuse, tell how to set it.
+  **Superseded in 1.14.1:** the local `origin/HEAD` is a cache that named feature
+  branches in four of five real clones; the base is now `git ls-remote --symref
+  origin HEAD`, an unset local pointer is fine, and no answer / no symbolic HEAD
+  from origin is the refusal (DoD-8 as amended).
 - E11 Window name `DEV-481` and `#2` share the live-window check: matching is on
   the full name with spaces around it (no `DEV-48` ⊂ `DEV-481`). Control.
 - E12 GitHub mode must not start requiring curl/jq: `gh` carries its own jq.

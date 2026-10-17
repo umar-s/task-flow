@@ -292,7 +292,7 @@ grep -q 'https://?\*' "$TW" || err "$TW: YOUTRACK_URL must be https:// — the t
 grep -qF '"${line%%' "$TW" || err "$TW: an explicit YouTrack id must take the server's idReadable (dev-05 and DEV-5 are one task)"
 grep -qE '^[^#]*q=.*tag:' "$TW" && err "$TW puts a tag in the YouTrack search — an unknown tag is a 400, not an empty list; filter tags on the client"
 grep -q '/api/issueLinkTypes' "$TW" && grep -q 'not a link name on this instance' "$TW" || err "$TW: blocker link names must be checked against the instance — YouTrack searches an unknown one as text, and every blocked task reads as ready"
-grep -q 'symbolic-ref -q --short refs/remotes/origin/HEAD' "$TW" || err "$TW: on YouTrack (GitLab, no gh) the base is origin/HEAD or --base, never a guess"
+grep -q 'ls-remote --symref origin HEAD' "$TW" || err "$TW: on YouTrack (GitLab, no gh) the base is origin's own default branch (git ls-remote) or --base — the local origin/HEAD is a cache that can name a feature branch"
 grep -q 'builder tag' skills/decompose/SKILL.md && grep -q 'tags?' skills/decompose/references/tracker-sync.md || err "decompose: phase 7 must plan, write and read back the builder tag"
 grep -q '\*\*exclusive\*\* value' skills/decompose/references/tracker-sync.md && grep -q -- '--remove-label builder:claude' skills/decompose/references/tracker-sync.md || err "tracker-sync.md: the builder is exclusive — a change removes the other builder:* (two make the launcher skip the task)"
 grep -q 'yt_canon' "$TW" && grep -qF '${label//\#/##}' "$TW" || err "$TW: a server-side id must be a plain KEY-N, and every # in a tmux window name doubled — tmux runs #(…) in a window name"

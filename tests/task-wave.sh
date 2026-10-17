@@ -87,7 +87,7 @@ case "$2" in
   *) echo "gh stub: unexpected api: $2" >&2; exit 3 ;;
 esac
 EOF
-printf '#!/usr/bin/env bash\ncase " $* " in *" fetch "*) echo fetch >> "$STUB_LOG/fetches" ;; esac\nexec %q "$@"\n' "$REAL_GIT" > "$TMP/bin/git"
+printf '#!/usr/bin/env bash\ncase " $* " in *" fetch "*) echo fetch >> "$STUB_LOG/fetches" ;; *" ls-remote "*) [ -n "${GIT_LSREMOTE_FAIL:-}" ] && { echo "fatal: Could not read from remote repository." >&2; exit 128; }; [ -n "${GIT_LSREMOTE_OUT+set}" ] && { printf "%%b" "$GIT_LSREMOTE_OUT"; exit 0; } ;; esac\nexec %q "$@"\n' "$REAL_GIT" > "$TMP/bin/git"
 # the stub CLIs' interpreter lives only in $TMP/bin, as node lives in nvm's bin for
 # the real ones (`#!/usr/bin/env node`): a window without the launcher's PATH cannot run them
 for a in claude codex; do
@@ -364,9 +364,22 @@ ytids() { printf '%s\n' "$1" | sed -n 's/^\([A-Z][A-Z0-9_]*-[0-9]*\) builder.*/\
 git remote set-head origin -d >/dev/null 2>&1 || true   # origin/HEAD unset, as in a repo made with `remote add`
 WT0="$(git worktree list | wc -l)"; rm -f "$STUB_LOG/fetches"
 
-# Y1. no origin/HEAD and no --base → refused, naming the way out
-yt --dry-run --epic DEV-1 >/dev/null 2>"$TMP/err"; rc=$?
-check "youtrack: origin/HEAD unset, no --base → rc 2 naming --base" '[ $rc -eq 2 ] && grep -q -- "--base" "$TMP/err" && grep -q "set-head" "$TMP/err"'
+# Y1. the base is the remote's own default branch (git ls-remote --symref origin HEAD),
+#     never the local origin/HEAD — a cached pointer that can name a feature branch
+#     (found on a real GitLab checkout: four of five clones pointed at old branches)
+out="$(yt --dry-run --epic DEV-1 2>"$TMP/err")"; rc=$?
+check "youtrack: local origin/HEAD unset → base from the remote: origin/main" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -qF "lab-DEV-2 -b task-DEV-2 origin/main"'
+git remote set-head origin develop >/dev/null
+out="$(yt --dry-run --epic DEV-1 2>"$TMP/err")"; rc=$?
+check "youtrack: a stale local origin/HEAD (develop) is not the base — origin/main is, and the run says so" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -qF "lab-DEV-2 -b task-DEV-2 origin/main" && grep -q "stale" "$TMP/err"'
+GIT_LSREMOTE_FAIL=1 yt --dry-run --epic DEV-1 >/dev/null 2>"$TMP/err"; rc=$?
+check "youtrack: the remote cannot say its default branch → rc 2 naming --base, no guess from origin/HEAD" '[ $rc -eq 2 ] && grep -q -- "--base" "$TMP/err"'
+for o in '' "$(git rev-parse origin/main)\\tHEAD\\n"; do
+  GIT_LSREMOTE_OUT="$o" yt --dry-run --epic DEV-1 >"$TMP/out" 2>"$TMP/err"; rc=$?
+  check "youtrack: origin answers without a symbolic HEAD ('${o:0:7}…') → rc 2 naming --base, nothing planned" '[ $rc -eq 2 ] && grep -q "names no default branch" "$TMP/err" && ! grep -q "^DEV-" "$TMP/out"'
+done
+out="$(GIT_LSREMOTE_FAIL=1 yt --dry-run --base develop --epic DEV-1)"; rc=$?
+check "youtrack: --base needs no remote read" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -qF "origin/develop"'
 git remote set-head origin main >/dev/null
 
 # Y2. the epic's ready set: DEV-2 and DEV-5 — not DEV-3 (open blocker), DEV-4 (no tag), DEV-7 (other epic)
@@ -484,7 +497,7 @@ ln -sf "$TMP/bin/git" "$TMP/nogh/git"; ln -sf "$TMP/bin/curl" "$TMP/nogh/curl"
 out="$(PATH="$TMP/nogh" "$TMP/nogh/bash" "$TW" --tracker youtrack --dry-run --epic DEV-1)"; rc=$?
 check "youtrack without gh on PATH → works" '[ $rc -eq 0 ] && [ "$(ytids "$out")" = "DEV-2 DEV-5 " ]'
 
-# Y10. the real run: worktrees from origin/HEAD, windows named by id, the prompt byte-exact
+# Y10. the real run: worktrees from the remote's default branch, windows named by id, the prompt byte-exact
 rm -f "$STUB_LOG/fetches"
 yt --epic DEV-1 > "$TMP/run.out"; rc=$?
 check "youtrack run exits 0, one fetch" '[ $rc -eq 0 ] && [ "$(fetches)" = 1 ]'
@@ -503,7 +516,7 @@ out="$(yt --dry-run DEV-2)"
 check "youtrack: a live DEV-25 window does not count as DEV-2" '! printf "%s" "$out" | grep -q "already running" && printf "%s" "$out" | grep -q "exists — resuming"'
 tmux kill-server >/dev/null 2>&1 || true
 
-# Y12. --base still wins over origin/HEAD
+# Y12. --base still wins over the remote's default branch
 out="$(yt --dry-run --base develop DEV-7)"
 check "youtrack: --base develop → a new worktree from origin/develop" 'printf "%s" "$out" | grep -qF "lab-DEV-7 -b task-DEV-7 origin/develop"'
 
