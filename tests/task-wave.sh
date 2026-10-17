@@ -92,7 +92,7 @@ printf '#!/usr/bin/env bash\ncase " $* " in *" fetch "*) echo fetch >> "$STUB_LO
 # the stub CLIs' interpreter lives only in $TMP/bin, as node lives in nvm's bin for
 # the real ones (`#!/usr/bin/env node`): a window without the launcher's PATH cannot run them
 for a in claude codex; do
-  printf '#!/usr/bin/env tw-interp\nprintf "%%s\\n" "$PWD" "$@" > "$STUB_LOG/%s-$(basename "$PWD")"; echo x >> "$STUB_LOG/launches-%s-$(basename "$PWD")"; sleep 60\n' "$a" "$a" > "$TMP/bin/$a"
+  printf '#!/usr/bin/env tw-interp\nprintf "%%s\\n" "$PWD" "$@" > "$STUB_LOG/%s-$(basename "$PWD")"; compgen -e > "$STUB_LOG/env-%s-$(basename "$PWD")"; echo x >> "$STUB_LOG/launches-%s-$(basename "$PWD")"; sleep 60\n' "$a" "$a" "$a" > "$TMP/bin/$a"
 done
 chmod +x "$TMP/bin/"*
 ln -s "$(command -v bash)" "$TMP/bin/tw-interp"
@@ -126,8 +126,8 @@ out="$(bash "$TW" --dry-run)"; rc=$?
 check "dry run exits 0" '[ $rc -eq 0 ]'
 check "ready set is exactly #2, #5, #350, #370 (#360's open blocker is on page 2)" '[ "$(printf "%s\n" "$out" | sed -n "s/^#\([0-9]*\) builder.*/\1/p" | tr "\n" " ")" = "2 5 350 370 " ]'
 check "a pull request with a builder label is not a task" '! printf "%s" "$out" | grep -q "^#7 "'
-check "claude gets /task-flow:task #2" 'printf "%s" "$out" | grep -qF "claude /task-flow:task\\ #2"'
-check "codex gets \$task-flow:task #5, the \$ escaped for the shell" 'printf "%s" "$out" | grep -qF "codex \\\$task-flow:task\\ #5"'
+check "claude gets /task-flow:task #2" 'printf "%s" "$out" | grep -qF "claude -- /task-flow:task\\ #2"'
+check "codex gets \$task-flow:task #5, the \$ escaped for the shell" 'printf "%s" "$out" | grep -qF "codex -- \\\$task-flow:task\\ #5"'
 check "dry run: no worktree, no tmux session, no fetch" '[ "$(git worktree list | wc -l)" -eq 1 ] && ! tmux has-session -t =wave-lab 2>/dev/null && [ "$(fetches)" = 0 ]'
 
 # 2. an explicit issue without a builder label is skipped; a non-number is refused
@@ -199,8 +199,8 @@ check "run exits 0, one fetch, names the session" '[ $rc -eq 0 ] && [ "$(fetches
 check "worktrees lab-2 / lab-5 on task-2 / task-5 at origin/main" '[ "$(git -C "$TMP/w/lab-2" branch --show-current)" = task-2 ] && [ "$(git -C "$TMP/w/lab-5" branch --show-current)" = task-5 ] && [ "$(git -C "$TMP/w/lab-2" rev-parse HEAD)" = "$MAIN_SHA" ]'
 check "windows #2 and #5 in session wave-lab" '[ "$(tmux list-windows -t =wave-lab -F "#{window_name}" | sort | tr "\n" " ")" = "#2 #5 " ]'
 for i in $(seq 1 20); do [ -s "$STUB_LOG/claude-lab-2" ] && [ -s "$STUB_LOG/codex-lab-5" ] && break; sleep 0.3; done
-check "claude ran in lab-2 with /task-flow:task #2" '[ "$(sed -n 1p "$STUB_LOG/claude-lab-2")" = "$TMP/w/lab-2" ] && [ "$(sed -n 2p "$STUB_LOG/claude-lab-2")" = "/task-flow:task #2" ]'
-check "codex ran in lab-5 with \$task-flow:task #5" '[ "$(sed -n 1p "$STUB_LOG/codex-lab-5")" = "$TMP/w/lab-5" ] && [ "$(sed -n 2p "$STUB_LOG/codex-lab-5")" = "\$task-flow:task #5" ]'
+check "claude ran in lab-2 with /task-flow:task #2" '[ "$(sed -n 1p "$STUB_LOG/claude-lab-2")" = "$TMP/w/lab-2" ] && [ "$(sed -n 2p "$STUB_LOG/claude-lab-2")" = -- ] && [ "$(sed -n 3p "$STUB_LOG/claude-lab-2")" = "/task-flow:task #2" ]'
+check "codex ran in lab-5 with \$task-flow:task #5" '[ "$(sed -n 1p "$STUB_LOG/codex-lab-5")" = "$TMP/w/lab-5" ] && [ "$(sed -n 2p "$STUB_LOG/codex-lab-5")" = -- ] && [ "$(sed -n 3p "$STUB_LOG/codex-lab-5")" = "\$task-flow:task #5" ]'
 
 # 7. a second run while #2's agent is still running: no second agent in the same checkout
 out="$(bash "$TW" 2)"; rc=$?
@@ -387,8 +387,8 @@ git remote set-head origin main >/dev/null
 out="$(yt --dry-run --epic DEV-1)"; rc=$?
 check "youtrack --epic DEV-1: ready set exactly DEV-2 DEV-5" '[ $rc -eq 0 ] && [ "$(ytids "$out")" = "DEV-2 DEV-5 " ]'
 check "youtrack: both builder tags → skipped with a message" 'printf "%s" "$out" | grep -q "DEV-6 has both builder"'
-check "youtrack: claude gets /task-flow:task DEV-2" 'printf "%s" "$out" | grep -qF "claude /task-flow:task\\ DEV-2"'
-check "youtrack: codex gets \$task-flow:task DEV-5" 'printf "%s" "$out" | grep -qF "codex \\\$task-flow:task\\ DEV-5"'
+check "youtrack: claude gets /task-flow:task DEV-2" 'printf "%s" "$out" | grep -qF "claude -- /task-flow:task\\ DEV-2"'
+check "youtrack: codex gets \$task-flow:task DEV-5" 'printf "%s" "$out" | grep -qF "codex -- \\\$task-flow:task\\ DEV-5"'
 check "youtrack: worktree lab-DEV-2 on task-DEV-2" 'printf "%s" "$out" | grep -qF "lab-DEV-2 -b task-DEV-2 origin/main"'
 check "youtrack dry run: no worktree, no session, no fetch" '[ "$(git worktree list | wc -l)" -eq "$WT0" ] && ! tmux has-session -t =wave-lab 2>/dev/null && [ "$(fetches)" = 0 ]'
 
@@ -505,8 +505,8 @@ check "youtrack run exits 0, one fetch" '[ $rc -eq 0 ] && [ "$(fetches)" = 1 ]'
 check "youtrack: worktrees lab-DEV-2 / lab-DEV-5 on task-DEV-2 / task-DEV-5 at origin/main" '[ "$(git -C "$TMP/w/lab-DEV-2" branch --show-current)" = task-DEV-2 ] && [ "$(git -C "$TMP/w/lab-DEV-5" branch --show-current)" = task-DEV-5 ] && [ "$(git -C "$TMP/w/lab-DEV-2" rev-parse HEAD)" = "$MAIN_SHA" ]'
 check "youtrack: windows DEV-2 and DEV-5" '[ "$(tmux list-windows -t =wave-lab -F "#{window_name}" | sort | tr "\n" " ")" = "DEV-2 DEV-5 " ]'
 for i in $(seq 1 20); do [ -s "$STUB_LOG/claude-lab-DEV-2" ] && [ -s "$STUB_LOG/codex-lab-DEV-5" ] && break; sleep 0.3; done
-check "youtrack: claude ran in lab-DEV-2 with /task-flow:task DEV-2" '[ "$(sed -n 1p "$STUB_LOG/claude-lab-DEV-2")" = "$TMP/w/lab-DEV-2" ] && [ "$(sed -n 2p "$STUB_LOG/claude-lab-DEV-2")" = "/task-flow:task DEV-2" ]'
-check "youtrack: codex ran in lab-DEV-5 with \$task-flow:task DEV-5" '[ "$(sed -n 2p "$STUB_LOG/codex-lab-DEV-5")" = "\$task-flow:task DEV-5" ]'
+check "youtrack: claude ran in lab-DEV-2 with /task-flow:task DEV-2" '[ "$(sed -n 1p "$STUB_LOG/claude-lab-DEV-2")" = "$TMP/w/lab-DEV-2" ] && [ "$(sed -n 2p "$STUB_LOG/claude-lab-DEV-2")" = -- ] && [ "$(sed -n 3p "$STUB_LOG/claude-lab-DEV-2")" = "/task-flow:task DEV-2" ]'
+check "youtrack: codex ran in lab-DEV-5 with \$task-flow:task DEV-5" '[ "$(sed -n 2p "$STUB_LOG/codex-lab-DEV-5")" = -- ] && [ "$(sed -n 3p "$STUB_LOG/codex-lab-DEV-5")" = "\$task-flow:task DEV-5" ]'
 
 # Y11. a live window is matched on its whole name: DEV-2 running does not hide DEV-25,
 #      and dev-02 is DEV-2, already running
@@ -573,10 +573,10 @@ tmux kill-server >/dev/null 2>&1 || true
 rm -f "$STUB_LOG/claude-lab-DEV-7" "$STUB_LOG/pwned1" "$STUB_LOG/pwned2"
 TASK_WAVE_CLAUDE_ARGS="--settings $TMP/s.json --mcp-config \$(touch $STUB_LOG/pwned1) ;touch $STUB_LOG/pwned2" yt DEV-7 >/dev/null 2>&1; rc=$?
 for i in $(seq 1 20); do [ -s "$STUB_LOG/claude-lab-DEV-7" ] && break; sleep 0.3; done
-check "TASK_WAVE_CLAUDE_ARGS reach claude as separate literal flags before the prompt" '[ $rc -eq 0 ] && [ "$(sed -n 2,7p "$STUB_LOG/claude-lab-DEV-7" | tr "\n" "|")" = "--settings|$TMP/s.json|--mcp-config|\$(touch|$STUB_LOG/pwned1)|;touch|" ] && [ "$(tail -n 1 "$STUB_LOG/claude-lab-DEV-7")" = "/task-flow:task DEV-7" ]'
+check "TASK_WAVE_CLAUDE_ARGS reach claude as separate literal flags before the prompt" '[ $rc -eq 0 ] && [ "$(sed -n 2,7p "$STUB_LOG/claude-lab-DEV-7" | tr "\n" "|")" = "--settings|$TMP/s.json|--mcp-config|\$(touch|$STUB_LOG/pwned1)|;touch|" ] && [ "$(sed -n 9p "$STUB_LOG/claude-lab-DEV-7")" = -- ] && [ "$(tail -n 1 "$STUB_LOG/claude-lab-DEV-7")" = "/task-flow:task DEV-7" ]'
 check "TASK_WAVE_CLAUDE_ARGS are not shell-parsed: nothing ran" '[ ! -e "$STUB_LOG/pwned1" ] && [ ! -e "$STUB_LOG/pwned2" ]'
 out="$(TASK_WAVE_CODEX_ARGS='-p builder' yt --dry-run DEV-5)"
-check "TASK_WAVE_CODEX_ARGS appear in the codex command" 'printf "%s" "$out" | grep -qF "codex -p builder \\\$task-flow:task\\ DEV-5"'
+check "TASK_WAVE_CODEX_ARGS appear in the codex command" 'printf "%s" "$out" | grep -qF "codex -p builder -- \\\$task-flow:task\\ DEV-5"'
 TASK_WAVE_CLAUDE_ARGS=$'--settings /a.json\n--mcp-config /b.json' yt --dry-run DEV-7 >"$TMP/out" 2>"$TMP/err"; rc=$?
 check "TASK_WAVE_CLAUDE_ARGS with a line break → rc 2, not the first line only" '[ $rc -eq 2 ] && grep -q "line break" "$TMP/err" && ! grep -q "^DEV-7 " "$TMP/out"'
 # a base given empty is refused, never replaced by the next source (Codex review, 1.14.2)
@@ -589,6 +589,37 @@ check "task-wave.base set empty → rc 2, not the remote's default" '[ $rc -eq 2
 git config --unset task-wave.base
 GIT_CONFIG_FAIL=1 yt --dry-run DEV-7 >/dev/null 2>"$TMP/err"; rc=$?
 check "git config unreadable → rc 2, not 'unset'" '[ $rc -eq 2 ] && grep -q "cannot read git config task-wave.base" "$TMP/err"'
+tmux kill-server >/dev/null 2>&1 || true
+
+# Z3. what a real CLI does with the window's command line (1.14.3, found on a live wave):
+#     a flag taking several values (claude --mcp-config, codex --image) took the prompt
+#     as one more, so the prompt follows `--`; and the launching agent's session
+#     variables reached every window — from this shell or from the tmux server's own
+out="$(TASK_WAVE_CLAUDE_ARGS='--mcp-config /m.json --' yt --dry-run DEV-7)"; rc=$?
+check "a '--' ending TASK_WAVE_CLAUDE_ARGS is dropped, not doubled" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -qF "claude --mcp-config /m.json -- /task-flow:task\\ DEV-7" && ! printf "%s" "$out" | grep -qF -- "-- --"'
+TASK_WAVE_CODEX_ARGS='-- -p builder' yt --dry-run DEV-5 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "a '--' before another flag → rc 2, nothing planned" '[ $rc -eq 2 ] && grep -q "before another flag" "$TMP/err" && ! grep -q "^DEV-5 " "$TMP/out"'
+rm -f "$STUB_LOG/env-claude-lab-DEV-7"
+CLAUDECODE=1 CLAUDE_CODE_SESSION_ID=parent CLAUDE_CODE_OAUTH_TOKEN=tok CODEX_SESSION_ID=cx PREDICT=on TASK_WAVE_KEEP_ENV=PREDICT yt DEV-7 >/dev/null 2>&1; rc=$?
+for i in $(seq 1 20); do [ -s "$STUB_LOG/env-claude-lab-DEV-7" ] && break; sleep 0.3; done
+e="$STUB_LOG/env-claude-lab-DEV-7"
+check "a server task-wave starts: the agent's session variables do not reach the window" '[ $rc -eq 0 ] && [ -s "$e" ] && ! grep -qxE "CLAUDECODE|CLAUDE_CODE_SESSION_ID|CODEX_SESSION_ID" "$e"'
+check "the CLI's own auth and TASK_WAVE_KEEP_ENV stay" 'grep -qx CLAUDE_CODE_OAUTH_TOKEN "$e" && grep -qx PREDICT "$e"'
+# the wave's own session carries one in its environment: a new window there gets it too
+tmux new-window -d -t "=wave-lab" -n keep "sleep 60"; tmux kill-window -t "=wave-lab:DEV-7"; rm -f "$e"
+tmux set-environment -t "=wave-lab" CLAUDE_CODE_ENTRYPOINT cli
+( unset CLAUDE_CODE_ENTRYPOINT; yt DEV-7 >/dev/null 2>&1 ); rc=$?
+for i in $(seq 1 20); do [ -s "$e" ] && break; sleep 0.3; done
+check "a variable in the wave session's own environment does not reach a new window" '[ $rc -eq 0 ] && [ -s "$e" ] && ! grep -qx CLAUDE_CODE_ENTRYPOINT "$e"'
+tmux kill-server >/dev/null 2>&1 || true; rm -f "$e"
+# the server just killed can still hold its socket: retry until the foreign session is up
+for i in $(seq 1 20); do
+  ( unset CLAUDECODE CLAUDE_CODE_MESSAGING_SOCKET; CLAUDECODE=1 CLAUDE_CODE_MESSAGING_SOCKET=/parent.sock tmux new-session -d -s other "sleep 60" 2>/dev/null ) && break; sleep 0.2
+done
+check "the foreign server is up before the wave (else the next check is vacuous)" 'tmux has-session -t =other'
+( unset CLAUDECODE CLAUDE_CODE_MESSAGING_SOCKET; yt DEV-7 >/dev/null 2>&1 ); rc=$?
+for i in $(seq 1 20); do [ -s "$e" ] && break; sleep 0.3; done
+check "a server already up with an agent's variables: the window gets none of them" '[ $rc -eq 0 ] && [ -s "$e" ] && ! grep -qxE "CLAUDECODE|CLAUDE_CODE_MESSAGING_SOCKET" "$e"'
 tmux kill-server >/dev/null 2>&1 || true
 
 echo "tests/task-wave: $pass passed, $fail failed"
