@@ -27,20 +27,32 @@ tictactoe lab ran its wave 2 as one Claude Code task beside one Codex task.
   integration branch; an existing worktree is resumed, and a `task-<N>` branch
   left by a removed worktree is reused rather than recreated. Sessions stay
   interactive (`task` asks on ingest and before merging); the script never
-  merges, pushes or deletes. An unreadable issue list or blocker list stops the
-  run (rc 2) instead of reading as "no ready task" or "ready". Tracker: GitHub
-  Issues through `gh` (the blocked-by API).
-- `tests/task-wave.sh`: 19 controls with a stub `gh` that runs the script's own
-  `-q` filters through `jq` over fixtures, stub `claude`/`codex` recording argv
-  and cwd, and a private tmux server (`TMUX_TMPDIR`). Ten mutations of the
-  script — blockers ignored, either tracker failure swallowed, the `$` dropped
-  from the Codex prompt, a window or session outside its worktree, an existing
-  branch recreated, `--base` ignored, the tmux check dropped, a dry run that
-  creates — each fail it.
+  merges, pushes or deletes. The ready set reads every page of the labelled
+  open issues (`gh api --paginate`, label filter on the server, pull requests
+  dropped) — no count limit can hide a ready task. Every task is planned before
+  anything starts: an existing directory at a worktree path is resumed only when
+  `git worktree list --porcelain` knows it as this repository's worktree on
+  `task-<N>`, otherwise the run stops before a single worktree or window
+  exists. Any tracker read that fails — a label page, an issue, a blocker list
+  — stops the run (rc 2) instead of reading as "no ready task" or "ready". A dry
+  run does not fetch. Tracker: GitHub Issues through `gh` (the blocked-by API).
+- `tests/task-wave.sh`: 24 controls with a stub `gh` that runs the script's own
+  `-q` filters through `jq` over fixtures and serves 100-item pages unless
+  `--paginate` (the ready fixture sits past item 100 of its label and item 200
+  of all open issues), a `git` wrapper counting fetches, stub `claude`/`codex`
+  recording argv and cwd, and a private tmux server (`TMUX_TMPDIR`); `--base`
+  is checked against a real commit only `develop` has. Fifteen mutations of the
+  script — no pagination, pull requests kept, blockers ignored, each tracker
+  failure swallowed, any directory taken for a worktree, the branch not
+  checked, a fetch before the dry-run exit, the `$` dropped from the Codex
+  prompt, a window or session outside its worktree, an existing branch
+  recreated, `--base` ignored, the tmux check dropped — each fail it.
 - `scripts/lint.sh`: the launcher is syntax-checked and executable, carries no
-  unmarked fail-open idiom, keeps "refusing to guess that it is ready", calls
-  neither `gh pr merge` nor `git push`; `decompose` Handoff and both READMEs
-  name it.
+  unmarked fail-open idiom and no bash-4-only construct (`mapfile`,
+  `declare -A`, `${x,,}` — it must run on macOS bash 3.2), keeps "refusing to
+  guess that it is ready", reads every page and drops pull requests, checks a
+  resumed worktree through `git worktree list --porcelain`, calls neither
+  `gh pr merge` nor `git push`; `decompose` Handoff and both READMEs name it.
 - `.github/workflows/check.yml`: installs tmux when the runner lacks it, so the
   launcher's controls run in CI rather than skip.
 
@@ -53,8 +65,14 @@ tictactoe lab ran its wave 2 as one Claude Code task beside one Codex task.
 
 Supply-chain self-check (`git diff v1.12.0` over skills/ templates/, plus the
 new payload file): the launcher talks to the network through `git fetch origin
-<base>` and `gh` (issue list, issue view, the blocked-by API) — reads only. No
-credentials handled, no deletion, no `eval`, no base64.
+<base>` and `gh` (the issues list, issue view, the blocked-by API) — reads
+only. No credentials handled, no deletion, no `eval`, no base64.
+
+Cross-review (Codex, `xreview.sh`): round 1 — ready with fixes, three Required
+(the ready set cut at 200 issues before the label filter; any existing
+directory taken for the task's worktree; controls missing for an `issue view`
+failure, a dry-run fetch and a real `--base` start point); all three fixed as
+above.
 
 ## [1.12.0] — 2026-10-16
 

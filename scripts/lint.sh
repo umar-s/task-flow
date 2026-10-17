@@ -266,6 +266,9 @@ if grep -nE '\|\| true|2>/dev/null' "$TW" | grep -v 'lint: allow' >/dev/null; th
   err "fail-open idiom in $TW (mark a deliberate one with '# lint: allow')"; grep -nE '\|\| true|2>/dev/null' "$TW" | grep -v 'lint: allow' >&2
 fi
 grep -q 'refusing to guess that it is ready' "$TW" || err "$TW: an unreadable blocker list must stop the wave, never count as ready"
+grep -nE '^[^#]*\b(mapfile|readarray|declare -A|local -A)\b|\$\{[a-zA-Z_]+(,,|\^\^)\}' "$TW" >/dev/null && err "$TW uses a bash-4-only construct (it must run on macOS bash 3.2)"
+grep -q 'gh api --paginate' "$TW" && grep -q 'select(.pull_request == null)' "$TW" || err "$TW: the ready set must read every page and drop pull requests (a --limit cut loses ready tasks)"
+grep -q 'worktree list --porcelain' "$TW" || err "$TW: an existing directory is resumed only when it is this repository's worktree on task-<N>"
 grep -qE '^[^#]*\b(gh pr merge|git push)\b' "$TW" && err "$TW must not merge or push — sessions stay interactive and \`task\` owns landing"
 grep -q 'templates/wave/task-wave.sh' skills/decompose/SKILL.md || err "decompose Handoff no longer names the wave launcher"
 for r in README.md README.ru.md; do grep -q 'task-wave.sh' "$r" || err "$r does not describe the wave launcher"; done

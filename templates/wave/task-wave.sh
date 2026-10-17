@@ -29,15 +29,20 @@ done
 command -v gh >/dev/null || die "gh is not on PATH"
 [ $dry = 1 ] || command -v tmux >/dev/null || die "tmux is not on PATH (try --dry-run to see the plan)"
 root="$(git rev-parse --show-toplevel)" || die "not inside a git repository"
-name="$(basename "$root")"
+root="$(cd "$root" && pwd -P)"; name="$(basename "$root")"
 repo="$(gh repo view --json nameWithOwner -q .nameWithOwner)" || die "gh cannot read this repository"
 [ -n "$base" ] || base="$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)" || die "gh cannot read the default branch"
 
+# The ready set: every open issue with a builder label (server-side label filter,
+# all pages — no count limit), pull requests excluded, then its blockers.
 if [ ${#issues[@]} -eq 0 ]; then
-  labelled="$(gh issue list --state open --limit 200 --json number,labels \
-    -q '.[] | select([.labels[].name] | any(. == "builder:claude" or . == "builder:codex")) | .number')" \
-    || die "gh cannot list the issues"
-  for n in $labelled; do
+  labelled=""
+  for label in builder:claude builder:codex; do
+    page="$(gh api --paginate "repos/$repo/issues?state=open&per_page=100&labels=$label" \
+      -q '.[] | select(.pull_request == null) | .number')" || die "gh cannot list the issues labelled $label"
+    labelled="$labelled $page"
+  done
+  for n in $(printf '%s\n' $labelled | sort -nu); do
     open="$(gh api "repos/$repo/issues/$n/dependencies/blocked_by" -q '[.[] | select(.state == "open")] | length')" \
       || die "cannot read the blockers of #$n — refusing to guess that it is ready"
     [ "$open" = 0 ] && issues+=("$n")
@@ -45,9 +50,18 @@ if [ ${#issues[@]} -eq 0 ]; then
   [ ${#issues[@]} -gt 0 ] || { echo "task-wave: no ready task in $repo (open, builder:claude|codex label, no open blocker)"; exit 0; }
 fi
 
-session="wave-$name"
-[ $dry = 1 ] || git -C "$root" fetch -q origin "$base" || die "cannot fetch origin/$base"
-started=0
+# Is $1 a worktree of this repository, checked out on branch $2? (canonical paths)
+our_worktree() {
+  local want; want="$(cd "$1" && pwd -P)"
+  git -C "$root" worktree list --porcelain | awk -v w="$want" -v b="refs/heads/$2" '
+    $1 == "worktree" { cur = substr($0, 10) }
+    $1 == "branch" && cur == w && $2 == b { found = 1 }
+    END { exit !found }'
+}
+
+# Plan every task first; anything that cannot be started safely stops the run
+# before a single worktree or window exists.
+plan_n=(); plan_wt=(); plan_mode=(); plan_cmd=()
 for n in "${issues[@]}"; do
   builder="$(gh issue view "$n" --json labels -q '[.labels[].name | select(. == "builder:claude" or . == "builder:codex")][0] // ""')" \
     || die "gh cannot read #$n"
@@ -57,21 +71,33 @@ for n in "${issues[@]}"; do
     *) echo "task-wave: #$n has no builder:claude or builder:codex label — skipped"; continue ;;
   esac
   wt="$(dirname "$root")/$name-$n"; br="task-$n"
-  if [ -d "$wt" ]; then how="worktree exists — resuming in it"
-  elif git -C "$root" show-ref --verify --quiet "refs/heads/$br"; then how="git worktree add $wt $br   (branch exists)"
-  else how="git worktree add $wt -b $br origin/$base"; fi
-  printf '#%s %s → %s\n    %s\n    tmux window #%s: %s\n' "$n" "$builder" "$wt" "$how" "$n" "$cmd"
-  [ $dry = 1 ] && continue
-  if [ ! -d "$wt" ]; then
-    if git -C "$root" show-ref --verify --quiet "refs/heads/$br"; then git -C "$root" worktree add -q "$wt" "$br"
-    else git -C "$root" worktree add -q "$wt" -b "$br" "origin/$base"; fi
+  if [ -e "$wt" ]; then
+    our_worktree "$wt" "$br" || die "$wt exists but is not this repository's worktree on $br — move it or start #$n by hand"
+    mode=resume; how="worktree on $br exists — resuming in it"
+  elif git -C "$root" show-ref --verify --quiet "refs/heads/$br"; then
+    mode=branch; how="git worktree add $wt $br   (branch exists)"
+  else
+    mode=new; how="git worktree add $wt -b $br origin/$base"
   fi
+  printf '#%s %s → %s\n    %s\n    tmux window #%s: %s\n' "$n" "$builder" "$wt" "$how" "$n" "$cmd"
+  plan_n+=("$n"); plan_wt+=("$wt"); plan_mode+=("$mode"); plan_cmd+=("$cmd")
+done
+[ ${#plan_n[@]} -gt 0 ] || exit 0
+[ $dry = 1 ] && { echo "task-wave: dry run — nothing created"; exit 0; }
+
+git -C "$root" fetch -q origin "$base" || die "cannot fetch origin/$base"
+session="wave-$name"; i=0
+while [ $i -lt ${#plan_n[@]} ]; do
+  n="${plan_n[$i]}"; wt="${plan_wt[$i]}"; cmd="${plan_cmd[$i]}"
+  case "${plan_mode[$i]}" in
+    new)    git -C "$root" worktree add -q "$wt" -b "task-$n" "origin/$base" ;;
+    branch) git -C "$root" worktree add -q "$wt" "task-$n" ;;
+  esac
   if tmux has-session -t "=$session" 2>/dev/null; then   # lint: allow — "no session" is the answer, not an error
     tmux new-window -t "=$session" -n "#$n" -c "$wt" "$cmd"
   else
     tmux new-session -d -s "$session" -n "#$n" -c "$wt" "$cmd"
   fi
-  started=$((started+1))
+  i=$((i+1))
 done
-if [ $dry = 1 ]; then echo "task-wave: dry run — nothing created"
-elif [ $started -gt 0 ]; then echo "task-wave: $started session(s) in tmux — attach with: tmux attach -t $session"; fi
+echo "task-wave: ${#plan_n[@]} session(s) in tmux — attach with: tmux attach -t $session"
