@@ -88,7 +88,7 @@ esac
 EOF
 printf '#!/usr/bin/env bash\ncase " $* " in *" fetch "*) echo fetch >> "$STUB_LOG/fetches" ;; esac\nexec %q "$@"\n' "$REAL_GIT" > "$TMP/bin/git"
 for a in claude codex; do
-  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$PWD" "$@" > "$STUB_LOG/%s-$(basename "$PWD")"; sleep 60\n' "$a" > "$TMP/bin/$a"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$PWD" "$@" > "$STUB_LOG/%s-$(basename "$PWD")"; echo x >> "$STUB_LOG/launches-%s-$(basename "$PWD")"; sleep 60\n' "$a" "$a" > "$TMP/bin/$a"
 done
 chmod +x "$TMP/bin/"*
 export PATH="$TMP/bin:$PATH" FX="$F" STUB_LOG="$TMP/log"
@@ -149,7 +149,7 @@ out="$(PATH="$TMP/nocodex" "$TMP/nocodex/bash" "$TW" --dry-run 2 5)"; rc=$?
 check "dry run names the missing harness and still exits 0" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -q "the real run will refuse"'
 PATH="$TMP/nocodex" "$TMP/nocodex/bash" "$TW" 2 >/dev/null 2>&1; rc=$?
 check "a wave needing only claude starts without codex installed" '[ $rc -eq 0 ] && [ -d "$TMP/w/lab-2" ]'
-tmux kill-server >/dev/null 2>&1 || true; git worktree remove --force "$TMP/w/lab-2"; git branch -q -D task-2; rm -f "$STUB_LOG/fetches" "$STUB_LOG/claude-lab-2"
+tmux kill-server >/dev/null 2>&1 || true; git worktree remove --force "$TMP/w/lab-2"; git branch -q -D task-2; rm -f "$STUB_LOG/fetches" "$STUB_LOG/claude-lab-2" "$STUB_LOG/launches-claude-lab-2"
 
 # 5. a directory at a task's worktree path that is not this repo's worktree on task-<N> → refused, nothing started
 mkdir -p "$TMP/w/lab-5"
@@ -161,6 +161,12 @@ bash "$TW" 5 >/dev/null 2>"$TMP/err"; rc=$?
 check "our worktree on another branch at lab-5 → rc 2" '[ $rc -eq 2 ] && grep -q "on task-5" "$TMP/err"'
 git worktree remove --force "$TMP/w/lab-5"; git branch -q -D other
 
+# 5b. task-5 already checked out in another worktree (not at lab-5) → refused in the plan, nothing started
+git worktree add -q "$TMP/w/elsewhere" -b task-5 origin/main
+bash "$TW" 2 5 >/dev/null 2>"$TMP/err"; rc=$?
+check "task-5 held by another worktree → rc 2, #2 not started, no fetch" '[ $rc -eq 2 ] && grep -q "task-5 is checked out at" "$TMP/err" && [ ! -e "$TMP/w/lab-2" ] && ! tmux has-session -t =wave-lab 2>/dev/null && [ "$(fetches)" = 0 ]'
+git worktree remove --force "$TMP/w/elsewhere"; git branch -q -D task-5
+
 # 6. the real run: one worktree per task from origin/main, one tmux window each, the right CLI and prompt
 bash "$TW" 2 5 > "$TMP/run.out"; rc=$?
 check "run exits 0, one fetch, names the session" '[ $rc -eq 0 ] && [ "$(fetches)" = 1 ] && grep -q "tmux attach -t wave-lab" "$TMP/run.out"'
@@ -170,10 +176,14 @@ for i in $(seq 1 20); do [ -s "$STUB_LOG/claude-lab-2" ] && [ -s "$STUB_LOG/code
 check "claude ran in lab-2 with /task-flow:task #2" '[ "$(sed -n 1p "$STUB_LOG/claude-lab-2")" = "$TMP/w/lab-2" ] && [ "$(sed -n 2p "$STUB_LOG/claude-lab-2")" = "/task-flow:task #2" ]'
 check "codex ran in lab-5 with \$task-flow:task #5" '[ "$(sed -n 1p "$STUB_LOG/codex-lab-5")" = "$TMP/w/lab-5" ] && [ "$(sed -n 2p "$STUB_LOG/codex-lab-5")" = "\$task-flow:task #5" ]'
 
-# 7. a second run resumes in our worktree and adds a window to the same session
+# 7. a second run while #2's agent is still running: no second agent in the same checkout
+out="$(bash "$TW" 2)"; rc=$?
+check "#2 already running → not started again" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -q "#2 is already running"'
+check "still two windows and one claude launch in lab-2" '[ "$(tmux list-windows -t =wave-lab | wc -l)" -eq 2 ] && [ "$(wc -l < "$STUB_LOG/launches-claude-lab-2")" -eq 1 ]'
+# … and once that window is gone (the agent exited), the same worktree is resumed in a new one
+tmux kill-window -t "=wave-lab:#2"
 out="$(bash "$TW" 2)"
-check "existing worktree → resumed, not recreated" 'printf "%s" "$out" | grep -q "exists — resuming"'
-check "second window for #2 joins wave-lab" '[ "$(tmux list-windows -t =wave-lab | wc -l)" -eq 3 ]'
+check "window gone → existing worktree resumed in a new window" 'printf "%s" "$out" | grep -q "exists — resuming" && [ "$(tmux list-windows -t =wave-lab | wc -l)" -eq 2 ]'
 
 # 8. a branch left behind by a removed worktree is reused, not re-created from base
 tmux kill-server >/dev/null 2>&1 || true

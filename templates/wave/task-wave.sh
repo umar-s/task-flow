@@ -60,6 +60,19 @@ our_worktree() {
     $1 == "branch" && cur == w && $2 == b { found = 1 }
     END { exit !found }'
 }
+# Where is branch $1 checked out, if anywhere? (git refuses a second checkout)
+branch_path() {
+  git -C "$root" worktree list --porcelain | awk -v b="refs/heads/$1" '
+    $1 == "worktree" { cur = substr($0, 10) }
+    $1 == "branch" && $2 == b { print cur; exit }'
+}
+
+# A live window #<N> in this wave's session is that task's agent, still running
+# (a window closes when its CLI exits) — never start a second one beside it.
+session="wave-$name"; running=" "
+if command -v tmux >/dev/null && tmux has-session -t "=$session" 2>/dev/null; then   # lint: allow — "no session" is the answer, not an error
+  running=" $(tmux list-windows -t "=$session" -F '#{window_name}' | tr '\n' ' ')"
+fi
 
 # Plan every task first; anything that cannot be started safely stops the run
 # before a single worktree or window exists.
@@ -74,10 +87,15 @@ for n in "${issues[@]}"; do
     *)  echo "task-wave: #$n has both builder labels — skipped (keep one)"; continue ;;
   esac
   wt="$(dirname "$root")/$name-$n"; br="task-$n"
+  case "$running" in *" #$n "*)
+    echo "task-wave: #$n is already running in tmux window #$n of $session — not started again"; continue ;;
+  esac
   if [ -e "$wt" ]; then
     our_worktree "$wt" "$br" || die "$wt exists but is not this repository's worktree on $br — move it or start #$n by hand"
     mode=resume; how="worktree on $br exists — resuming in it"
   elif git -C "$root" show-ref --verify --quiet "refs/heads/$br"; then
+    held="$(branch_path "$br")"
+    [ -z "$held" ] || die "$br is checked out at $held, not at $wt — finish #$n there or remove that worktree"
     mode=branch; how="git worktree add $wt $br   (branch exists)"
   else
     mode=new; how="git worktree add $wt -b $br origin/$base"
@@ -98,7 +116,7 @@ fi
 [ $dry = 1 ] && { echo "task-wave: dry run — nothing created"; exit 0; }
 
 git -C "$root" fetch -q origin "$base" || die "cannot fetch origin/$base"
-session="wave-$name"; i=0
+i=0
 while [ $i -lt ${#plan_n[@]} ]; do
   n="${plan_n[$i]}"; wt="${plan_wt[$i]}"; cmd="${plan_cmd[$i]}"
   case "${plan_mode[$i]}" in

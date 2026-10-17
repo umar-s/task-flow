@@ -270,6 +270,7 @@ grep -nE '^[^#]*\b(mapfile|readarray|declare -A|local -A)\b|\$\{[a-zA-Z_]+(,,|\^
 grep -q 'gh api --paginate' "$TW" && grep -q 'select(.pull_request == null)' "$TW" || err "$TW: the ready set must read every page and drop pull requests (a --limit cut loses ready tasks)"
 grep -qF 'gh api --paginate "repos/$repo/issues/$n/dependencies/blocked_by' "$TW" || err "$TW: blockers must be read on every page (30 per page by default — an open one on page 2 would read as ready)"
 grep -q 'command -v codex' "$TW" && grep -q 'command -v claude' "$TW" || err "$TW: the harnesses a wave needs must be on PATH before any worktree exists (a missing CLI closes its window at once)"
+grep -q 'not started again' "$TW" && grep -q 'is checked out at' "$TW" || err "$TW: a live task window must not get a second agent, and a branch held by another worktree must stop the plan"
 grep -q 'worktree list --porcelain' "$TW" || err "$TW: an existing directory is resumed only when it is this repository's worktree on task-<N>"
 grep -qE '^[^#]*\b(gh pr merge|git push)\b' "$TW" && err "$TW must not merge or push — sessions stay interactive and \`task\` owns landing"
 grep -q 'templates/wave/task-wave.sh' skills/decompose/SKILL.md || err "decompose Handoff no longer names the wave launcher"

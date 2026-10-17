@@ -40,20 +40,25 @@ tictactoe lab ran its wave 2 as one Claude Code task beside one Codex task.
   harness CLIs the wave needs are checked before anything is created (a window
   whose CLI is missing would close at once while the run reported success); a
   dry run names the missing one. An issue carrying both builder labels is
-  skipped, not guessed. A dry run does not fetch. Tracker: GitHub Issues
-  through `gh` (the blocked-by API).
+  skipped, not guessed. A task whose window `#<N>` is still alive in the wave's
+  session is not started again — no second agent in one checkout; once that
+  window is gone the worktree is resumed in a new one. A `task-<N>` branch
+  checked out in some other worktree stops the plan before anything starts. A
+  dry run does not fetch. Tracker: GitHub Issues through `gh` (the blocked-by
+  API).
 - `docs/superpowers/specs/2026-10-17-task-flow-1-13-0-wave-launcher.md`: the
-  DoD and the premortem edges (E1–E18), each mapped to a control or an explicit
+  DoD and the premortem edges (E1–E19), each mapped to a control or an explicit
   exclusion.
-- `tests/task-wave.sh`: 30 controls with a stub `gh` that runs the script's own
+- `tests/task-wave.sh`: 32 controls with a stub `gh` that runs the script's own
   `-q` filters through `jq` over fixtures and serves GitHub's pages unless
   `--paginate` (100 issues, 30 blockers by default; the ready fixture sits past
   item 100 of its label and item 200 of all open issues, another issue's open
   blocker sits on its blockers' second page, and a second page can fail after
   the first was printed), a `git` wrapper counting fetches, stub `claude`/`codex`
-  recording argv and cwd, and a private tmux server (`TMUX_TMPDIR`); `--base`
-  is checked against a real commit only `develop` has. Twenty-one mutations of
-  the script — the harness check dropped or partial, both labels resolved to
+  recording argv, cwd and every launch, and a private tmux server
+  (`TMUX_TMPDIR`); `--base` is checked against a real commit only `develop`
+  has. Twenty-three mutations of the script — a live task window ignored, a
+  branch held elsewhere ignored, the harness check dropped or partial, both labels resolved to
   the first, no pagination of issues or of blockers, blockers counted per page,
   pull requests kept, blockers ignored, each tracker failure swallowed (a
   failing second page included), any directory taken for a worktree, the branch not
@@ -64,8 +69,9 @@ tictactoe lab ran its wave 2 as one Claude Code task beside one Codex task.
   unmarked fail-open idiom and no bash-4-only construct (`mapfile`,
   `declare -A`, `${x,,}` — it must run on macOS bash 3.2), keeps "refusing to
   guess that it is ready", reads every page of issues and of blockers and drops
-  pull requests, checks the needed harness CLIs and a resumed worktree (through
-  `git worktree list --porcelain`) before anything starts, calls neither
+  pull requests, checks the needed harness CLIs, a resumed worktree (through
+  `git worktree list --porcelain`), a live task window and a branch held
+  elsewhere before anything starts, calls neither
   `gh pr merge` nor `git push`; `decompose` Handoff and both READMEs name it.
 - `.github/workflows/check.yml`: installs tmux when the runner lacks it, so the
   launcher's controls run in CI rather than skip.
@@ -93,7 +99,11 @@ real pages. Round 3 — two Required: a wave needing a harness not on PATH
 reported success while its window died, fixed with the CLI check before
 anything is created; and the review spec had no premortem edges, now in the
 spec above with a control or a stated exclusion for each (one of them, an
-issue with both builder labels, led to the skip).
+issue with both builder labels, led to the skip). Round 4 — two Required: a
+re-run started a second agent beside a live one in the same worktree (and the
+test had pinned that as correct), and a `task-<N>` branch checked out in
+another worktree passed the plan and failed `git worktree add` mid-run; both
+now refused or skipped in the plan.
 
 ## [1.12.0] — 2026-10-16
 

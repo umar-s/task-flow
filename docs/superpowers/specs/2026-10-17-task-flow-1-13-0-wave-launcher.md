@@ -43,6 +43,10 @@ one interactive tmux window per task, Claude Code or Codex by the issue's
 14. Round 3 fix holds: the harness CLIs a wave needs are checked before fetch,
     worktree or window (a real run refuses, a dry run warns); an issue with both
     builder labels is skipped, not guessed.
+15. Round 4 fixes hold: a task whose window `#<N>` is alive in the wave's session
+    is not started again (no second agent in one checkout); a `task-<N>` branch
+    checked out in a worktree other than `../<repo>-<N>` is refused in the plan,
+    before fetch, worktree or window.
 
 ## Premortem edges
 
@@ -62,10 +66,11 @@ Imagined failures of the launcher, each mapped to the control in
 | E9 | One refused task leaves the others half-started | case 5: #2 not started when #5 is refused (plan before start) |
 | E10 | The prompt is mangled by the shell (`$task-flow` expanded) | case 6: codex argv is exactly `$task-flow:task #5` |
 | E11 | A session runs outside its worktree | case 6: recorded cwd of each stub |
-| E12 | Re-running a wave duplicates or recreates work | cases 7–8: existing worktree resumed; leftover `task-N` branch reused |
+| E12 | Re-running a wave duplicates or recreates work — a second agent in the same checkout | case 7: a live window `#2` → not started again (window and launch counts unchanged); once the window is gone the worktree is resumed; case 8: leftover `task-N` branch reused |
 | E13 | The wrong start point (default branch instead of the integration one) | case 9: `--base develop` → HEAD = a commit only develop has |
 | E14 | A dry run has side effects | case 1: no worktree, no session, no fetch (git wrapper counts) |
 | E15 | The script lands work by itself | lint: no `gh pr merge` / `git push`; nothing in the script deletes |
 | E16 | bash-4-only syntax breaks on macOS bash 3.2 | lint: no `mapfile`/`readarray`/`declare -A`/`${x,,}`. Exclusion: no bash 3.2 runtime here, so the run itself is not tested on 3.2 |
 | E17 | Launched from inside an existing tmux session | Exclusion: `new-session -d` and `-t =wave-<repo>` work the same from inside tmux; the controls run with `TMUX` unset on a private server |
 | E18 | GitHub without the blocked-by API (older GHES) | covered by E3: the blocker read fails → rc 2, never "ready"; README names GitHub Issues as the tracker |
+| E19 | `task-N` is checked out in another worktree; `git worktree add` fails mid-run and the wave starts half-way | case 5b: refused in the plan, #2 not started, no fetch |
