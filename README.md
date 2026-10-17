@@ -230,7 +230,11 @@ the workstation's `--settings` and `--mcp-config`, which a worktree beside the
 clone cannot see; each flag reaches the CLI as one literal argument, and the
 prompt follows a `--` of its own. A window never inherits the launching agent's
 session (`CLAUDECODE`, `CLAUDE_CODE_*`, `CODEX_SESSION_ID`, …), so the wave can
-be started from inside a Claude Code or Codex session.
+be started from inside a Claude Code or Codex session. When a CLI needs
+something set up first on that machine — a proxy, a memory limit —
+`TASK_WAVE_CLAUDE_BIN` / `TASK_WAVE_CODEX_BIN` name a launcher of your own that
+the window runs in its place: an executable on `PATH` or a path, ending in
+`exec claude "$@"` (or `codex`); a shell function or alias cannot run in a window.
 
 ## Skill routing (paste into the consuming project's `AGENTS.md` or `CLAUDE.md`)
 
