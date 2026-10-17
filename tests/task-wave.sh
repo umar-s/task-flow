@@ -520,5 +520,38 @@ tmux kill-server >/dev/null 2>&1 || true
 out="$(yt --dry-run --base develop DEV-7)"
 check "youtrack: --base develop → a new worktree from origin/develop" 'printf "%s" "$out" | grep -qF "lab-DEV-7 -b task-DEV-7 origin/develop"'
 
+# Z1. the integration branch per clone: git config task-wave.base (a gitflow repo's
+#     default branch is often the production one) — --base > task-wave.base > remote
+git config task-wave.base develop
+out="$(GIT_LSREMOTE_FAIL=1 yt --dry-run DEV-7)"; rc=$?
+check "youtrack: task-wave.base develop → origin/develop, no remote read needed, source named" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -qF "lab-DEV-7 -b task-DEV-7 origin/develop" && printf "%s" "$out" | grep -q "base origin/develop (git config task-wave.base)"'
+out="$(yt --dry-run --base main DEV-7)"
+check "youtrack: --base wins over task-wave.base" 'printf "%s" "$out" | grep -qF "lab-DEV-7 -b task-DEV-7 origin/main"'
+out="$(bash "$TW" --dry-run 370)"; rc=$?
+check "github: task-wave.base develop → origin/develop (not gh's default branch)" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -qF "lab-370 -b task-370 origin/develop" && printf "%s" "$out" | grep -q "(git config task-wave.base)"'
+for bad in 'bad..name' 'a b' '-x'; do
+  git config task-wave.base "$bad"
+  yt --dry-run DEV-7 >/dev/null 2>"$TMP/err"; rc=$?
+  check "task-wave.base '$bad' is not a branch name → rc 2" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err"'
+done
+git config --unset task-wave.base
+yt --dry-run --base 'x..y' DEV-7 >/dev/null 2>"$TMP/err"; rc=$?
+check "--base 'x..y' is not a branch name → rc 2" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err"'
+out="$(yt --dry-run DEV-7)"
+check "without task-wave.base the remote's default again, source named" 'printf "%s" "$out" | grep -q "base origin/main (origin.s default branch)"'
+
+# Z2. extra flags for the CLI in the window (a worktree does not see the workstation's
+#     .claude/settings*.json or .mcp.json): TASK_WAVE_CLAUDE_ARGS / TASK_WAVE_CODEX_ARGS,
+#     split on blanks, each flag quoted — never shell-parsed
+tmux kill-server >/dev/null 2>&1 || true
+rm -f "$STUB_LOG/claude-lab-DEV-7" "$STUB_LOG/pwned1" "$STUB_LOG/pwned2"
+TASK_WAVE_CLAUDE_ARGS="--settings $TMP/s.json --mcp-config \$(touch $STUB_LOG/pwned1) ;touch $STUB_LOG/pwned2" yt DEV-7 >/dev/null 2>&1; rc=$?
+for i in $(seq 1 20); do [ -s "$STUB_LOG/claude-lab-DEV-7" ] && break; sleep 0.3; done
+check "TASK_WAVE_CLAUDE_ARGS reach claude as separate literal flags before the prompt" '[ $rc -eq 0 ] && [ "$(sed -n 2,7p "$STUB_LOG/claude-lab-DEV-7" | tr "\n" "|")" = "--settings|$TMP/s.json|--mcp-config|\$(touch|$STUB_LOG/pwned1)|;touch|" ] && [ "$(tail -n 1 "$STUB_LOG/claude-lab-DEV-7")" = "/task-flow:task DEV-7" ]'
+check "TASK_WAVE_CLAUDE_ARGS are not shell-parsed: nothing ran" '[ ! -e "$STUB_LOG/pwned1" ] && [ ! -e "$STUB_LOG/pwned2" ]'
+out="$(TASK_WAVE_CODEX_ARGS='-p builder' yt --dry-run DEV-5)"
+check "TASK_WAVE_CODEX_ARGS appear in the codex command" 'printf "%s" "$out" | grep -qF "codex -p builder \\\$task-flow:task\\ DEV-5"'
+tmux kill-server >/dev/null 2>&1 || true
+
 echo "tests/task-wave: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

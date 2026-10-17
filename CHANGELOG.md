@@ -9,6 +9,51 @@ below is tagged `vX.Y.Z` in git. Installs track the default branch (the
 marketplace entry pins no ref), so a release tag marks history rather than a
 download.
 
+## [1.14.2] — 2026-10-17
+
+### Added
+- `git config task-wave.base <branch>` in a clone gives that clone's waves
+  their base without `--base`, on both trackers. The order is `--base`, then
+  `task-wave.base`, then the default branch as the tracker side reports it. A
+  gitflow repository's default branch is often the production one: on a
+  GitLab workspace measured for 1.14.1, one clone defaulted to `main`
+  (production) and had `develop` as its integration branch. Any base, from any
+  source, must pass `git check-ref-format --branch` or the run stops. The plan
+  now names the base and where it came from
+  (`task-wave: base origin/develop (git config task-wave.base)`).
+- `TASK_WAVE_CLAUDE_ARGS` / `TASK_WAVE_CODEX_ARGS` carry extra flags for the CLI
+  in every window, for example the workstation's `--settings` and
+  `--mcp-config`, which a worktree beside the clone does not see. A project had
+  patched this into its own copy of the script, with the variable expanded
+  unquoted into the window's command line, where `$(…)` would have run. Here
+  the value is split on blanks, and each flag reaches the CLI as one literal
+  argument, so `$(…)` and `;` stay text. A flag cannot contain a blank. With
+  the same variable names, that copy can now be replaced by the template as it
+  is.
+
+### Changed
+- `--help` prints the whole header comment instead of a fixed line range:
+  that range fell out of step twice when the header grew.
+
+### Tests
+- `tests/task-wave.sh`: 118 controls (1.14.1 had 107). New ones:
+  - `task-wave.base` on YouTrack with no remote read, and on GitHub instead of
+    `gh`'s default branch;
+  - `--base` winning over the config;
+  - `bad..name`, `a b` and `-x` refused as a config value, and `x..y` as
+    `--base`;
+  - the base's source named in the plan;
+  - the extra flags arriving one per argument, before the prompt, with
+    `$(touch …)` and `;touch …` left unrun;
+  - the Codex flags appearing in the planned command.
+- Four mutations, each one caught: config ignored, branch name unchecked,
+  flags unquoted, and the Claude flags dropped.
+
+### Supply self-check
+- New subprocess calls: `git config --get` and `git check-ref-format`, both
+  local reads. No network, credential, write or `eval`. The new environment
+  input (`TASK_WAVE_*_ARGS`) reaches the CLI only as quoted single arguments.
+
 ## [1.14.1] — 2026-10-17
 
 ### Fixed
@@ -1214,6 +1259,7 @@ Donor audit of the `hybrid-plan` / `hybrid-review` skill set —
   tool-agnostic migration-guard and protected-branch rules into any repo —
   GitLab and GitHub CI, pre-commit hooks, failing closed.
 
+[1.14.2]: https://github.com/umar-s/task-flow/compare/v1.14.1...v1.14.2
 [1.14.1]: https://github.com/umar-s/task-flow/compare/v1.14.0...v1.14.1
 [1.14.0]: https://github.com/umar-s/task-flow/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/umar-s/task-flow/compare/v1.12.0...v1.13.0

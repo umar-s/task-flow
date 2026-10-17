@@ -22,6 +22,12 @@
 #     (git ls-remote), not the cached origin/HEAD. An issue resolved while the list is
 #     paged can shift one page boundary: a task may be missed, never one started wrongly.
 # Explicit issues override the ready set. A task whose worktree exists is resumed in it.
+# Base of a new worktree: --base, else `git config task-wave.base <branch>` in this
+#   clone (set it where the integration branch is not the default one — gitflow's
+#   default is often production), else the default branch named above.
+# TASK_WAVE_CLAUDE_ARGS / TASK_WAVE_CODEX_ARGS: extra flags for the CLI in every
+#   window (e.g. --settings / --mcp-config a worktree cannot see), split on blanks,
+#   each passed as one literal argument.
 set -euo pipefail
 
 die() { echo "task-wave: $*" >&2; exit 2; }
@@ -33,7 +39,7 @@ while [ $# -gt 0 ]; do
     --tracker) [ $# -ge 2 ] || die "--tracker needs github or youtrack"; tracker="$2"; shift 2 ;;
     --project) [ $# -ge 2 ] || die "--project needs a project key"; project="$2"; shift 2 ;;
     --epic) [ $# -ge 2 ] || die "--epic needs an issue id"; epic="$2"; shift 2 ;;
-    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
+    -h|--help) awk 'NR == 1 { next } /^#/ { print; next } { exit }' "$0"; exit 0 ;;   # the header comment, however long
     -*) die "unknown option $1" ;;
     *) raw+=("$1"); shift ;;
   esac
@@ -61,6 +67,20 @@ fi
 [ $dry = 1 ] || command -v tmux >/dev/null || die "tmux is not on PATH (try --dry-run to see the plan)"
 root="$(git rev-parse --show-toplevel)" || die "not inside a git repository"
 root="$(cd "$root" && pwd -P)"; name="$(basename "$root")"
+
+# The base of a new task's worktree: --base, else this clone's `git config
+# task-wave.base` (the integration branch where it is not the default one — in a
+# gitflow repository the default is often production), else the default branch the
+# tracker side reports (below). Whatever its source, it must be a branch name.
+base_src="--base"
+if [ -z "$base" ]; then
+  base="$(git -C "$root" config --get task-wave.base)" || base=""   # lint: allow — unset is the common case
+  base_src="git config task-wave.base"
+fi
+if [ -n "$base" ]; then
+  case "$base" in -*) die "$base_src: '$base' is not a branch name" ;; esac
+  git check-ref-format --branch "$base" >/dev/null 2>&1 || die "$base_src: '$base' is not a branch name"   # lint: allow — git's own message is not the point
+fi
 
 # --- YouTrack adapter: configuration, then every read through yt_get, which
 # stops the run on anything but a 2xx JSON answer of the expected shape.
@@ -134,7 +154,10 @@ yt_canon() { [[ "$1" =~ $yt_id ]] || die "YouTrack returned an issue id that is 
 builders=()
 if [ "$tracker" = github ]; then
   repo="$(gh repo view --json nameWithOwner -q .nameWithOwner)" || die "gh cannot read this repository"
-  [ -n "$base" ] || base="$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)" || die "gh cannot read the default branch"
+  if [ -z "$base" ]; then
+    base="$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)" || die "gh cannot read the default branch"
+    base_src="the repository's default branch"
+  fi
   # every open issue with a builder label (server-side label filter, all pages —
   # no count limit), pull requests excluded, then its blockers
   if [ ${#issues[@]} -eq 0 ]; then
@@ -164,6 +187,7 @@ else
       || die "cannot ask origin for its default branch — pass --base <branch> (the integration branch)"
     base="$(printf '%s\n' "$head" | awk '$1 == "ref:" && $3 == "HEAD" { sub("^refs/heads/", "", $2); print $2; exit }')"
     [ -n "$base" ] || die "origin names no default branch — pass --base <branch> (the integration branch)"
+    base_src="origin's default branch"
     cached="$(git -C "$root" symbolic-ref -q --short refs/remotes/origin/HEAD)" || cached=""   # lint: allow — an unset local pointer is fine: the remote answered
     [ -z "$cached" ] || [ "$cached" = "origin/$base" ] \
       || echo "task-wave: note — the local origin/HEAD ($cached) is stale; origin's default branch is $base (git remote set-head origin --auto)" >&2
@@ -214,6 +238,8 @@ EOF
     [ ${#issues[@]} -gt 0 ] || { echo "task-wave: no ready task in ${project:+project $project }${epic:+epic $epic} (unresolved, builder:claude|codex tag, no unresolved blocker)"; exit 0; }
   fi
 fi
+
+echo "task-wave: base origin/$base ($base_src)"
 
 # One entry per issue: an issue named twice must not get two agents in one checkout.
 uniq_issues=(); uniq_builders=(); seen=" "; i=0
@@ -281,6 +307,19 @@ claude_bin=claude; codex_bin=codex
 if command -v claude >/dev/null; then claude_bin="$(abs "$(command -v claude)")"; fi
 if command -v codex >/dev/null; then codex_bin="$(abs "$(command -v codex)")"; fi
 run_with_path="env PATH=$(printf %q "$launch_path")"
+# cli_args "<flags>" — TASK_WAVE_CLAUDE_ARGS / TASK_WAVE_CODEX_ARGS for the CLI in the
+# window (a worktree does not see the workstation's .claude/settings*.json or
+# .mcp.json): split on blanks, every flag quoted on its own — never shell-parsed, so
+# `$(…)` or `;` in it stays a literal argument. A flag cannot contain a blank.
+cli_args() {
+  local -a a; local x out=""
+  [ -n "$1" ] || return 0
+  read -r -a a <<EOF
+$1
+EOF
+  for x in ${a[@]+"${a[@]}"}; do out="$out $(printf %q "$x")"; done
+  printf '%s' "$out"
+}
 i=0
 while [ $i -lt ${#issues[@]} ]; do
   n="${issues[$i]}"; i=$((i+1))
@@ -292,8 +331,8 @@ while [ $i -lt ${#issues[@]} ]; do
     label="$n"; builder="${builders[$((i-1))]}"
   fi
   case "$builder" in
-    builder:claude) cmd="$run_with_path $(printf %q "$claude_bin") $(printf %q "/task-flow:task $label")"; need_claude=1 ;;
-    builder:codex)  cmd="$run_with_path $(printf %q "$codex_bin") $(printf %q "\$task-flow:task $label")"; need_codex=1 ;;
+    builder:claude) cmd="$run_with_path $(printf %q "$claude_bin")$(cli_args "${TASK_WAVE_CLAUDE_ARGS:-}") $(printf %q "/task-flow:task $label")"; need_claude=1 ;;
+    builder:codex)  cmd="$run_with_path $(printf %q "$codex_bin")$(cli_args "${TASK_WAVE_CODEX_ARGS:-}") $(printf %q "\$task-flow:task $label")"; need_codex=1 ;;
     "") echo "task-wave: $label has no builder:claude or builder:codex label — skipped"; continue ;;
     *)  echo "task-wave: $label has both builder labels — skipped (keep one)"; continue ;;
   esac

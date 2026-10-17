@@ -222,6 +222,13 @@ server returns at most 500 issues without an explicit page size), and an
 answer that is not the expected JSON stops the run. `decompose` writes the
 `builder:*` tag or label when the approval assigns builders.
 
+On either tracker, `git config task-wave.base develop` in a clone makes that
+clone's waves start from `develop` without `--base` — for a repository whose
+default branch is the production one (`--base` still wins). Extra flags for the
+CLI in every window go in `TASK_WAVE_CLAUDE_ARGS` / `TASK_WAVE_CODEX_ARGS`, e.g.
+the workstation's `--settings` and `--mcp-config`, which a worktree beside the
+clone cannot see; each flag reaches the CLI as one literal argument.
+
 ## Skill routing (paste into the consuming project's `AGENTS.md` or `CLAUDE.md`)
 
 The skills' own `description`s compete with dozens of others in a session; a
