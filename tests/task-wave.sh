@@ -638,5 +638,38 @@ TMUX_ENV_FAIL_S=1 yt --dry-run DEV-7 >"$TMP/out" 2>"$TMP/err"; rc=$?
 check "the wave session's environment unreadable → rc 2, nothing planned" '[ $rc -eq 2 ] && grep -q "cannot read the environment of tmux session wave-lab" "$TMP/err" && ! grep -q "^DEV-7 " "$TMP/out"'
 tmux kill-server >/dev/null 2>&1 || true
 
+# Z4. a launcher of the project's own in place of the CLI (1.14.4): TASK_WAVE_CLAUDE_BIN /
+#     TASK_WAVE_CODEX_BIN — a name on PATH or a path, run by its checked absolute path and
+#     handed the window's whole command line; a function or a plain file is not runnable
+mkdir -p "$TMP/lbin" "$TMP/w/lab/rel"
+for a in claude codex; do
+  printf '#!/usr/bin/env tw-interp\nprintf "%%s\\n" "$@" > "$STUB_LOG/via-%s-$(basename "$PWD")"; exec %s "$@"\n' "$a" "$a" > "$TMP/lbin/wrap-$a"
+done
+cp "$TMP/lbin/wrap-codex" "$TMP/w/lab/rel/cx"; : > "$TMP/lbin/plain"
+chmod +x "$TMP/lbin/wrap-claude" "$TMP/lbin/wrap-codex" "$TMP/w/lab/rel/cx"
+out="$(PATH="$TMP/lbin:$PATH" TASK_WAVE_CLAUDE_BIN=wrap-claude TASK_WAVE_CODEX_BIN=rel/cx yt --dry-run DEV-7 DEV-5)"; rc=$?
+check "a launcher by name and by relative path: the plan runs each by its absolute path" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -qF " $TMP/lbin/wrap-claude -- /task-flow:task\\ DEV-7" && printf "%s" "$out" | grep -qF " $TMP/w/lab/rel/cx -- \\\$task-flow:task\\ DEV-5" && ! printf "%s" "$out" | grep -q "not on PATH"'
+rm -f "$STUB_LOG/claude-lab-DEV-7" "$STUB_LOG/codex-lab-DEV-5" "$STUB_LOG/via-claude-lab-DEV-7" "$STUB_LOG/via-codex-lab-DEV-5"
+( PATH="$TMP/lbin:$PATH" TASK_WAVE_CLAUDE_BIN=wrap-claude TASK_WAVE_CODEX_BIN="$TMP/lbin/wrap-codex" yt DEV-7 DEV-5 >/dev/null 2>&1 ); rc=$?
+waitfile "$STUB_LOG/claude-lab-DEV-7"; waitfile "$STUB_LOG/codex-lab-DEV-5"
+check "each window runs its launcher, and the CLI behind it gets the prompt after --" '[ $rc -eq 0 ] && [ "$(tr "\n" "|" < "$STUB_LOG/via-claude-lab-DEV-7")" = "--|/task-flow:task DEV-7|" ] && [ "$(sed -n 2,3p "$STUB_LOG/claude-lab-DEV-7" | tr "\n" "|")" = "--|/task-flow:task DEV-7|" ] && [ "$(tr "\n" "|" < "$STUB_LOG/via-codex-lab-DEV-5")" = "--|\$task-flow:task DEV-5|" ] && [ "$(sed -n 2,3p "$STUB_LOG/codex-lab-DEV-5" | tr "\n" "|")" = "--|\$task-flow:task DEV-5|" ]'
+tmux kill-server >/dev/null 2>&1 || true
+TASK_WAVE_CLAUDE_BIN=no-such-launcher yt --dry-run DEV-7 >"$TMP/out" 2>&1; rc=$?
+check "a launcher not on PATH: the dry run names it and its variable" '[ $rc -eq 0 ] && grep -q "not on PATH: no-such-launcher (TASK_WAVE_CLAUDE_BIN)" "$TMP/out"'
+rm -f "$STUB_LOG/fetches"
+TASK_WAVE_CODEX_BIN=no-such-launcher yt DEV-5 >/dev/null 2>"$TMP/err"; rc=$?
+check "… and the real run refuses before a fetch or a window" '[ $rc -eq 2 ] && grep -q "not on PATH: no-such-launcher (TASK_WAVE_CODEX_BIN)" "$TMP/err" && [ "$(fetches)" = 0 ] && ! tmux has-session -t =wave-lab 2>/dev/null'
+( wrapfn() { :; }; export -f wrapfn; TASK_WAVE_CLAUDE_BIN=wrapfn yt --dry-run DEV-7 ) >"$TMP/out" 2>&1; rc=$?
+check "an exported shell function is not a launcher (a window cannot run it)" '[ $rc -eq 0 ] && grep -q "not on PATH: wrapfn (TASK_WAVE_CLAUDE_BIN)" "$TMP/out"'
+TASK_WAVE_CLAUDE_BIN="$TMP/lbin/plain" yt --dry-run DEV-7 >"$TMP/out" 2>&1; rc=$?
+check "a file that is not executable is not a launcher" '[ $rc -eq 0 ] && grep -qF "not on PATH: $TMP/lbin/plain (TASK_WAVE_CLAUDE_BIN)" "$TMP/out"'
+TASK_WAVE_CLAUDE_BIN= yt --dry-run DEV-7 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "TASK_WAVE_CLAUDE_BIN set empty → rc 2, not the CLI silently" '[ $rc -eq 2 ] && grep -q "TASK_WAVE_CLAUDE_BIN is set but empty" "$TMP/err" && ! grep -q "^DEV-7 " "$TMP/out"'
+TASK_WAVE_CODEX_BIN=--profile yt --dry-run DEV-5 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "TASK_WAVE_CODEX_BIN that is a flag → rc 2, pointed to TASK_WAVE_CODEX_ARGS" '[ $rc -eq 2 ] && grep -q "flags go in TASK_WAVE_CODEX_ARGS" "$TMP/err" && ! grep -q "^DEV-5 " "$TMP/out"'
+tmux kill-server >/dev/null 2>&1 || true
+out="$(yt --dry-run DEV-7 DEV-5)"
+check "unset, the CLI itself runs (by its checked path)" 'printf "%s" "$out" | grep -qF " $TMP/bin/claude -- /task-flow:task\\ DEV-7" && printf "%s" "$out" | grep -qF " $TMP/bin/codex -- \\\$task-flow:task\\ DEV-5"'
+
 echo "tests/task-wave: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

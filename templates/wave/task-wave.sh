@@ -33,6 +33,10 @@
 # A window gets none of the launching agent's session variables (CLAUDECODE,
 #   CLAUDE_CODE_*, CODEX_SESSION_ID, … — xreview.sh's families; the CLI's own auth
 #   stays, and whatever TASK_WAVE_KEEP_ENV names), from this shell or from tmux's own.
+# TASK_WAVE_CLAUDE_BIN / TASK_WAVE_CODEX_BIN: the command a window runs instead of
+#   claude / codex — a launcher of your own that sets up what the CLI needs on this
+#   machine (a proxy, a memory limit) and ends in `exec claude "$@"`. A name on PATH
+#   or a path; one command, its flags go in TASK_WAVE_*_ARGS. Checked here like the CLI.
 set -euo pipefail
 
 die() { echo "task-wave: $*" >&2; exit 2; }
@@ -326,9 +330,18 @@ here="$(pwd -P)"
 abs() { case "$1" in /*) printf '%s' "$1" ;; "") printf '%s' "$here" ;; *) printf '%s/%s' "$here" "$1" ;; esac; }
 launch_path=""; rest="$PATH:"
 while [ -n "$rest" ]; do d="${rest%%:*}"; rest="${rest#*:}"; launch_path="$launch_path${launch_path:+:}$(abs "$d")"; done
-claude_bin=claude; codex_bin=codex
-if command -v claude >/dev/null; then claude_bin="$(abs "$(command -v claude)")"; fi
-if command -v codex >/dev/null; then codex_bin="$(abs "$(command -v codex)")"; fi
+# The CLI, or the launcher TASK_WAVE_*_BIN names in its place: an executable file
+# (type -P), since a window cannot run this shell's function or alias.
+claude_cmd="${TASK_WAVE_CLAUDE_BIN-claude}"; codex_cmd="${TASK_WAVE_CODEX_BIN-codex}"
+for v in TASK_WAVE_CLAUDE_BIN TASK_WAVE_CODEX_BIN; do
+  case "${!v-unset}" in
+    "") die "$v is set but empty — unset it to run the CLI itself, or name the launcher" ;;
+    -*) die "$v=${!v} is a flag, not a command — flags go in ${v%_BIN}_ARGS" ;;
+  esac
+done
+claude_bin="$claude_cmd"; codex_bin="$codex_cmd"; claude_ok=0; codex_ok=0
+if found="$(type -P "$claude_cmd")"; then claude_bin="$(abs "$found")"; claude_ok=1; fi
+if found="$(type -P "$codex_cmd")"; then codex_bin="$(abs "$found")"; codex_ok=1; fi
 # The launching agent's session must not reach a window: its session ids, plugin
 # paths and messaging channel would make every window a stray child of that session.
 # A window takes the tmux server's environment, not this shell's, and a server first
@@ -430,8 +443,8 @@ done
 # A window whose CLI is missing would close at once with "command not found",
 # after the worktree exists — check the harnesses this wave needs before anything.
 missing=""
-[ $need_claude = 1 ] && ! command -v claude >/dev/null && missing="$missing claude"
-[ $need_codex = 1 ] && ! command -v codex >/dev/null && missing="$missing codex"
+[ $need_claude = 1 ] && [ $claude_ok = 0 ] && missing="$missing $claude_cmd${TASK_WAVE_CLAUDE_BIN+ (TASK_WAVE_CLAUDE_BIN)}"
+[ $need_codex = 1 ] && [ $codex_ok = 0 ] && missing="$missing $codex_cmd${TASK_WAVE_CODEX_BIN+ (TASK_WAVE_CODEX_BIN)}"
 if [ -n "$missing" ]; then
   [ $dry = 1 ] || die "not on PATH:$missing — install it, or relabel those tasks"
   echo "task-wave: not on PATH:$missing — the real run will refuse"

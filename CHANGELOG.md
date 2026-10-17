@@ -9,6 +9,34 @@ below is tagged `vX.Y.Z` in git. Installs track the default branch (the
 marketplace entry pins no ref), so a release tag marks history rather than a
 download.
 
+## [1.14.4] — 2026-10-17
+
+### Added
+- `TASK_WAVE_CLAUDE_BIN` / `TASK_WAVE_CODEX_BIN`: the command a wave window
+  runs in place of `claude` / `codex`. Some machines start a CLI through a
+  launcher of their own: a proxy only that CLI uses, a memory limit for an
+  agent's process. Such a launcher was usually a shell function, which a tmux
+  window never sees, so every window started the bare CLI without either of
+  them. The launcher is a name on `PATH` or a path, one command; its flags still
+  go in `TASK_WAVE_*_ARGS`. It is checked like the CLI, as an executable file
+  (`type -P`), and run by its absolute path with the window's whole command
+  line, the `--` and the prompt included. A launcher that is missing, a shell
+  function or a plain file is named in the plan as not on PATH, with its
+  variable, and the real run refuses before a fetch or a window. A variable set
+  empty, or to a flag, is refused (rc 2) rather than quietly falling back to the
+  CLI. Unset, nothing changes.
+
+### Supply chain self-check
+- `git diff v1.14.3..HEAD -- skills/ hooks/ templates/ commands/ agents/`: no
+  network, credential, `rm -rf`, `eval` or base64 hit. The launcher runs with the
+  window's environment, so what it does is the project's own choice.
+
+### Tests
+- `tests/task-wave.sh`: 150 controls (+9, group Z4): launcher by name and by
+  relative path, a real run through both launchers into the CLI behind them,
+  missing launcher in the plan and in the real run, exported function, plain
+  file, empty value, flag value, and the default when unset.
+
 ## [1.14.3] — 2026-10-17
 
 ### Fixed
@@ -1367,6 +1395,7 @@ Donor audit of the `hybrid-plan` / `hybrid-review` skill set —
   tool-agnostic migration-guard and protected-branch rules into any repo —
   GitLab and GitHub CI, pre-commit hooks, failing closed.
 
+[1.14.4]: https://github.com/umar-s/task-flow/compare/v1.14.3...v1.14.4
 [1.14.3]: https://github.com/umar-s/task-flow/compare/v1.14.2...v1.14.3
 [1.14.2]: https://github.com/umar-s/task-flow/compare/v1.14.1...v1.14.2
 [1.14.1]: https://github.com/umar-s/task-flow/compare/v1.14.0...v1.14.1
