@@ -227,7 +227,10 @@ clone's waves start from `develop` without `--base` — for a repository whose
 default branch is the production one (`--base` still wins). Extra flags for the
 CLI in every window go in `TASK_WAVE_CLAUDE_ARGS` / `TASK_WAVE_CODEX_ARGS`, e.g.
 the workstation's `--settings` and `--mcp-config`, which a worktree beside the
-clone cannot see; each flag reaches the CLI as one literal argument.
+clone cannot see; each flag reaches the CLI as one literal argument, and the
+prompt follows a `--` of its own. A window never inherits the launching agent's
+session (`CLAUDECODE`, `CLAUDE_CODE_*`, `CODEX_SESSION_ID`, …), so the wave can
+be started from inside a Claude Code or Codex session.
 
 ## Skill routing (paste into the consuming project's `AGENTS.md` or `CLAUDE.md`)
 

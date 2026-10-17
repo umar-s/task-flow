@@ -27,7 +27,12 @@
 #   default is often production), else the default branch named above.
 # TASK_WAVE_CLAUDE_ARGS / TASK_WAVE_CODEX_ARGS: extra flags for the CLI in every
 #   window (e.g. --settings / --mcp-config a worktree cannot see), split on blanks,
-#   each passed as one literal argument.
+#   each passed as one literal argument. The prompt follows a `--` of its own: a flag
+#   that takes several values (claude --mcp-config, codex --image) would take it as
+#   one more. A `--` ending these variables is dropped; one before another flag is refused.
+# A window gets none of the launching agent's session variables (CLAUDECODE,
+#   CLAUDE_CODE_*, CODEX_SESSION_ID, … — xreview.sh's families; the CLI's own auth
+#   stays, and whatever TASK_WAVE_KEEP_ENV names), from this shell or from tmux's own.
 set -euo pipefail
 
 die() { echo "task-wave: $*" >&2; exit 2; }
@@ -324,22 +329,65 @@ while [ -n "$rest" ]; do d="${rest%%:*}"; rest="${rest#*:}"; launch_path="$launc
 claude_bin=claude; codex_bin=codex
 if command -v claude >/dev/null; then claude_bin="$(abs "$(command -v claude)")"; fi
 if command -v codex >/dev/null; then codex_bin="$(abs "$(command -v codex)")"; fi
-run_with_path="env PATH=$(printf %q "$launch_path")"
+# The launching agent's session must not reach a window: its session ids, plugin
+# paths and messaging channel would make every window a stray child of that session.
+# A window takes the tmux server's environment, not this shell's, and a server first
+# started from an agent's shell keeps that agent's for good — so the names come from
+# both, and the window's `env` unsets them. Families as in xreview.sh; kept: the
+# variables that select or carry the CLI's own authentication, and TASK_WAVE_KEEP_ENV.
+tmux_names=""
+if command -v tmux >/dev/null && tmux has-session 2>/dev/null; then   # lint: allow — "no server" is the answer, not an error
+  tmux_names="$(tmux show-environment -g | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p')" \
+    || die "cannot read the tmux server's environment"
+  if tmux has-session -t "=$session" 2>/dev/null; then   # lint: allow — "no session" is the answer, not an error
+    tmux_names="$tmux_names
+$(tmux show-environment -t "=$session" | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p')" \
+      || die "cannot read the environment of tmux session $session"
+  fi
+fi
+scrub=""
+while IFS= read -r v; do
+  case " ${TASK_WAVE_KEEP_ENV:-} " in *" $v "*) continue ;; esac
+  case "$v" in
+    CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_USE_*|CLAUDE_CODE_SKIP_*_AUTH|CLAUDE_CODE_CLIENT_*) continue ;;
+    CLAUDECODE|CLAUDE_CODE_*|CLAUDE_PLUGIN_*|CLAUDE_ENV_FILE|CLAUDE_PROJECT_DIR|CLAUDE_EFFORT|CLAUDE_PID) ;;
+    CODEX_SESSION_ID|CODEX_THREAD_ID|CODEX_CI|CODEX_SANDBOX*|PLUGIN_ROOT|PLUGIN_DATA|PP_*|PREDICT) ;;
+    *) continue ;;
+  esac
+  case "$scrub " in *" -u $v "*) ;; *) scrub="$scrub -u $v" ;; esac
+done <<EOF
+$(compgen -e)
+$tmux_names
+EOF
+run_with_path="env$scrub PATH=$(printf %q "$launch_path")"
 # one line each — `read` would keep the first line and drop the rest silently; checked
 # here, not in cli_args, which runs inside $( ) where a die would not stop the run
 case "${TASK_WAVE_CLAUDE_ARGS:-}${TASK_WAVE_CODEX_ARGS:-}" in
   *$'\n'*) die "TASK_WAVE_CLAUDE_ARGS / TASK_WAVE_CODEX_ARGS hold a line break — put every flag on one line" ;;
 esac
+# words "<flags>" — the flags split on blanks, one per line (none holds a line break: above)
+words() { local -a a; local x; read -r -a a <<EOF
+$1
+EOF
+  for x in ${a[@]+"${a[@]}"}; do printf '%s\n' "$x"; done; }
+# the window puts `--` before the prompt itself; a `--` with a flag after it would turn
+# that flag, and the `--`, into prompts
+for v in "${TASK_WAVE_CLAUDE_ARGS:-}" "${TASK_WAVE_CODEX_ARGS:-}"; do
+  case " $(words "$v" | tr '\n' ' ')" in *" -- "?*) die "TASK_WAVE_CLAUDE_ARGS / TASK_WAVE_CODEX_ARGS: '--' before another flag — task-wave puts '--' before the prompt itself" ;; esac
+done
 # cli_args "<flags>" — TASK_WAVE_CLAUDE_ARGS / TASK_WAVE_CODEX_ARGS for the CLI in the
 # window (a worktree does not see the workstation's .claude/settings*.json or
 # .mcp.json): split on blanks, every flag quoted on its own — never shell-parsed, so
-# `$(…)` or `;` in it stays a literal argument. A flag cannot contain a blank.
+# `$(…)` or `;` in it stays a literal argument. A flag cannot contain a blank. A last
+# `--` is dropped: the window adds its own before the prompt.
 cli_args() {
-  local -a a; local x out=""
+  local -a a; local x out="" n
   [ -n "$1" ] || return 0
   read -r -a a <<EOF
 $1
 EOF
+  n=${#a[@]}
+  if [ "$n" -gt 0 ] && [ "${a[$((n-1))]}" = -- ]; then unset "a[$((n-1))]"; fi
   for x in ${a[@]+"${a[@]}"}; do out="$out $(printf %q "$x")"; done
   printf '%s' "$out"
 }
@@ -354,8 +402,8 @@ while [ $i -lt ${#issues[@]} ]; do
     label="$n"; builder="${builders[$((i-1))]}"
   fi
   case "$builder" in
-    builder:claude) cmd="$run_with_path $(printf %q "$claude_bin")$(cli_args "${TASK_WAVE_CLAUDE_ARGS:-}") $(printf %q "/task-flow:task $label")"; need_claude=1 ;;
-    builder:codex)  cmd="$run_with_path $(printf %q "$codex_bin")$(cli_args "${TASK_WAVE_CODEX_ARGS:-}") $(printf %q "\$task-flow:task $label")"; need_codex=1 ;;
+    builder:claude) cmd="$run_with_path $(printf %q "$claude_bin")$(cli_args "${TASK_WAVE_CLAUDE_ARGS:-}") -- $(printf %q "/task-flow:task $label")"; need_claude=1 ;;
+    builder:codex)  cmd="$run_with_path $(printf %q "$codex_bin")$(cli_args "${TASK_WAVE_CODEX_ARGS:-}") -- $(printf %q "\$task-flow:task $label")"; need_codex=1 ;;
     "") echo "task-wave: $label has no builder:claude or builder:codex label — skipped"; continue ;;
     *)  echo "task-wave: $label has both builder labels — skipped (keep one)"; continue ;;
   esac
