@@ -48,6 +48,9 @@ YouTrack tag or a GitHub label, so a pushed epic is launchable without a hand st
    → skipped with a message; none → ignored. Candidate is ready when every
    blocker query `<name>: <ID> #Unresolved` (each name in `YOUTRACK_BLOCKER_LINKS`,
    `;`-separated, default `is required for`) returns no issue on any page.
+   (As built: a blocker search asks `$top=1` — one unresolved blocker already
+   decides "blocked", and an empty first page of a complete search is "none";
+   Codex round 4 accepted the deviation.)
 6. Explicit IDs (youtrack): `^[A-Za-z][A-Za-z0-9_]*-[0-9]+$`, read with
    `GET /api/issues/<id>`; the canonical id is the server's `idReadable` —
    duplicates are removed on it (`dev-5`, `DEV-05` → one task). 404 → rc 2.

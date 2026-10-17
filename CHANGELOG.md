@@ -103,6 +103,9 @@ measured on a live instance first (spec:
     read stopped the whole wave. It is now skipped first, with its name, on
     YouTrack and on GitHub alike: an issue found in both label lists carries
     both labels, which was 1.13.0's behaviour too.
+- Codex review, round 4: ready to merge. Its one nit was fixed without a new
+  round: `--help` printed one line of code (`set -euo pipefail`) after the
+  comment.
 
 ### Tests
 - `tests/task-wave.sh`: 102 controls, 59 of them new (1.13.0 had 43). A stub `curl`

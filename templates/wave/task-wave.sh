@@ -32,7 +32,7 @@ while [ $# -gt 0 ]; do
     --tracker) [ $# -ge 2 ] || die "--tracker needs github or youtrack"; tracker="$2"; shift 2 ;;
     --project) [ $# -ge 2 ] || die "--project needs a project key"; project="$2"; shift 2 ;;
     --epic) [ $# -ge 2 ] || die "--epic needs an issue id"; epic="$2"; shift 2 ;;
-    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     -*) die "unknown option $1" ;;
     *) raw+=("$1"); shift ;;
   esac
