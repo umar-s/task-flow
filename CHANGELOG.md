@@ -9,6 +9,41 @@ below is tagged `vX.Y.Z` in git. Installs track the default branch (the
 marketplace entry pins no ref), so a release tag marks history rather than a
 download.
 
+## [1.14.1] — 2026-10-17
+
+### Fixed
+- `task-wave.sh --tracker youtrack` took the base of a new task's worktree from
+  the local `origin/HEAD`. That is a pointer cached when the clone was made, or
+  when `git remote set-head` ran, and it can name a feature branch long after.
+  This was measured on a real GitLab workspace: in four of its five clones
+  `origin/HEAD` pointed at an old `fix/…`, `feature/…` or `docs/…` branch,
+  while GitLab's default branch was `main`. Without `--base`, the launcher
+  would have branched new tasks from that feature branch and said nothing.
+  - The base is now the default branch as origin reports it
+    (`git ls-remote --symref origin HEAD`).
+  - If origin cannot be asked, or names no default branch, the run stops with
+    rc 2 and points to `--base`; it never falls back to the local pointer.
+  - A stale local pointer is reported, with `git remote set-head origin --auto`
+    as the fix.
+  - `--base` needs no remote read. GitHub mode is unchanged: there `gh` already
+    asks GitHub for the default branch.
+- `--help` printed one line short after the help text grew a line.
+
+### Tests
+- `tests/task-wave.sh`: 105 controls (1.14.0 had 102).
+  - Y1 used to pin "no local `origin/HEAD` → rc 2" and now checks the base
+    against the remote.
+  - New controls: a local `origin/HEAD` on `develop` while the remote's default
+    is `main` (the base is `main`, and the stale pointer is named); a remote
+    that cannot be asked (rc 2); `--base` with no remote read.
+  - The mutation "use the local pointer" is caught.
+- Live, read-only, in a clone whose `origin/HEAD` named a feature branch: the
+  base came out as `main`, and the note named the stale pointer.
+
+### Supply self-check
+- One new subprocess call: `git ls-remote` to the repository's own `origin` (a
+  read). No new credential and no write.
+
 ## [1.14.0] — 2026-10-17
 
 The wave launcher on YouTrack, and `decompose` writes who builds each task.
@@ -1172,6 +1207,7 @@ Donor audit of the `hybrid-plan` / `hybrid-review` skill set —
   tool-agnostic migration-guard and protected-branch rules into any repo —
   GitLab and GitHub CI, pre-commit hooks, failing closed.
 
+[1.14.1]: https://github.com/umar-s/task-flow/compare/v1.14.0...v1.14.1
 [1.14.0]: https://github.com/umar-s/task-flow/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/umar-s/task-flow/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/umar-s/task-flow/compare/v1.11.0...v1.12.0

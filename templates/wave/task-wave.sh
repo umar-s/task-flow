@@ -18,7 +18,8 @@
 #     Ready = unresolved issues of --project and/or subtasks of --epic tagged
 #     builder:claude or builder:codex, with no unresolved issue on any link named
 #     in YOUTRACK_BLOCKER_LINKS (';'-separated, default "is required for" — the
-#     issues A depends on). Base = origin/HEAD. An issue resolved while the list is
+#     issues A depends on). Base = origin's default branch, asked of origin
+#     (git ls-remote), not the cached origin/HEAD. An issue resolved while the list is
 #     paged can shift one page boundary: a task may be missed, never one started wrongly.
 # Explicit issues override the ready set. A task whose worktree exists is resumed in it.
 set -euo pipefail
@@ -32,7 +33,7 @@ while [ $# -gt 0 ]; do
     --tracker) [ $# -ge 2 ] || die "--tracker needs github or youtrack"; tracker="$2"; shift 2 ;;
     --project) [ $# -ge 2 ] || die "--project needs a project key"; project="$2"; shift 2 ;;
     --epic) [ $# -ge 2 ] || die "--epic needs an issue id"; epic="$2"; shift 2 ;;
-    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
     -*) die "unknown option $1" ;;
     *) raw+=("$1"); shift ;;
   esac
@@ -157,9 +158,15 @@ if [ "$tracker" = github ]; then
   fi
 else
   if [ -z "$base" ]; then
-    base="$(git -C "$root" symbolic-ref -q --short refs/remotes/origin/HEAD)" \
-      || die "origin/HEAD is not set — pass --base <branch>, or set it: git remote set-head origin --auto"
-    base="${base#origin/}"
+    # the remote's own default branch — the local origin/HEAD is a pointer cached at
+    # clone or set-head time and can name a feature branch long after (measured)
+    head="$(git -C "$root" ls-remote --symref origin HEAD)" \
+      || die "cannot ask origin for its default branch — pass --base <branch> (the integration branch)"
+    base="$(printf '%s\n' "$head" | awk '$1 == "ref:" && $3 == "HEAD" { sub("^refs/heads/", "", $2); print $2; exit }')"
+    [ -n "$base" ] || die "origin names no default branch — pass --base <branch> (the integration branch)"
+    cached="$(git -C "$root" symbolic-ref -q --short refs/remotes/origin/HEAD)" || cached=""   # lint: allow — an unset local pointer is fine: the remote answered
+    [ -z "$cached" ] || [ "$cached" = "origin/$base" ] \
+      || echo "task-wave: note — the local origin/HEAD ($cached) is stale; origin's default branch is $base (git remote set-head origin --auto)" >&2
   fi
   if [ ${#raw[@]} -gt 0 ]; then
     # explicit ids: the server's idReadable is the id (dev-05 is DEV-5); unknown → stop
