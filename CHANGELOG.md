@@ -36,7 +36,7 @@ download.
   that range fell out of step twice when the header grew.
 
 ### Tests
-- `tests/task-wave.sh`: 124 controls (1.14.1 had 107). New ones:
+- `tests/task-wave.sh`: 126 controls (1.14.1 had 107). New ones:
   - `task-wave.base` on YouTrack with no remote read, and on GitHub instead of
     `gh`'s default branch;
   - `--base` winning over the config;
@@ -49,19 +49,31 @@ download.
   - `bad..name` as the tracker's own default branch, from `gh` or from
     `ls-remote`, refused;
   - `--base '@{-1}'` (checkout shorthand) refused;
+  - `HEAD` refused, from `--base` and from the config (here with a stale
+    `origin/HEAD`);
   - a bad base with an empty ready set refused, on both trackers.
-- Seven mutations, each one caught: config ignored, branch name unchecked, the
-  base check skipped, the check done with `--branch`, flags unquoted, the Claude
-  flags dropped, and the earlier "check after the tracker default" form.
-- Codex review through `xreview.sh`, three rounds:
+- Eight mutations, each one caught:
+  - the config ignored;
+  - the branch-name check removed;
+  - the check done with `--branch` alone (`@{-1}` passes);
+  - the check done with the literal ref alone (`HEAD` passes);
+  - the check not run;
+  - the YouTrack check run only after the backlog;
+  - the flags unquoted;
+  - the Claude flags dropped.
+- Codex review through `xreview.sh`, four rounds:
   - round 1: the branch-name check ran before the tracker's default branch was
     filled in, so `bad..name` from `gh` passed;
   - round 2: `git check-ref-format --branch` accepts `@{-1}` and answers with
     the branch it resolves to, while the launcher used the literal string. Also,
     an empty ready set exited before the check, so whether a base passed
     depended on the backlog;
-  - now the literal `refs/heads/<base>` is checked once per tracker, right after
-    the base is chosen and before the backlog is read.
+  - round 3: the literal `refs/heads/HEAD` is a well-formed ref, but `HEAD` is
+    not a branch name. As a base it would mean the remote's symbolic pointer,
+    which may be stale;
+  - now both `git check-ref-format "refs/heads/<base>"` and `--branch` must
+    pass. The check runs once per tracker, right after the base is chosen and
+    before the backlog is read.
 
 ### Supply self-check
 - New subprocess calls: `git config --get` and `git check-ref-format`, both

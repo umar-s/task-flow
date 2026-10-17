@@ -85,6 +85,9 @@ fi
 check_base() {
   case "$base" in ""|-*) die "$base_src: '$base' is not a branch name" ;; esac
   git check-ref-format "refs/heads/$base" >/dev/null 2>&1 || die "$base_src: '$base' is not a branch name"   # lint: allow — git's own message is not the point
+  # … and --branch too: refs/heads/HEAD is a well-formed ref, but HEAD is no branch
+  # name (origin/HEAD is the remote's symbolic pointer — possibly stale)
+  git check-ref-format --branch "$base" >/dev/null 2>&1 || die "$base_src: '$base' is not a branch name"   # lint: allow — git's own message is not the point
   echo "task-wave: base origin/$base ($base_src)"
 }
 

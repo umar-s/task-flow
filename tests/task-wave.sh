@@ -551,6 +551,13 @@ git checkout -q -b tw-prev && git checkout -q main
 yt --dry-run --base '@{-1}' DEV-7 >"$TMP/out" 2>"$TMP/err"; rc=$?
 check "--base '@{-1}' (checkout shorthand) → rc 2, nothing planned" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err" && ! grep -q "^DEV-" "$TMP/out"'
 git branch -q -D tw-prev
+# HEAD: refs/heads/HEAD is a well-formed ref, HEAD is no branch name (Codex review, 1.14.2)
+yt --dry-run --base HEAD DEV-7 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "--base HEAD → rc 2, nothing planned" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err" && ! grep -q "^DEV-" "$TMP/out"'
+git config task-wave.base HEAD; git remote set-head origin develop >/dev/null
+bash "$TW" --dry-run 370 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "task-wave.base HEAD with a stale origin/HEAD → rc 2, nothing planned" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err" && ! grep -q "^#370 " "$TMP/out"'
+git config --unset task-wave.base; git remote set-head origin main >/dev/null
 # a base is checked before the backlog is read: an empty ready set does not hide a bad one
 yt --dry-run --base 'bad..name' --epic DEV-90 >/dev/null 2>"$TMP/err"; rc=$?
 check "youtrack: empty ready set (--epic DEV-90) with --base bad..name → rc 2" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err"'
