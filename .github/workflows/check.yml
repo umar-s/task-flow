@@ -34,6 +34,8 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/codex" --ignore-scripts --no-audit --no-fund @openai/codex@0.162.1
           echo "$RUNNER_TEMP/codex/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: tmux for the wave launcher's controls (tests/task-wave.sh)
+        run: command -v tmux >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq tmux; }
       - name: payload negative controls (tests/run.sh — every suite under tests/)
         run: bash tests/run.sh
       - name: unicode-guard over this repo's own change (dogfood)

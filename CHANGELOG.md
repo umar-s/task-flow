@@ -9,6 +9,53 @@ below is tagged `vX.Y.Z` in git. Installs track the default branch (the
 marketplace entry pins no ref), so a release tag marks history rather than a
 download.
 
+## [1.13.0] — 2026-10-17
+
+A wave of tasks in parallel. `decompose` already proves that one wave's tasks
+write disjoint files; until now each still had to be started by hand — a
+worktree, a terminal, the right harness, the right prompt. Found in use: the
+tictactoe lab ran its wave 2 as one Claude Code task beside one Codex task.
+
+### Added
+- `templates/wave/task-wave.sh` (copied once into a project's `scripts/`):
+  for every ready issue — open, labelled `builder:claude` or `builder:codex`,
+  every blocked-by issue closed — a git worktree `../<repo>-<N>` on branch
+  `task-<N>` from `origin/<base>`, and a tmux window `#<N>` in session
+  `wave-<repo>` running `claude '/task-flow:task #N'` or
+  `codex '$task-flow:task #N'`. Explicit issue numbers override the ready set;
+  `--dry-run` prints the plan and creates nothing; `--base` names another
+  integration branch; an existing worktree is resumed, and a `task-<N>` branch
+  left by a removed worktree is reused rather than recreated. Sessions stay
+  interactive (`task` asks on ingest and before merging); the script never
+  merges, pushes or deletes. An unreadable issue list or blocker list stops the
+  run (rc 2) instead of reading as "no ready task" or "ready". Tracker: GitHub
+  Issues through `gh` (the blocked-by API).
+- `tests/task-wave.sh`: 19 controls with a stub `gh` that runs the script's own
+  `-q` filters through `jq` over fixtures, stub `claude`/`codex` recording argv
+  and cwd, and a private tmux server (`TMUX_TMPDIR`). Ten mutations of the
+  script — blockers ignored, either tracker failure swallowed, the `$` dropped
+  from the Codex prompt, a window or session outside its worktree, an existing
+  branch recreated, `--base` ignored, the tmux check dropped, a dry run that
+  creates — each fail it.
+- `scripts/lint.sh`: the launcher is syntax-checked and executable, carries no
+  unmarked fail-open idiom, keeps "refusing to guess that it is ready", calls
+  neither `gh pr merge` nor `git push`; `decompose` Handoff and both READMEs
+  name it.
+- `.github/workflows/check.yml`: installs tmux when the runner lacks it, so the
+  launcher's controls run in CI rather than skip.
+
+### Changed
+- `decompose` Handoff: a wave's tasks can run side by side, one session each,
+  through the launcher; offered with the return list when the tracker is
+  GitHub Issues.
+- README / README.ru: section "Running a wave in parallel" / «Волна задач
+  параллельно».
+
+Supply-chain self-check (`git diff v1.12.0` over skills/ templates/, plus the
+new payload file): the launcher talks to the network through `git fetch origin
+<base>` and `gh` (issue list, issue view, the blocked-by API) — reads only. No
+credentials handled, no deletion, no `eval`, no base64.
+
 ## [1.12.0] — 2026-10-16
 
 Two harnesses and cross-review: the three skills run unchanged in Codex CLI,
@@ -906,6 +953,7 @@ Donor audit of the `hybrid-plan` / `hybrid-review` skill set —
   tool-agnostic migration-guard and protected-branch rules into any repo —
   GitLab and GitHub CI, pre-commit hooks, failing closed.
 
+[1.13.0]: https://github.com/umar-s/task-flow/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/umar-s/task-flow/compare/v1.11.0...v1.12.0
 [1.11.0]: https://github.com/umar-s/task-flow/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/umar-s/task-flow/compare/v1.9.1...v1.10.0

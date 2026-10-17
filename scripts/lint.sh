@@ -260,6 +260,15 @@ if grep -nE '\|\| true|2>/dev/null' templates/xreview/*.sh | grep -v 'lint: allo
   err "fail-open idiom in templates/xreview (mark a deliberate one with '# lint: allow')"
   grep -nE '\|\| true|2>/dev/null' templates/xreview/*.sh | grep -v 'lint: allow' >&2
 fi
+TW=templates/wave/task-wave.sh
+bash -n "$TW" || err "syntax error: $TW"; [ -x "$TW" ] || err "not executable: $TW"
+if grep -nE '\|\| true|2>/dev/null' "$TW" | grep -v 'lint: allow' >/dev/null; then
+  err "fail-open idiom in $TW (mark a deliberate one with '# lint: allow')"; grep -nE '\|\| true|2>/dev/null' "$TW" | grep -v 'lint: allow' >&2
+fi
+grep -q 'refusing to guess that it is ready' "$TW" || err "$TW: an unreadable blocker list must stop the wave, never count as ready"
+grep -qE '^[^#]*\b(gh pr merge|git push)\b' "$TW" && err "$TW must not merge or push — sessions stay interactive and \`task\` owns landing"
+grep -q 'templates/wave/task-wave.sh' skills/decompose/SKILL.md || err "decompose Handoff no longer names the wave launcher"
+for r in README.md README.ru.md; do grep -q 'task-wave.sh' "$r" || err "$r does not describe the wave launcher"; done
 grep -q 'Ready to merge' "$XS" && err "$XS parses a Markdown verdict again (two review rounds showed a person and a parser read it differently)"
 grep -q 'last two non-empty lines' "$XS" || err "$XS no longer reads the verdict from the last two lines only"
 for w in 'exec -s read-only --ignore-rules' '--ignore-user-config' '--setting-sources ""' '"disableAllHooks":true' '--strict-mcp-config' '--disable-slash-commands' '--permission-mode dontAsk' \

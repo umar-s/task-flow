@@ -184,6 +184,26 @@ and `## Code Review Rules`, a `CLAUDE.md` that imports it, the project's
 (a commit leaves the sandbox, a push asks a person, the force forms a prefix
 rule can see are forbidden).
 
+## Running a wave in parallel
+
+Tasks in one `decompose` wave do not write the same files, so each can have its
+own session at the same time. `templates/wave/task-wave.sh` — copy it once into
+the project's `scripts/` — starts them: for every ready issue (open, labelled
+`builder:claude` or `builder:codex`, every blocked-by issue closed) a git
+worktree `../<repo>-<N>` on branch `task-<N>`, and a tmux window running the
+harness the label names with `task` already invoked:
+
+```bash
+bash scripts/task-wave.sh --dry-run   # what would start
+bash scripts/task-wave.sh             # start it; or name issues: … 12 14
+tmux attach -t wave-<repo>            # Ctrl-b w lists the windows
+```
+
+The sessions stay interactive — `task` asks on ingest and before it merges —
+and the script never merges, pushes or deletes. An existing worktree is resumed;
+`--base <branch>` starts from an integration branch other than the default one.
+The next wave starts once this one is merged. Tracker: GitHub Issues through `gh`.
+
 ## Skill routing (paste into the consuming project's `AGENTS.md` or `CLAUDE.md`)
 
 The skills' own `description`s compete with dozens of others in a session; a
