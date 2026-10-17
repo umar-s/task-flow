@@ -94,6 +94,8 @@ printf '#!/usr/bin/env bash\ncase " $* " in *" fetch "*) echo fetch >> "$STUB_LO
 for a in claude codex; do
   printf '#!/usr/bin/env tw-interp\nprintf "%%s\\n" "$PWD" "$@" > "$STUB_LOG/%s-$(basename "$PWD")"; compgen -e > "$STUB_LOG/env-%s-$(basename "$PWD")"; echo x >> "$STUB_LOG/launches-%s-$(basename "$PWD")"; sleep 60\n' "$a" "$a" "$a" > "$TMP/bin/$a"
 done
+# tmux itself, with show-environment made to fail on demand (global: TMUX_ENV_FAIL_G, session: _S)
+printf '#!/bin/sh\ncase " $* " in *" show-environment -g "*) [ -n "${TMUX_ENV_FAIL_G:-}" ] && { echo "lost server" >&2; exit 1; } ;; *" show-environment -t "*) [ -n "${TMUX_ENV_FAIL_S:-}" ] && { echo "lost server" >&2; exit 1; } ;; esac\nexec %q "$@"\n' "$(command -v tmux)" > "$TMP/bin/tmux"
 chmod +x "$TMP/bin/"*
 ln -s "$(command -v bash)" "$TMP/bin/tw-interp"
 export PATH="$TMP/bin:$PATH" FX="$F" STUB_LOG="$TMP/log"
@@ -595,31 +597,45 @@ tmux kill-server >/dev/null 2>&1 || true
 #     a flag taking several values (claude --mcp-config, codex --image) took the prompt
 #     as one more, so the prompt follows `--`; and the launching agent's session
 #     variables reached every window — from this shell or from the tmux server's own
-out="$(TASK_WAVE_CLAUDE_ARGS='--mcp-config /m.json --' yt --dry-run DEV-7)"; rc=$?
-check "a '--' ending TASK_WAVE_CLAUDE_ARGS is dropped, not doubled" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -qF "claude --mcp-config /m.json -- /task-flow:task\\ DEV-7" && ! printf "%s" "$out" | grep -qF -- "-- --"'
+waitfile() { for i in $(seq 1 20); do [ -s "$1" ] && return 0; sleep 0.3; done; return 1; }
+out="$(TASK_WAVE_CLAUDE_ARGS='--mcp-config /m.json --' TASK_WAVE_CODEX_ARGS='-i /i.png --' yt --dry-run DEV-7 DEV-5)"; rc=$?
+check "a '--' ending TASK_WAVE_*_ARGS is dropped, not doubled — claude and codex" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -qF "claude --mcp-config /m.json -- /task-flow:task\\ DEV-7" && printf "%s" "$out" | grep -qF "codex -i /i.png -- \\\$task-flow:task\\ DEV-5" && ! printf "%s" "$out" | grep -qF -- "-- --"'
+TASK_WAVE_CLAUDE_ARGS='-- --settings /s.json' yt --dry-run DEV-7 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "a '--' before another flag in TASK_WAVE_CLAUDE_ARGS → rc 2, nothing planned" '[ $rc -eq 2 ] && grep -q "before another flag" "$TMP/err" && ! grep -q "^DEV-7 " "$TMP/out"'
 TASK_WAVE_CODEX_ARGS='-- -p builder' yt --dry-run DEV-5 >"$TMP/out" 2>"$TMP/err"; rc=$?
-check "a '--' before another flag → rc 2, nothing planned" '[ $rc -eq 2 ] && grep -q "before another flag" "$TMP/err" && ! grep -q "^DEV-5 " "$TMP/out"'
-rm -f "$STUB_LOG/env-claude-lab-DEV-7"
-CLAUDECODE=1 CLAUDE_CODE_SESSION_ID=parent CLAUDE_CODE_OAUTH_TOKEN=tok CODEX_SESSION_ID=cx PREDICT=on TASK_WAVE_KEEP_ENV=PREDICT yt DEV-7 >/dev/null 2>&1; rc=$?
-for i in $(seq 1 20); do [ -s "$STUB_LOG/env-claude-lab-DEV-7" ] && break; sleep 0.3; done
-e="$STUB_LOG/env-claude-lab-DEV-7"
-check "a server task-wave starts: the agent's session variables do not reach the window" '[ $rc -eq 0 ] && [ -s "$e" ] && ! grep -qxE "CLAUDECODE|CLAUDE_CODE_SESSION_ID|CODEX_SESSION_ID" "$e"'
-check "the CLI's own auth and TASK_WAVE_KEEP_ENV stay" 'grep -qx CLAUDE_CODE_OAUTH_TOKEN "$e" && grep -qx PREDICT "$e"'
-# the wave's own session carries one in its environment: a new window there gets it too
-tmux new-window -d -t "=wave-lab" -n keep "sleep 60"; tmux kill-window -t "=wave-lab:DEV-7"; rm -f "$e"
-tmux set-environment -t "=wave-lab" CLAUDE_CODE_ENTRYPOINT cli
-( unset CLAUDE_CODE_ENTRYPOINT; yt DEV-7 >/dev/null 2>&1 ); rc=$?
-for i in $(seq 1 20); do [ -s "$e" ] && break; sleep 0.3; done
-check "a variable in the wave session's own environment does not reach a new window" '[ $rc -eq 0 ] && [ -s "$e" ] && ! grep -qx CLAUDE_CODE_ENTRYPOINT "$e"'
-tmux kill-server >/dev/null 2>&1 || true; rm -f "$e"
+check "a '--' before another flag in TASK_WAVE_CODEX_ARGS → rc 2, nothing planned" '[ $rc -eq 2 ] && grep -q "before another flag" "$TMP/err" && ! grep -q "^DEV-5 " "$TMP/out"'
+ec="$STUB_LOG/env-claude-lab-DEV-7"; ex="$STUB_LOG/env-codex-lab-DEV-5"; rm -f "$ec" "$ex"
+# one of every family the window drops, and every auth family it keeps
+scrubbed="CLAUDECODE CLAUDE_CODE_SESSION_ID CLAUDE_PLUGIN_ROOT CLAUDE_ENV_FILE CLAUDE_PROJECT_DIR CLAUDE_EFFORT CLAUDE_PID CODEX_SESSION_ID CODEX_THREAD_ID CODEX_CI CODEX_SANDBOX PLUGIN_ROOT PLUGIN_DATA PP_SESSION"
+kept="CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_SKIP_BEDROCK_AUTH CLAUDE_CODE_CLIENT_CERT PREDICT"
+none_of() { local v; for v in $1; do ! grep -qx "$v" "$2" || return 1; done; }
+all_of() { local v; for v in $1; do grep -qx "$v" "$2" || return 1; done; }
+( for v in $scrubbed $kept; do export "$v=x"; done; TASK_WAVE_KEEP_ENV=PREDICT yt DEV-7 DEV-5 >/dev/null 2>&1 ); rc=$?
+waitfile "$ec"; waitfile "$ex"
+check "a server task-wave starts: no agent session variable reaches the claude window" '[ $rc -eq 0 ] && [ -s "$ec" ] && none_of "$scrubbed" "$ec"'
+check "… nor the codex window" '[ -s "$ex" ] && none_of "$scrubbed" "$ex"'
+check "the CLI's own auth families and TASK_WAVE_KEEP_ENV stay, in both windows" 'all_of "$kept" "$ec" && all_of "$kept" "$ex"'
+# the wave's own session carries one in its environment (a name no other source has):
+# a new window there gets it too
+tmux new-window -d -t "=wave-lab" -n keep "sleep 60"; tmux kill-window -t "=wave-lab:DEV-7"; tmux kill-window -t "=wave-lab:DEV-5"; rm -f "$ec" "$ex"
+tmux set-environment -t "=wave-lab" CLAUDE_CODE_WAVE_PROBE x
+yt DEV-7 DEV-5 >/dev/null 2>&1; rc=$?
+waitfile "$ec"; waitfile "$ex"
+check "a variable in the wave session's own environment reaches neither new window" '[ $rc -eq 0 ] && [ -s "$ec" ] && [ -s "$ex" ] && ! grep -qx CLAUDE_CODE_WAVE_PROBE "$ec" && ! grep -qx CLAUDE_CODE_WAVE_PROBE "$ex"'
+tmux kill-server >/dev/null 2>&1 || true; rm -f "$ec" "$ex"
 # the server just killed can still hold its socket: retry until the foreign session is up
 for i in $(seq 1 20); do
   ( unset CLAUDECODE CLAUDE_CODE_MESSAGING_SOCKET; CLAUDECODE=1 CLAUDE_CODE_MESSAGING_SOCKET=/parent.sock tmux new-session -d -s other "sleep 60" 2>/dev/null ) && break; sleep 0.2
 done
 check "the foreign server is up before the wave (else the next check is vacuous)" 'tmux has-session -t =other'
-( unset CLAUDECODE CLAUDE_CODE_MESSAGING_SOCKET; yt DEV-7 >/dev/null 2>&1 ); rc=$?
-for i in $(seq 1 20); do [ -s "$e" ] && break; sleep 0.3; done
-check "a server already up with an agent's variables: the window gets none of them" '[ $rc -eq 0 ] && [ -s "$e" ] && ! grep -qxE "CLAUDECODE|CLAUDE_CODE_MESSAGING_SOCKET" "$e"'
+( unset CLAUDECODE CLAUDE_CODE_MESSAGING_SOCKET; yt DEV-7 DEV-5 >/dev/null 2>&1 ); rc=$?
+waitfile "$ec"; waitfile "$ex"
+check "a server already up with an agent's variables: neither window gets them" '[ $rc -eq 0 ] && none_of "CLAUDECODE CLAUDE_CODE_MESSAGING_SOCKET" "$ec" && none_of "CLAUDECODE CLAUDE_CODE_MESSAGING_SOCKET" "$ex" && [ -s "$ec" ] && [ -s "$ex" ]'
+# an environment tmux cannot hand over stops the run before anything is planned
+TMUX_ENV_FAIL_G=1 yt --dry-run DEV-7 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "the tmux server's environment unreadable → rc 2, nothing planned" '[ $rc -eq 2 ] && grep -q "cannot read the tmux server" "$TMP/err" && ! grep -q "^DEV-7 " "$TMP/out"'
+TMUX_ENV_FAIL_S=1 yt --dry-run DEV-7 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "the wave session's environment unreadable → rc 2, nothing planned" '[ $rc -eq 2 ] && grep -q "cannot read the environment of tmux session wave-lab" "$TMP/err" && ! grep -q "^DEV-7 " "$TMP/out"'
 tmux kill-server >/dev/null 2>&1 || true
 
 echo "tests/task-wave: $pass passed, $fail failed"

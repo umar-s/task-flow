@@ -41,7 +41,10 @@ never looked at.
    xreview.sh keeps (`CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_*`,
    `CLAUDE_CODE_SKIP_*_AUTH`, `CLAUDE_CODE_CLIENT_*`) and every name in
    `TASK_WAVE_KEEP_ENV`.
-4. Only names are read from tmux; an unreadable tmux environment → rc 2.
+4. Only names are kept from tmux: `show-environment` prints `NAME=value`, and the
+   pipe through `sed` keeps the name, so no value is held in a variable or printed.
+   An unreadable tmux environment, global or the session's → rc 2 before anything
+   is planned.
 5. Controls: the `--` in planned and launched commands on both trackers; trailing
    `--` dropped; a mid `--` refused; the window's environment without the agent's
    variables when task-wave starts the server, when a server already holds them,
@@ -50,3 +53,17 @@ never looked at.
 6. Live: the planned commands, run on a private tmux server that holds all 12
    variables, start the real claude and codex with the prompt, and
    `/proc/<pid>/environ` of each CLI holds none of them.
+
+## Premortem edges
+
+| # | How it fails | Control |
+|---|---|---|
+| E1 | A project's wrapper already ends `TASK_WAVE_CLAUDE_ARGS` with `--` (the documented 1.14.2 workaround): a second `--` makes the first `--` the prompt. | Z3 "a '--' ending TASK_WAVE_*_ARGS is dropped, not doubled — claude and codex"; mutation "trailing -- not dropped". |
+| E2 | `--` in the middle of the variable: every flag after it, and the prompt, become positionals. | Z3 two "before another flag … rc 2" controls (claude, codex); mutation "mid -- not refused". |
+| E3 | The fix lands in one CLI only: codex keeps losing its prompt to `--image`. | `--` asserted in planned commands (both trackers) and in the launched argv of both stubs; mutations "claude prompt without --", "codex prompt without --"; lint pin counts 2. |
+| E4 | The scrub reads only this shell: a tmux server first started from an agent keeps its variables, and every later window gets them. | Z3 "a server already up with an agent's variables" (foreign session up first, checked); mutation "tmux server env not read". |
+| E5 | A variable set in the wave session's own environment (`update-environment`, `set-environment -t`) reaches a new window. | Z3 session control with a name no other source holds; mutation "tmux session env not read". |
+| E6 | Over-scrubbing removes the CLI's own auth (OAuth token, Bedrock/Vertex selection, client certs): every window asks to log in. | Z3 "auth families and TASK_WAVE_KEEP_ENV stay, in both windows"; mutations "auth not kept", "TASK_WAVE_KEEP_ENV ignored". |
+| E7 | `tmux show-environment` fails (server gone between calls): the scrub list silently shrinks and the wave starts leaky. | Z3 two "unreadable → rc 2" controls via a tmux wrapper; mutations "tmux … env failure ignored". |
+| E8 | Values reach the plan output or a variable (tokens live in that environment). | Only names leave the `sed`; the plan prints `-u NAME`. Reviewed by reading; no control. |
+| E9 | bash 3.2 (macOS): `unset "a[i]"`, `${a[@]+…}` on an emptied array. | Suite under the pinned `bash:3.2` image (CI and local). |

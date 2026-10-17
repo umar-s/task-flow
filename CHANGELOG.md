@@ -9,6 +9,69 @@ below is tagged `vX.Y.Z` in git. Installs track the default branch (the
 marketplace entry pins no ref), so a release tag marks history rather than a
 download.
 
+## [1.14.3] — 2026-10-17
+
+### Fixed
+- The wave launcher's prompt now follows a `--` of its own, in both windows.
+  On the first live wave of a GitLab + YouTrack workspace, every Claude Code
+  window closed at once: `claude --mcp-config <file> '/task-flow:task <ID>'`
+  read the prompt as a second config path (`MCP config file not found:
+  /task-flow:task …`, claude 2.1.302). Codex has the same kind of flag, and
+  failed quietly: `codex -i <file> '$task-flow:task <ID>'` attached the prompt
+  as a second image and opened with an empty prompt (codex-cli 0.163.0).
+  Both CLIs take the prompt after `--`. A `--` that ends
+  `TASK_WAVE_CLAUDE_ARGS` / `TASK_WAVE_CODEX_ARGS`, the workaround that
+  project's wrapper ships, is dropped rather than doubled. A `--` followed by
+  another flag is refused (rc 2).
+- A window no longer inherits the session of the agent that launched the wave.
+  The window command now unsets, via `env -u`, the variable families
+  `xreview.sh` already removes: `CLAUDECODE`, `CLAUDE_CODE_*` (session ids, the
+  messaging socket and its token), `CLAUDE_PLUGIN_*`, `CODEX_SESSION_ID`,
+  `CODEX_SANDBOX*`, `PP_*` and the rest. A Claude Code 2.1.302 session holds 12
+  of them. They are collected from this shell, from the running tmux server's
+  global environment and from the wave session's environment. Since a tmux
+  window takes the server's environment, a server first started from an
+  agent's shell would otherwise hand that agent's variables to every later
+  window. Kept are the CLI's own auth families (`CLAUDE_CODE_OAUTH_TOKEN`,
+  `CLAUDE_CODE_USE_*`, `CLAUDE_CODE_SKIP_*_AUTH`, `CLAUDE_CODE_CLIENT_*`) and
+  whatever `TASK_WAVE_KEEP_ENV` names. The report said a nested claude refuses
+  to start; on 2.1.302 it does not, but the parent's ids and messaging channel
+  reached the window all the same.
+
+### Supply chain (self-check)
+- New capability: the launcher reads the tmux server's and the wave session's
+  environment (`tmux show-environment`) and keeps only the variable names. No
+  value is held or printed. An unreadable environment stops the run (rc 2). No
+  network, credential, `rm -rf`, `eval` or base64 hits in the diff from v1.14.2.
+
+### Tests
+- `tests/task-wave.sh`: 141 controls (1.14.2 had 130). The stub CLIs now also
+  record the names in their environment, and a tmux wrapper can make
+  `show-environment` fail. New ones (Z3):
+  - the `--` in the planned and launched commands of both CLIs, on both
+    trackers;
+  - a trailing `--` dropped and a `--` before another flag refused, for each
+    CLI;
+  - one variable of every family absent, and every auth family present, in both
+    windows when task-wave starts the server;
+  - the same when a foreign server already holds an agent's variables, with
+    that server checked to be up first;
+  - the same for a variable only the wave session's environment holds;
+  - an unreadable global or session environment refused.
+- 18 mutations, each caught: the 7 of 1.14.2 (the `task-wave.base` one
+  rewritten for the code as round 6 left it) and 11 new ones (`--` dropped for
+  claude or for codex, trailing `--` kept, mid `--` allowed, no scrub, the
+  server's or the session's environment not read, either read's failure
+  ignored, auth not kept, `TASK_WAVE_KEEP_ENV` ignored). Green under the pinned
+  `bash:3.2` image. The tmux wrapper is `/bin/sh`: the stripped-PATH control
+  runs tmux with `PATH=/usr/bin:/bin`, where that image has no bash.
+- Live, outside the suite: the planned commands were run as windows of a
+  private tmux server that held all 12 variables, with the real claude 2.1.302
+  and codex-cli 0.163.0. Claude reached the workspace prompt with
+  `--mcp-config <file> --` in its flags. Codex showed one image and the task
+  as its prompt. `/proc/<pid>/environ` of each CLI held none of the 12
+  variables, while the pane's shell held all of them.
+
 ## [1.14.2] — 2026-10-17
 
 ### Added
@@ -1304,6 +1367,7 @@ Donor audit of the `hybrid-plan` / `hybrid-review` skill set —
   tool-agnostic migration-guard and protected-branch rules into any repo —
   GitLab and GitHub CI, pre-commit hooks, failing closed.
 
+[1.14.3]: https://github.com/umar-s/task-flow/compare/v1.14.2...v1.14.3
 [1.14.2]: https://github.com/umar-s/task-flow/compare/v1.14.1...v1.14.2
 [1.14.1]: https://github.com/umar-s/task-flow/compare/v1.14.0...v1.14.1
 [1.14.0]: https://github.com/umar-s/task-flow/compare/v1.13.0...v1.14.0
