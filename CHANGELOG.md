@@ -103,7 +103,9 @@ tictactoe lab ran its wave 2 as one Claude Code task beside one Codex task.
 Supply-chain self-check (`git diff v1.12.0` over skills/ templates/, plus the
 new payload file): the launcher talks to the network through `git fetch origin
 <base>` and `gh` (the issues list, issue view, the blocked-by API) — reads
-only. No credentials handled, no deletion, no `eval`, no base64.
+only. The one deletion is its own lock on exit (`rm -f` of the pid file it
+wrote, `rmdir` of the lock directory it created). No credentials handled, no
+`eval`, no base64.
 
 Cross-review (Codex, `xreview.sh`): round 1 — ready with fixes, three Required
 (the ready set cut at 200 issues before the label filter; any existing
