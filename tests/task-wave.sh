@@ -497,7 +497,7 @@ ln -sf "$TMP/bin/git" "$TMP/nogh/git"; ln -sf "$TMP/bin/curl" "$TMP/nogh/curl"
 out="$(PATH="$TMP/nogh" "$TMP/nogh/bash" "$TW" --tracker youtrack --dry-run --epic DEV-1)"; rc=$?
 check "youtrack without gh on PATH → works" '[ $rc -eq 0 ] && [ "$(ytids "$out")" = "DEV-2 DEV-5 " ]'
 
-# Y10. the real run: worktrees from origin/HEAD, windows named by id, the prompt byte-exact
+# Y10. the real run: worktrees from the remote's default branch, windows named by id, the prompt byte-exact
 rm -f "$STUB_LOG/fetches"
 yt --epic DEV-1 > "$TMP/run.out"; rc=$?
 check "youtrack run exits 0, one fetch" '[ $rc -eq 0 ] && [ "$(fetches)" = 1 ]'
@@ -516,7 +516,7 @@ out="$(yt --dry-run DEV-2)"
 check "youtrack: a live DEV-25 window does not count as DEV-2" '! printf "%s" "$out" | grep -q "already running" && printf "%s" "$out" | grep -q "exists — resuming"'
 tmux kill-server >/dev/null 2>&1 || true
 
-# Y12. --base still wins over origin/HEAD
+# Y12. --base still wins over the remote's default branch
 out="$(yt --dry-run --base develop DEV-7)"
 check "youtrack: --base develop → a new worktree from origin/develop" 'printf "%s" "$out" | grep -qF "lab-DEV-7 -b task-DEV-7 origin/develop"'
 
