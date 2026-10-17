@@ -64,6 +64,10 @@ one interactive tmux window per task, Claude Code or Codex by the issue's
     and `2` are one issue — one plan entry, one window, the live-window check
     included); the controls that count launches wait for the stub CLI (bounded),
     then watch 0.5 s more for an extra one.
+21. Round 10 fix holds: the session `wave-<repo>` carries its owner
+    (`@task_wave_repo` = the canonical git common dir, set in the same tmux call that
+    creates it); a session of that name owned by another repository, or by nobody,
+    is refused before fetch, worktree or window — never read as "already running".
 
 ## Premortem edges
 
@@ -95,3 +99,4 @@ Imagined failures of the launcher, each mapped to the control in
 | E21 | Two launchers run at once; both see no window #N and both start an agent in one checkout | case 7b: concurrent runs on a resumable task → one starts, the other is refused by the lock; one window, one launch; the lock is released after |
 | E22 | The window's environment differs from the launcher's (tmux version, update-environment, default-command); the checked CLI or its `env` interpreter is not found there | case 10: a tmux shim runs the client with `PATH=/usr/bin:/bin`, the stubs' interpreter lives only in the test bin (as node in nvm's) → the CLI still runs. Measured: tmux 3.4 gives a new window the creating client's PATH, so the shim models the other setups |
 | E23 | The CLI or its interpreter is found through a relative PATH entry, valid in the launcher's directory but not in the worktree the window starts in | case 11: `PATH=relbin:…` with the CLI and its `env` interpreter only there → still starts |
+| E24 | Two checkouts with the same basename share `wave-<name>`; one takes the other's live `#N` for its own and silently skips its task | case 7a: `…/other/lab` beside a running `lab` wave → rc 2, nothing created; an unmarked `wave-solo` → rc 2 |

@@ -111,7 +111,7 @@ settle() {
 }
 
 # --- a repository with an origin: main, and develop one commit ahead
-git init -q --bare "$TMP/origin.git"
+git init -q --bare -b main "$TMP/origin.git"
 git init -q -b main "$TMP/w/lab"; cd "$TMP/w/lab"
 git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
 git remote add origin "$TMP/origin.git"; git push -q origin main
@@ -158,7 +158,7 @@ check "no tmux → rc 2, no worktree, no fetch" '[ $rc -eq 2 ] && grep -q "tmux 
 # 4b. a wave that needs a harness not on PATH → refused before fetch, worktree or window
 mkdir -p "$TMP/nocodex"
 for c in gh jq dirname basename bash awk sort seq sed tr wc tmux mkdir rmdir rm cat; do ln -sf "$(command -v $c)" "$TMP/nocodex/$c"; done
-ln -sf "$TMP/bin/git" "$TMP/nocodex/git"; ln -sf "$TMP/bin/claude" "$TMP/nocodex/claude"
+ln -sf "$TMP/bin/git" "$TMP/nocodex/git"; ln -sf "$TMP/bin/claude" "$TMP/nocodex/claude"; ln -sf "$TMP/bin/tw-interp" "$TMP/nocodex/tw-interp"
 PATH="$TMP/nocodex" "$TMP/nocodex/bash" "$TW" 2 5 >/dev/null 2>"$TMP/err"; rc=$?
 check "codex missing for #5 → rc 2, #2 not started, no fetch" '[ $rc -eq 2 ] && grep -q "not on PATH: codex" "$TMP/err" && [ ! -e "$TMP/w/lab-2" ] && ! tmux has-session -t =wave-lab 2>/dev/null && [ "$(fetches)" = 0 ]'
 out="$(PATH="$TMP/nocodex" "$TMP/nocodex/bash" "$TW" --dry-run 2 5)"; rc=$?
@@ -212,6 +212,17 @@ check "still two windows and one claude launch in lab-2" '[ "$(tmux list-windows
 tmux kill-window -t "=wave-lab:#2"
 out="$(bash "$TW" 2)"
 check "window gone → existing worktree resumed in a new window" 'printf "%s" "$out" | grep -q "exists — resuming" && [ "$(tmux list-windows -t =wave-lab | wc -l)" -eq 2 ]'
+check "the session carries its owner, this repository's git common dir" '[ "$(tmux show-options -qv -t =wave-lab: @task_wave_repo)" = "$(cd "$(git rev-parse --git-common-dir)" && pwd -P)" ]'
+
+# 7a. another checkout with the same basename (…/other/lab) while this wave-lab runs #2:
+#     its own #2 is not "already running" — the session is not its own; refused before anything
+git clone -q "$TMP/origin.git" "$TMP/other/lab"; f0="$(fetches)"
+(cd "$TMP/other/lab" && bash "$TW" 2 >/dev/null 2>"$TMP/err"); rc=$?
+check "same basename, other repository → rc 2, not a silent skip, nothing created" '[ $rc -eq 2 ] && grep -q "tmux session wave-lab belongs to" "$TMP/err" && [ ! -e "$TMP/other/lab-2" ] && [ "$(fetches)" = "$f0" ]'
+#     … and a wave-<name> session nobody marked (made by hand) is not read either
+git clone -q "$TMP/origin.git" "$TMP/s/solo"; tmux new-session -d -s wave-solo "sleep 60"
+(cd "$TMP/s/solo" && bash "$TW" 2 >/dev/null 2>"$TMP/err"); rc=$?
+check "an unmarked wave-solo session → rc 2" '[ $rc -eq 2 ] && grep -q "belongs to another use of that name" "$TMP/err" && [ ! -e "$TMP/s/solo-2" ]'
 
 # 7b. two launchers at once on a resumable task: one starts it, the other is refused — never two agents
 tmux kill-window -t "=wave-lab:#2"; rm -f "$STUB_LOG/launches-claude-lab-2"

@@ -79,8 +79,9 @@ branch_path() {
 # One launcher per repository at a time: the window check below and the window it
 # leads to must not interleave with another run's (two agents in one checkout).
 # mkdir is atomic everywhere; the lock sits in the git dir every worktree shares.
+common="$(cd "$root" && cd "$(git rev-parse --git-common-dir)" && pwd -P)"
 if [ $dry = 0 ]; then
-  lock="$(cd "$root" && cd "$(git rev-parse --git-common-dir)" && pwd -P)/task-wave.lock"
+  lock="$common/task-wave.lock"
   if ! mkdir "$lock" 2>/dev/null; then   # lint: allow — a failing mkdir is the answer: the lock is held
     holder="$(cat "$lock/pid" 2>/dev/null)" || holder="?"   # lint: allow — the holder may not have written its pid yet
     die "another task-wave holds $lock (pid $holder) — wait for it; if that process is gone, remove the directory"
@@ -91,8 +92,13 @@ fi
 
 # A live window #<N> in this wave's session is that task's agent, still running
 # (a window closes when its CLI exits) — never start a second one beside it.
+# The session is named by the checkout's basename, so two repositories can share
+# the name: it carries its owner (@task_wave_repo = this git common dir), and a
+# session owned by another repository — or by nobody — is not ours to read.
 session="wave-$name"; running=" "
 if command -v tmux >/dev/null && tmux has-session -t "=$session" 2>/dev/null; then   # lint: allow — "no session" is the answer, not an error
+  owner="$(tmux show-options -qv -t "=$session:" @task_wave_repo)"
+  [ "$owner" = "$common" ] || die "tmux session $session belongs to ${owner:-another use of that name} — not this repository ($common); rename or close it"
   running=" $(tmux list-windows -t "=$session" -F '#{window_name}' | tr '\n' ' ')"
 fi
 
@@ -160,7 +166,8 @@ while [ $i -lt ${#plan_n[@]} ]; do
   if tmux has-session -t "=$session" 2>/dev/null; then   # lint: allow — "no session" is the answer, not an error
     tmux new-window -t "=$session" -n "#$n" -c "$wt" "$cmd"
   else
-    tmux new-session -d -s "$session" -n "#$n" -c "$wt" "$cmd"
+    # one tmux call: the owner is set before a window that exits at once could take the session with it
+    tmux new-session -d -s "$session" -n "#$n" -c "$wt" "$cmd" \; set-option -t "=$session:" @task_wave_repo "$common"
   fi
   i=$((i+1))
 done
