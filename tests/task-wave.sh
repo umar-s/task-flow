@@ -60,7 +60,7 @@ done
 set -- "${args[@]}"
 [ -n "${GH_FAIL:-}" ] && case "$*" in *"$GH_FAIL"*) echo "gh: simulated failure" >&2; exit 1 ;; esac
 case "$1 $2" in
-  "repo view")  jq -r "$q" "$FX/repo.json"; exit ;;
+  "repo view")  jq --arg b "${GH_DEFAULT_BRANCH:-main}" '.defaultBranchRef.name = $b' "$FX/repo.json" | jq -r "$q"; exit ;;
   "issue view") [ -n "${GH_SLOW:-}" ] && sleep "$GH_SLOW"
                 [ -f "$FX/issue-$3.json" ] || exit 4; jq -r "$q" "$FX/issue-$3.json"; exit ;;
   "issue list") jq -r '.[:200]' "$FX/open.json" | jq -r "$q"; exit ;;     # gh's --limit 200 truncation
@@ -70,6 +70,7 @@ case "$2" in
   repos/o/lab/issues\?*)
     label="${2##*labels=}"; label="${label%%&*}"
     sel="$(jq --arg l "$label" '[.[] | select(any(.labels[]; .name == $l))]' "$FX/open.json")"
+    [ -n "${GH_EMPTY:-}" ] && sel='[]'                     # an empty backlog
     [ $pag = 1 ] || sel="$(printf '%s' "$sel" | jq '.[:100]')"
     printf '%s' "$sel" | jq -r "$q" ;;
   repos/o/lab/issues/*/dependencies/blocked_by*)
@@ -87,7 +88,7 @@ case "$2" in
   *) echo "gh stub: unexpected api: $2" >&2; exit 3 ;;
 esac
 EOF
-printf '#!/usr/bin/env bash\ncase " $* " in *" fetch "*) echo fetch >> "$STUB_LOG/fetches" ;; *" ls-remote "*) [ -n "${GIT_LSREMOTE_FAIL:-}" ] && { echo "fatal: Could not read from remote repository." >&2; exit 128; }; [ -n "${GIT_LSREMOTE_OUT+set}" ] && { printf "%%b" "$GIT_LSREMOTE_OUT"; exit 0; } ;; esac\nexec %q "$@"\n' "$REAL_GIT" > "$TMP/bin/git"
+printf '#!/usr/bin/env bash\ncase " $* " in *" fetch "*) echo fetch >> "$STUB_LOG/fetches" ;; *" config --get task-wave.base "*) [ -n "${GIT_CONFIG_FAIL:-}" ] && { echo "fatal: bad config line 1" >&2; exit 3; } ;; *" ls-remote "*) [ -n "${GIT_LSREMOTE_FAIL:-}" ] && { echo "fatal: Could not read from remote repository." >&2; exit 128; }; [ -n "${GIT_LSREMOTE_OUT+set}" ] && { printf "%%b" "$GIT_LSREMOTE_OUT"; exit 0; } ;; esac\nexec %q "$@"\n' "$REAL_GIT" > "$TMP/bin/git"
 # the stub CLIs' interpreter lives only in $TMP/bin, as node lives in nvm's bin for
 # the real ones (`#!/usr/bin/env node`): a window without the launcher's PATH cannot run them
 for a in claude codex; do
@@ -519,6 +520,76 @@ tmux kill-server >/dev/null 2>&1 || true
 # Y12. --base still wins over the remote's default branch
 out="$(yt --dry-run --base develop DEV-7)"
 check "youtrack: --base develop → a new worktree from origin/develop" 'printf "%s" "$out" | grep -qF "lab-DEV-7 -b task-DEV-7 origin/develop"'
+
+# Z1. the integration branch per clone: git config task-wave.base (a gitflow repo's
+#     default branch is often the production one) — --base > task-wave.base > remote
+git config task-wave.base develop
+out="$(GIT_LSREMOTE_FAIL=1 yt --dry-run DEV-7)"; rc=$?
+check "youtrack: task-wave.base develop → origin/develop, no remote read needed, source named" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -qF "lab-DEV-7 -b task-DEV-7 origin/develop" && printf "%s" "$out" | grep -q "base origin/develop (git config task-wave.base)"'
+out="$(yt --dry-run --base main DEV-7)"
+check "youtrack: --base wins over task-wave.base" 'printf "%s" "$out" | grep -qF "lab-DEV-7 -b task-DEV-7 origin/main"'
+out="$(bash "$TW" --dry-run 370)"; rc=$?
+check "github: task-wave.base develop → origin/develop (not gh's default branch)" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -qF "lab-370 -b task-370 origin/develop" && printf "%s" "$out" | grep -q "(git config task-wave.base)"'
+for bad in 'bad..name' 'a b' '-x'; do
+  git config task-wave.base "$bad"
+  yt --dry-run DEV-7 >/dev/null 2>"$TMP/err"; rc=$?
+  check "task-wave.base '$bad' is not a branch name → rc 2" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err"'
+done
+git config --unset task-wave.base
+yt --dry-run --base 'x..y' DEV-7 >/dev/null 2>"$TMP/err"; rc=$?
+check "--base 'x..y' is not a branch name → rc 2" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err"'
+out="$(yt --dry-run DEV-7)"
+check "without task-wave.base the remote's default again, source named" 'printf "%s" "$out" | grep -q "base origin/main (origin.s default branch)"'
+# a tracker's default branch is checked like any other base (Codex review, 1.14.2)
+GIT_LSREMOTE_OUT='ref: refs/heads/bad..name\tHEAD\n' yt --dry-run DEV-7 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "youtrack: origin's default branch 'bad..name' → rc 2, nothing planned" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err" && ! grep -q "^DEV-" "$TMP/out"'
+GH_DEFAULT_BRANCH='bad..name' bash "$TW" --dry-run 370 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "github: a default branch 'bad..name' from gh → rc 2, nothing planned" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err" && ! grep -q "^#370 " "$TMP/out"'
+# checkout shorthand: git check-ref-format --branch '@{-1}' answers with the previous
+# branch, rc 0 — the literal refs/heads/@{-1} is not a ref (Codex review, 1.14.2)
+git checkout -q -b tw-prev && git checkout -q main
+yt --dry-run --base '@{-1}' DEV-7 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "--base '@{-1}' (checkout shorthand) → rc 2, nothing planned" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err" && ! grep -q "^DEV-" "$TMP/out"'
+git branch -q -D tw-prev
+# HEAD: refs/heads/HEAD is a well-formed ref, HEAD is no branch name (Codex review, 1.14.2)
+yt --dry-run --base HEAD DEV-7 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "--base HEAD → rc 2, nothing planned" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err" && ! grep -q "^DEV-" "$TMP/out"'
+git config task-wave.base HEAD; git remote set-head origin develop >/dev/null
+bash "$TW" --dry-run 370 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "task-wave.base HEAD with a stale origin/HEAD → rc 2, nothing planned" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err" && ! grep -q "^#370 " "$TMP/out"'
+git config --unset task-wave.base; git remote set-head origin main >/dev/null
+# a base is checked before the backlog is read: an empty ready set does not hide a bad one
+yt --dry-run --base 'bad..name' --epic DEV-90 >/dev/null 2>"$TMP/err"; rc=$?
+check "youtrack: empty ready set (--epic DEV-90) with --base bad..name → rc 2" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err"'
+GH_EMPTY=1 bash "$TW" --dry-run --base 'bad..name' >/dev/null 2>"$TMP/err"; rc=$?
+check "github: empty ready set with --base bad..name → rc 2" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err"'
+out="$(GH_EMPTY=1 bash "$TW" --dry-run)"; rc=$?
+check "github: empty ready set with a good base → rc 0, 'no ready task'" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -q "no ready task"'
+
+# Z2. extra flags for the CLI in the window (a worktree does not see the workstation's
+#     .claude/settings*.json or .mcp.json): TASK_WAVE_CLAUDE_ARGS / TASK_WAVE_CODEX_ARGS,
+#     split on blanks, each flag quoted — never shell-parsed
+tmux kill-server >/dev/null 2>&1 || true
+rm -f "$STUB_LOG/claude-lab-DEV-7" "$STUB_LOG/pwned1" "$STUB_LOG/pwned2"
+TASK_WAVE_CLAUDE_ARGS="--settings $TMP/s.json --mcp-config \$(touch $STUB_LOG/pwned1) ;touch $STUB_LOG/pwned2" yt DEV-7 >/dev/null 2>&1; rc=$?
+for i in $(seq 1 20); do [ -s "$STUB_LOG/claude-lab-DEV-7" ] && break; sleep 0.3; done
+check "TASK_WAVE_CLAUDE_ARGS reach claude as separate literal flags before the prompt" '[ $rc -eq 0 ] && [ "$(sed -n 2,7p "$STUB_LOG/claude-lab-DEV-7" | tr "\n" "|")" = "--settings|$TMP/s.json|--mcp-config|\$(touch|$STUB_LOG/pwned1)|;touch|" ] && [ "$(tail -n 1 "$STUB_LOG/claude-lab-DEV-7")" = "/task-flow:task DEV-7" ]'
+check "TASK_WAVE_CLAUDE_ARGS are not shell-parsed: nothing ran" '[ ! -e "$STUB_LOG/pwned1" ] && [ ! -e "$STUB_LOG/pwned2" ]'
+out="$(TASK_WAVE_CODEX_ARGS='-p builder' yt --dry-run DEV-5)"
+check "TASK_WAVE_CODEX_ARGS appear in the codex command" 'printf "%s" "$out" | grep -qF "codex -p builder \\\$task-flow:task\\ DEV-5"'
+TASK_WAVE_CLAUDE_ARGS=$'--settings /a.json\n--mcp-config /b.json' yt --dry-run DEV-7 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "TASK_WAVE_CLAUDE_ARGS with a line break → rc 2, not the first line only" '[ $rc -eq 2 ] && grep -q "line break" "$TMP/err" && ! grep -q "^DEV-7 " "$TMP/out"'
+# a base given empty is refused, never replaced by the next source (Codex review, 1.14.2)
+git config task-wave.base develop
+bash "$TW" --dry-run --base '' 370 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "--base '' (an unset variable) → rc 2, not task-wave.base" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err" && ! grep -q "^#370 " "$TMP/out"'
+git config task-wave.base ''
+yt --dry-run DEV-7 >"$TMP/out" 2>"$TMP/err"; rc=$?
+check "task-wave.base set empty → rc 2, not the remote's default" '[ $rc -eq 2 ] && grep -q "not a branch name" "$TMP/err" && ! grep -q "^DEV-7 " "$TMP/out"'
+git config --unset task-wave.base
+GIT_CONFIG_FAIL=1 yt --dry-run DEV-7 >/dev/null 2>"$TMP/err"; rc=$?
+check "git config unreadable → rc 2, not 'unset'" '[ $rc -eq 2 ] && grep -q "cannot read git config task-wave.base" "$TMP/err"'
+tmux kill-server >/dev/null 2>&1 || true
 
 echo "tests/task-wave: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

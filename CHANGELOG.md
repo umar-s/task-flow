@@ -9,6 +9,96 @@ below is tagged `vX.Y.Z` in git. Installs track the default branch (the
 marketplace entry pins no ref), so a release tag marks history rather than a
 download.
 
+## [1.14.2] — 2026-10-17
+
+### Added
+- `git config task-wave.base <branch>` in a clone gives that clone's waves
+  their base without `--base`, on both trackers. The order is `--base`, then
+  `task-wave.base`, then the default branch as the tracker side reports it. A
+  gitflow repository's default branch is often the production one: on a
+  GitLab workspace measured for 1.14.1, one clone defaulted to `main`
+  (production) and had `develop` as its integration branch. Any base, from any
+  source, must pass `git check-ref-format --branch` or the run stops. The plan
+  now names the base and where it came from
+  (`task-wave: base origin/develop (git config task-wave.base)`).
+- `TASK_WAVE_CLAUDE_ARGS` / `TASK_WAVE_CODEX_ARGS` carry extra flags for the CLI
+  in every window, for example the workstation's `--settings` and
+  `--mcp-config`, which a worktree beside the clone does not see. A project had
+  patched this into its own copy of the script, with the variable expanded
+  unquoted into the window's command line, where `$(…)` would have run. Here
+  the value is split on blanks, and each flag reaches the CLI as one literal
+  argument, so `$(…)` and `;` stay text. A flag cannot contain a blank. With
+  the same variable names, that copy can now be replaced by the template as it
+  is.
+
+### Changed
+- `--help` prints the whole header comment instead of a fixed line range:
+  that range fell out of step twice when the header grew.
+
+### Tests
+- `tests/task-wave.sh`: 130 controls (1.14.1 had 107). New ones:
+  - `task-wave.base` on YouTrack with no remote read, and on GitHub instead of
+    `gh`'s default branch;
+  - `--base` winning over the config;
+  - `bad..name`, `a b` and `-x` refused as a config value, and `x..y` as
+    `--base`;
+  - the base's source named in the plan;
+  - the extra flags arriving one per argument, before the prompt, with
+    `$(touch …)` and `;touch …` left unrun;
+  - the Codex flags appearing in the planned command;
+  - `bad..name` as the tracker's own default branch, from `gh` or from
+    `ls-remote`, refused;
+  - `--base '@{-1}'` (checkout shorthand) refused;
+  - `HEAD` refused, from `--base` and from the config (here with a stale
+    `origin/HEAD`);
+  - a bad base with an empty ready set refused, on both trackers;
+  - `TASK_WAVE_CLAUDE_ARGS` with a line break refused, where before only the
+    first line would have been kept;
+  - a base given empty refused rather than replaced: `--base ''` while
+    `task-wave.base` is set, and `task-wave.base` set to the empty string;
+  - an unreadable git config refused, rather than read as "not set".
+- Eleven mutations, each one caught:
+  - the config ignored;
+  - the branch-name check removed;
+  - the check done with `--branch` alone (`@{-1}` passes);
+  - the check done with the literal ref alone (`HEAD` passes);
+  - the check not run;
+  - the YouTrack check run only after the backlog;
+  - the flags unquoted;
+  - the Claude flags dropped;
+  - the line-break check removed;
+  - an empty config value falling through to the next source;
+  - an unreadable config read as "not set".
+- Codex review through `xreview.sh`, six rounds:
+  - round 1: the branch-name check ran before the tracker's default branch was
+    filled in, so `bad..name` from `gh` passed;
+  - round 2: `git check-ref-format --branch` accepts `@{-1}` and answers with
+    the branch it resolves to, while the launcher used the literal string. Also,
+    an empty ready set exited before the check, so whether a base passed
+    depended on the backlog;
+  - round 3: the literal `refs/heads/HEAD` is a well-formed ref, but `HEAD` is
+    not a branch name. As a base it would mean the remote's symbolic pointer,
+    which may be stale;
+  - now both `git check-ref-format "refs/heads/<base>"` and `--branch` must
+    pass. The check runs once per tracker, right after the base is chosen and
+    before the backlog is read;
+  - round 4 had no Critical or Required finding. Its one nit was about
+    behaviour, so it got a fix and a delta round: a multi-line
+    `TASK_WAVE_*_ARGS` was cut to its first line without a word, and is now
+    refused. The check sits at the top level, because inside `$( )` a `die`
+    would not stop the run;
+  - round 5: a base given empty (`--base ''`, an empty `task-wave.base`) was
+    silently replaced by the next source, so a misspelt variable would have
+    landed the wave on the default branch again. A base that is given is now
+    tracked apart from a non-empty one, so an empty one reaches the check and is
+    refused. `git config` exit 1 means "not set"; any other non-zero exit
+    stops the run.
+
+### Supply self-check
+- New subprocess calls: `git config --get` and `git check-ref-format`, both
+  local reads. No network, credential, write or `eval`. The new environment
+  input (`TASK_WAVE_*_ARGS`) reaches the CLI only as quoted single arguments.
+
 ## [1.14.1] — 2026-10-17
 
 ### Fixed
@@ -1214,6 +1304,7 @@ Donor audit of the `hybrid-plan` / `hybrid-review` skill set —
   tool-agnostic migration-guard and protected-branch rules into any repo —
   GitLab and GitHub CI, pre-commit hooks, failing closed.
 
+[1.14.2]: https://github.com/umar-s/task-flow/compare/v1.14.1...v1.14.2
 [1.14.1]: https://github.com/umar-s/task-flow/compare/v1.14.0...v1.14.1
 [1.14.0]: https://github.com/umar-s/task-flow/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/umar-s/task-flow/compare/v1.12.0...v1.13.0
