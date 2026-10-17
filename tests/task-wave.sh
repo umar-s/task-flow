@@ -61,7 +61,8 @@ set -- "${args[@]}"
 [ -n "${GH_FAIL:-}" ] && case "$*" in *"$GH_FAIL"*) echo "gh: simulated failure" >&2; exit 1 ;; esac
 case "$1 $2" in
   "repo view")  jq -r "$q" "$FX/repo.json"; exit ;;
-  "issue view") [ -f "$FX/issue-$3.json" ] || exit 4; jq -r "$q" "$FX/issue-$3.json"; exit ;;
+  "issue view") [ -n "${GH_SLOW:-}" ] && sleep "$GH_SLOW"
+                [ -f "$FX/issue-$3.json" ] || exit 4; jq -r "$q" "$FX/issue-$3.json"; exit ;;
   "issue list") jq -r '.[:200]' "$FX/open.json" | jq -r "$q"; exit ;;     # gh's --limit 200 truncation
 esac
 [ "$1" = api ] || { echo "gh stub: unexpected: $*" >&2; exit 3; }
@@ -141,7 +142,7 @@ check "no tmux → rc 2, no worktree, no fetch" '[ $rc -eq 2 ] && grep -q "tmux 
 
 # 4b. a wave that needs a harness not on PATH → refused before fetch, worktree or window
 mkdir -p "$TMP/nocodex"
-for c in gh jq dirname basename bash awk sort seq sed tr wc tmux; do ln -sf "$(command -v $c)" "$TMP/nocodex/$c"; done
+for c in gh jq dirname basename bash awk sort seq sed tr wc tmux mkdir rmdir rm cat; do ln -sf "$(command -v $c)" "$TMP/nocodex/$c"; done
 ln -sf "$TMP/bin/git" "$TMP/nocodex/git"; ln -sf "$TMP/bin/claude" "$TMP/nocodex/claude"
 PATH="$TMP/nocodex" "$TMP/nocodex/bash" "$TW" 2 5 >/dev/null 2>"$TMP/err"; rc=$?
 check "codex missing for #5 → rc 2, #2 not started, no fetch" '[ $rc -eq 2 ] && grep -q "not on PATH: codex" "$TMP/err" && [ ! -e "$TMP/w/lab-2" ] && ! tmux has-session -t =wave-lab 2>/dev/null && [ "$(fetches)" = 0 ]'
@@ -193,6 +194,17 @@ check "still two windows and one claude launch in lab-2" '[ "$(tmux list-windows
 tmux kill-window -t "=wave-lab:#2"
 out="$(bash "$TW" 2)"
 check "window gone → existing worktree resumed in a new window" 'printf "%s" "$out" | grep -q "exists — resuming" && [ "$(tmux list-windows -t =wave-lab | wc -l)" -eq 2 ]'
+
+# 7b. two launchers at once on a resumable task: one starts it, the other is refused — never two agents
+tmux kill-window -t "=wave-lab:#2"; rm -f "$STUB_LOG/launches-claude-lab-2"
+GH_SLOW=1 bash "$TW" 2 >"$TMP/a.out" 2>"$TMP/a.err" & pa=$!
+sleep 0.3
+GH_SLOW=1 bash "$TW" 2 >"$TMP/b.out" 2>"$TMP/b.err"; rb=$?
+wait $pa; ra=$?
+for i in $(seq 1 20); do [ -s "$STUB_LOG/launches-claude-lab-2" ] && break; sleep 0.2; done; sleep 0.5
+check "concurrent run: first starts #2, second refused by the lock" '[ $ra -eq 0 ] && [ $rb -eq 2 ] && grep -q "another task-wave holds" "$TMP/b.err"'
+check "concurrent run: one window #2, one launch" '[ "$(tmux list-windows -t =wave-lab -F "#{window_name}" | grep -cx "#2")" -eq 1 ] && [ "$(wc -l < "$STUB_LOG/launches-claude-lab-2")" -eq 1 ]'
+check "the lock is released after a run" '[ ! -e "$(git rev-parse --git-common-dir)/task-wave.lock" ]'
 
 # 8. a branch left behind by a removed worktree is reused, not re-created from base
 tmux kill-server >/dev/null 2>&1 || true

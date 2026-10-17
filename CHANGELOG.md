@@ -27,7 +27,7 @@ tictactoe lab ran its wave 2 as one Claude Code task beside one Codex task.
   integration branch; an existing worktree is resumed, and a `task-<N>` branch
   left by a removed worktree is reused rather than recreated. Sessions stay
   interactive (`task` asks on ingest and before merging); the script never
-  merges, pushes or deletes. The ready set reads every page of the labelled
+  merges, pushes or deletes anything of yours. The ready set reads every page of the labelled
   open issues (`gh api --paginate`, label filter on the server, pull requests
   dropped) — no count limit can hide a ready task — and every page of each
   issue's blockers: ready means no open blocker on any page, so an open one past
@@ -43,14 +43,16 @@ tictactoe lab ran its wave 2 as one Claude Code task beside one Codex task.
   skipped, not guessed. A task whose window `#<N>` is still alive in the wave's
   session is not started again — no second agent in one checkout; once that
   window is gone the worktree is resumed in a new one; an issue number given
-  twice is planned once. A `task-<N>` branch
+  twice is planned once, and one launcher runs per repository at a time (an
+  atomic `mkdir` lock in the git common dir, released on exit; a concurrent run
+  is refused). A `task-<N>` branch
   checked out in some other worktree stops the plan before anything starts. A
   dry run does not fetch. Tracker: GitHub Issues through `gh` (the blocked-by
   API).
 - `docs/superpowers/specs/2026-10-17-task-flow-1-13-0-wave-launcher.md`: the
-  DoD and the premortem edges (E1–E20), each mapped to a control or an explicit
+  DoD and the premortem edges (E1–E21), each mapped to a control or an explicit
   exclusion.
-- `tests/task-wave.sh`: 34 controls with a stub `gh` that runs the script's own
+- `tests/task-wave.sh`: 37 controls with a stub `gh` that runs the script's own
   `-q` filters through `jq` over fixtures and serves GitHub's pages unless
   `--paginate` (100 issues, 30 blockers by default; the ready fixture sits past
   item 100 of its label and item 200 of all open issues, another issue's open
@@ -58,7 +60,8 @@ tictactoe lab ran its wave 2 as one Claude Code task beside one Codex task.
   the first was printed), a `git` wrapper counting fetches, stub `claude`/`codex`
   recording argv, cwd and every launch, and a private tmux server
   (`TMUX_TMPDIR`); `--base` is checked against a real commit only `develop`
-  has. Twenty-four mutations of the script — duplicate numbers not merged, a
+  has. Twenty-six mutations of the script — no lock, a lock never released,
+  duplicate numbers not merged, a
   live task window ignored, a
   branch held elsewhere ignored, the harness check dropped or partial, both labels resolved to
   the first, no pagination of issues or of blockers, blockers counted per page,
@@ -107,7 +110,9 @@ test had pinned that as correct), and a `task-<N>` branch checked out in
 another worktree passed the plan and failed `git worktree add` mid-run; both
 now refused or skipped in the plan. Round 5 — one Required: the same number
 given twice (`2 2`) still reached two windows in one worktree; numbers are now
-merged before the plan.
+merged before the plan. Round 6 — one Required: two launchers started at once
+could both pass the live-window check; a repository-wide lock now serialises
+the check and the start, with a concurrent control.
 
 ## [1.12.0] — 2026-10-16
 

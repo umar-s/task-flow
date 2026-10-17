@@ -200,7 +200,8 @@ tmux attach -t wave-<repo>            # Ctrl-b w lists the windows
 ```
 
 The sessions stay interactive — `task` asks on ingest and before it merges —
-and the script never merges, pushes or deletes. An existing worktree is resumed;
+and the script never merges, pushes or deletes anything of yours; one runs per
+repository at a time. An existing worktree is resumed;
 `--base <branch>` starts from an integration branch other than the default one.
 The next wave starts once this one is merged. Tracker: GitHub Issues through `gh`.
 

@@ -75,6 +75,19 @@ branch_path() {
     $1 == "branch" && $2 == b { print cur; exit }'
 }
 
+# One launcher per repository at a time: the window check below and the window it
+# leads to must not interleave with another run's (two agents in one checkout).
+# mkdir is atomic everywhere; the lock sits in the git dir every worktree shares.
+if [ $dry = 0 ]; then
+  lock="$(cd "$root" && cd "$(git rev-parse --git-common-dir)" && pwd -P)/task-wave.lock"
+  if ! mkdir "$lock" 2>/dev/null; then   # lint: allow — a failing mkdir is the answer: the lock is held
+    holder="$(cat "$lock/pid" 2>/dev/null)" || holder="?"   # lint: allow — the holder may not have written its pid yet
+    die "another task-wave holds $lock (pid $holder) — wait for it; if that process is gone, remove the directory"
+  fi
+  trap 'rm -f "$lock/pid"; rmdir "$lock"' EXIT
+  echo $$ > "$lock/pid"
+fi
+
 # A live window #<N> in this wave's session is that task's agent, still running
 # (a window closes when its CLI exits) — never start a second one beside it.
 session="wave-$name"; running=" "

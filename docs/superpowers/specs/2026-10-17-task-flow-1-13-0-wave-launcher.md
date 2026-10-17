@@ -49,6 +49,9 @@ one interactive tmux window per task, Claude Code or Codex by the issue's
     before fetch, worktree or window.
 16. Round 5 fix holds: an issue number given twice (`2 2`, `2 #2`) is planned
     once — one window, one launch — for a new and for a resumed worktree.
+17. Round 6 fix holds: one launcher per repository at a time — an atomic
+    `mkdir` lock in the git common dir, taken before the window check and released
+    on exit; a second concurrent run is refused (rc 2), never a second agent.
 
 ## Premortem edges
 
@@ -77,3 +80,4 @@ Imagined failures of the launcher, each mapped to the control in
 | E18 | GitHub without the blocked-by API (older GHES) | covered by E3: the blocker read fails → rc 2, never "ready"; README names GitHub Issues as the tracker |
 | E19 | `task-N` is checked out in another worktree; `git worktree add` fails mid-run and the wave starts half-way | case 5b: refused in the plan, #2 not started, no fetch |
 | E20 | The same issue named twice on the command line starts two agents in one checkout | case 5c: `2 2` (new worktree) and `2 #2` (resumed) → one window, one launch |
+| E21 | Two launchers run at once; both see no window #N and both start an agent in one checkout | case 7b: concurrent runs on a resumable task → one starts, the other is refused by the lock; one window, one launch; the lock is released after |
