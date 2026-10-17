@@ -43,9 +43,11 @@ if [ ${#issues[@]} -eq 0 ]; then
     labelled="$labelled $page"
   done
   for n in $(printf '%s\n' $labelled | sort -nu); do
-    open="$(gh api "repos/$repo/issues/$n/dependencies/blocked_by" -q '[.[] | select(.state == "open")] | length')" \
+    # every page of blockers (30 per page by default); ready = no open one on any page
+    open="$(gh api --paginate "repos/$repo/issues/$n/dependencies/blocked_by?per_page=100" \
+      -q '.[] | select(.state == "open") | .number')" \
       || die "cannot read the blockers of #$n — refusing to guess that it is ready"
-    [ "$open" = 0 ] && issues+=("$n")
+    [ -z "$open" ] && issues+=("$n")
   done
   [ ${#issues[@]} -gt 0 ] || { echo "task-wave: no ready task in $repo (open, builder:claude|codex label, no open blocker)"; exit 0; }
 fi

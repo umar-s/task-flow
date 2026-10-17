@@ -29,28 +29,34 @@ tictactoe lab ran its wave 2 as one Claude Code task beside one Codex task.
   interactive (`task` asks on ingest and before merging); the script never
   merges, pushes or deletes. The ready set reads every page of the labelled
   open issues (`gh api --paginate`, label filter on the server, pull requests
-  dropped) — no count limit can hide a ready task. Every task is planned before
+  dropped) — no count limit can hide a ready task — and every page of each
+  issue's blockers: ready means no open blocker on any page, so an open one past
+  the first 30 cannot pass for ready. Every task is planned before
   anything starts: an existing directory at a worktree path is resumed only when
   `git worktree list --porcelain` knows it as this repository's worktree on
   `task-<N>`, otherwise the run stops before a single worktree or window
   exists. Any tracker read that fails — a label page, an issue, a blocker list
   — stops the run (rc 2) instead of reading as "no ready task" or "ready". A dry
   run does not fetch. Tracker: GitHub Issues through `gh` (the blocked-by API).
-- `tests/task-wave.sh`: 24 controls with a stub `gh` that runs the script's own
-  `-q` filters through `jq` over fixtures and serves 100-item pages unless
-  `--paginate` (the ready fixture sits past item 100 of its label and item 200
-  of all open issues), a `git` wrapper counting fetches, stub `claude`/`codex`
+- `tests/task-wave.sh`: 25 controls with a stub `gh` that runs the script's own
+  `-q` filters through `jq` over fixtures and serves GitHub's pages unless
+  `--paginate` (100 issues, 30 blockers by default; the ready fixture sits past
+  item 100 of its label and item 200 of all open issues, another issue's open
+  blocker sits on its blockers' second page, and a second page can fail after
+  the first was printed), a `git` wrapper counting fetches, stub `claude`/`codex`
   recording argv and cwd, and a private tmux server (`TMUX_TMPDIR`); `--base`
-  is checked against a real commit only `develop` has. Fifteen mutations of the
-  script — no pagination, pull requests kept, blockers ignored, each tracker
-  failure swallowed, any directory taken for a worktree, the branch not
+  is checked against a real commit only `develop` has. Eighteen mutations of the
+  script — no pagination of issues or of blockers, blockers counted per page,
+  pull requests kept, blockers ignored, each tracker failure swallowed (a
+  failing second page included), any directory taken for a worktree, the branch not
   checked, a fetch before the dry-run exit, the `$` dropped from the Codex
   prompt, a window or session outside its worktree, an existing branch
   recreated, `--base` ignored, the tmux check dropped — each fail it.
 - `scripts/lint.sh`: the launcher is syntax-checked and executable, carries no
   unmarked fail-open idiom and no bash-4-only construct (`mapfile`,
   `declare -A`, `${x,,}` — it must run on macOS bash 3.2), keeps "refusing to
-  guess that it is ready", reads every page and drops pull requests, checks a
+  guess that it is ready", reads every page of issues and of blockers and drops
+  pull requests, checks a
   resumed worktree through `git worktree list --porcelain`, calls neither
   `gh pr merge` nor `git push`; `decompose` Handoff and both READMEs name it.
 - `.github/workflows/check.yml`: installs tmux when the runner lacks it, so the
@@ -72,7 +78,10 @@ Cross-review (Codex, `xreview.sh`): round 1 — ready with fixes, three Required
 (the ready set cut at 200 issues before the label filter; any existing
 directory taken for the task's worktree; controls missing for an `issue view`
 failure, a dry-run fetch and a real `--base` start point); all three fixed as
-above.
+above. Round 2 — one Required: the blocked-by list is paginated too (30 per
+page), so an open blocker on page 2 read as ready, and the stub had hidden it
+by serving the whole fixture; fixed with every page read and the stub serving
+real pages.
 
 ## [1.12.0] — 2026-10-16
 

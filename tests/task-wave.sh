@@ -22,11 +22,15 @@ REAL_GIT="$(command -v git)"
 #   #5 codex, no blockers (ready) · #7 a pull request labelled builder:claude (never a task)
 #   #1000..#1149 claude, each blocked by an open issue — so the ready #350 sits past
 #   item 100 of the labelled list and past item 200 of all open issues.
+#   #360 claude: 105 closed blockers, then an open one — on the blockers' second page.
+#   #370 codex: 120 closed blockers, all on two pages — ready.
 F="$TMP/fx"; mkdir -p "$F"
 jq -n '
   [range(1000;1150) | {number: ., labels: [{name: "builder:claude"}]}]
   + [range(400;460) | {number: ., labels: [{name: "bug"}]}]
-  + [{number: 350, labels: [{name: "builder:claude"}]},
+  + [{number: 370, labels: [{name: "builder:codex"}]},
+     {number: 360, labels: [{name: "builder:claude"}]},
+     {number: 350, labels: [{name: "builder:claude"}]},
      {number: 7, labels: [{name: "builder:claude"}], pull_request: {url: "x"}},
      {number: 5, labels: [{name: "bug"}, {name: "builder:codex"}]},
      {number: 4, labels: [{name: "epic"}]},
@@ -35,8 +39,10 @@ jq -n '
 echo '[{"number":1,"state":"closed"}]' > "$F/blocked-2.json"
 echo '[{"number":2,"state":"open"}]'   > "$F/blocked-3.json"
 echo '[]' > "$F/blocked-5.json"; echo '[]' > "$F/blocked-350.json"
+jq -n '[range(0;105) | {number: (2000 + .), state: "closed"}] + [{number: 2105, state: "open"}]' > "$F/blocked-360.json"
+jq -n '[range(0;120) | {number: (3000 + .), state: "closed"}]' > "$F/blocked-370.json"
 for n in $(seq 1000 1149); do echo '[{"number":9,"state":"open"}]' > "$F/blocked-$n.json"; done
-for n in 2 3 4 5 350; do jq "{labels: (.[] | select(.number == $n) | .labels)}" "$F/open.json" > "$F/issue-$n.json"; done
+for n in 2 3 4 5 350 360 370; do jq "{labels: (.[] | select(.number == $n) | .labels)}" "$F/open.json" > "$F/issue-$n.json"; done
 echo '{"nameWithOwner":"o/lab","defaultBranchRef":{"name":"main"}}' > "$F/repo.json"
 
 mkdir -p "$TMP/bin" "$TMP/log"
@@ -63,10 +69,18 @@ case "$2" in
     sel="$(jq --arg l "$label" '[.[] | select(any(.labels[]; .name == $l))]' "$FX/open.json")"
     [ $pag = 1 ] || sel="$(printf '%s' "$sel" | jq '.[:100]')"
     printf '%s' "$sel" | jq -r "$q" ;;
-  repos/o/lab/issues/*/dependencies/blocked_by)
+  repos/o/lab/issues/*/dependencies/blocked_by*)
     n="${2#repos/o/lab/issues/}"; n="${n%%/*}"
     [ -f "$FX/blocked-$n.json" ] || { echo "gh stub: no blockers fixture for #$n" >&2; exit 4; }
-    jq -r "$q" "$FX/blocked-$n.json" ;;
+    # GitHub pages: per_page from the query (default 30); without --paginate only page 1
+    per=30; case "$2" in *per_page=*) per="${2##*per_page=}"; per="${per%%&*}" ;; esac
+    total="$(jq length "$FX/blocked-$n.json")"; pages=$(( (total + per - 1) / per )); [ $pages -ge 1 ] || pages=1
+    [ $pag = 1 ] || pages=1
+    p=0; while [ $p -lt $pages ]; do
+      [ $p -ge 1 ] && [ "${GH_FAIL_PAGE2:-}" = "$n" ] && { echo "gh: simulated failure on page 2" >&2; exit 1; }
+      jq -r --argjson a $((p * per)) --argjson b $(((p + 1) * per)) ".[\$a:\$b] | $q" "$FX/blocked-$n.json"
+      p=$((p+1))
+    done ;;
   *) echo "gh stub: unexpected api: $2" >&2; exit 3 ;;
 esac
 EOF
@@ -91,7 +105,7 @@ DEVELOP_SHA="$(git rev-parse origin/develop)"; MAIN_SHA="$(git rev-parse origin/
 # 1. dry run on the ready set: #2, #5 and #350 (past the first page), nothing created or fetched
 out="$(bash "$TW" --dry-run)"; rc=$?
 check "dry run exits 0" '[ $rc -eq 0 ]'
-check "ready set is exactly #2, #5, #350" '[ "$(printf "%s\n" "$out" | sed -n "s/^#\([0-9]*\) builder.*/\1/p" | tr "\n" " ")" = "2 5 350 " ]'
+check "ready set is exactly #2, #5, #350, #370 (#360's open blocker is on page 2)" '[ "$(printf "%s\n" "$out" | sed -n "s/^#\([0-9]*\) builder.*/\1/p" | tr "\n" " ")" = "2 5 350 370 " ]'
 check "a pull request with a builder label is not a task" '! printf "%s" "$out" | grep -q "^#7 "'
 check "claude gets /task-flow:task #2" 'printf "%s" "$out" | grep -qF "claude /task-flow:task\\ #2"'
 check "codex gets \$task-flow:task #5, the \$ escaped for the shell" 'printf "%s" "$out" | grep -qF "codex \\\$task-flow:task\\ #5"'
@@ -108,6 +122,9 @@ for f in "labels=builder:claude" "labels=builder:codex" "issues/350/dependencies
   GH_FAIL="$f" bash "$TW" --dry-run >/dev/null 2>"$TMP/err"; rc=$?
   check "gh failure on '$f' → rc 2" '[ $rc -eq 2 ] && grep -q "task-wave:" "$TMP/err"'
 done
+
+GH_FAIL_PAGE2=370 bash "$TW" --dry-run >/dev/null 2>"$TMP/err"; rc=$?
+check "blockers page 2 of #370 fails after page 1 printed → rc 2, not ready" '[ $rc -eq 2 ] && grep -q "blockers of #370" "$TMP/err"'
 
 # 4. no tmux (not a dry run) → refused before anything is created
 mkdir -p "$TMP/notmux"
