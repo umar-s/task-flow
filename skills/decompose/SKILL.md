@@ -297,7 +297,11 @@ Each produced `<TASK-ID>` is executed end-to-end, one at a time, by
 `task-flow:task` — that skill's own ingest phase reads the ticket and takes
 it from there. `decompose` stops the instant a well-formed draft (and,
 optionally, a well-formed set of tracker issues) exists; running any task is
-not this skill's job.
+not this skill's job. A wave's tasks can run side by side, one session each:
+`templates/wave/task-wave.sh` (copied once into the project's `scripts/`)
+gives every ready issue its own worktree and its own tmux window with the
+harness its `builder:*` label names — offer it with the return list when the
+tracker is GitHub Issues.
 
 ## Fixed discipline (non-negotiable)
 - Where this flow and the project's instruction file genuinely conflict, the project

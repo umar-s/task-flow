@@ -9,6 +9,147 @@ below is tagged `vX.Y.Z` in git. Installs track the default branch (the
 marketplace entry pins no ref), so a release tag marks history rather than a
 download.
 
+## [1.13.0] — 2026-10-17
+
+A wave of tasks in parallel. `decompose` already proves that one wave's tasks
+write disjoint files; until now each still had to be started by hand — a
+worktree, a terminal, the right harness, the right prompt. Found in use: the
+tictactoe lab ran its wave 2 as one Claude Code task beside one Codex task.
+
+### Added
+- `templates/wave/task-wave.sh` (copied once into a project's `scripts/`):
+  for every ready issue — open, labelled `builder:claude` or `builder:codex`,
+  every blocked-by issue closed — a git worktree `../<repo>-<N>` on branch
+  `task-<N>` from `origin/<base>`, and a tmux window `#<N>` in session
+  `wave-<repo>` running `claude '/task-flow:task #N'` or
+  `codex '$task-flow:task #N'`. Explicit issue numbers override the ready set;
+  `--dry-run` prints the plan and creates nothing; `--base` names another
+  integration branch; an existing worktree is resumed, and a `task-<N>` branch
+  left by a removed worktree is reused rather than recreated. Sessions stay
+  interactive (`task` asks on ingest and before merging); the script never
+  merges, pushes or deletes anything of yours. The ready set reads every page of the labelled
+  open issues (`gh api --paginate`, label filter on the server, pull requests
+  dropped) — no count limit can hide a ready task — and every page of each
+  issue's blockers: ready means no open blocker on any page, so an open one past
+  the first 30 cannot pass for ready. Every task is planned before
+  anything starts: an existing directory at a worktree path is resumed only when
+  `git worktree list --porcelain` knows it as this repository's worktree on
+  `task-<N>`, otherwise the run stops before a single worktree or window
+  exists. Any tracker read that fails — a label page, an issue, a blocker list
+  — stops the run (rc 2) instead of reading as "no ready task" or "ready". The
+  harness CLIs the wave needs are checked before anything is created (a window
+  whose CLI is missing would close at once while the run reported success); a
+  dry run names the missing one. An issue carrying both builder labels is
+  skipped, not guessed. A task whose window `#<N>` is still alive in the wave's
+  session is not started again — no second agent in one checkout; once that
+  window is gone the worktree is resumed in a new one; an issue number given
+  twice — as `2`, `#2` or `02` — is planned once, and one launcher runs per repository at a time (an
+  atomic `mkdir` lock in the git common dir, released on exit; a concurrent run
+  is refused). The session is named by the checkout's basename, so it carries
+  its owner — the repository's git common dir, as the tmux option
+  `@task_wave_repo` — and a session of that name owned by another repository,
+  or by nobody, is refused rather than read. The window runs the CLI by the absolute path the plan checked,
+  with the launcher's PATH — both made absolute against the launcher's
+  directory — so a window whose environment or cwd differs still finds it and
+  its `#!/usr/bin/env` interpreter. A `task-<N>` branch
+  checked out in some other worktree stops the plan before anything starts. A
+  dry run does not fetch. Tracker: GitHub Issues through `gh` (the blocked-by
+  API).
+- `docs/superpowers/specs/2026-10-17-task-flow-1-13-0-wave-launcher.md`: the
+  DoD and the premortem edges (E1–E24), each mapped to a control or an explicit
+  exclusion.
+- `tests/task-wave.sh`: 43 controls with a stub `gh` that runs the script's own
+  `-q` filters through `jq` over fixtures and serves GitHub's pages unless
+  `--paginate` (100 issues, 30 blockers by default; the ready fixture sits past
+  item 100 of its label and item 200 of all open issues, another issue's open
+  blocker sits on its blockers' second page, and a second page can fail after
+  the first was printed), a `git` wrapper counting fetches, stub `claude`/`codex`
+  recording argv, cwd and every launch, and a private tmux server
+  (`TMUX_TMPDIR`); `--base` is checked against a real commit only `develop`
+  has. Thirty-three mutations of the script — the session owner not checked or
+  not set, leading zeros kept, a relative CLI
+  path, a relative PATH
+  entry kept, a bare CLI name, an absolute path
+  without the launcher's PATH, no lock, a lock never released,
+  duplicate numbers not merged, a
+  live task window ignored, a
+  branch held elsewhere ignored, the harness check dropped or partial, both labels resolved to
+  the first, no pagination of issues or of blockers, blockers counted per page,
+  pull requests kept, blockers ignored, each tracker failure swallowed (a
+  failing second page included), any directory taken for a worktree, the branch not
+  checked, a fetch before the dry-run exit, the `$` dropped from the Codex
+  prompt, a window or session outside its worktree, an existing branch
+  recreated, `--base` ignored, the tmux check dropped — each fail it.
+- `scripts/lint.sh`: the launcher is syntax-checked and executable, carries no
+  unmarked fail-open idiom and no bash-4-only construct (`mapfile`,
+  `declare -A`, `${x,,}` — it must run on macOS bash 3.2), keeps "refusing to
+  guess that it is ready", reads every page of issues and of blockers and drops
+  pull requests, checks the needed harness CLIs, a resumed worktree (through
+  `git worktree list --porcelain`), a live task window and a branch held
+  elsewhere before anything starts, calls neither
+  `gh pr merge` nor `git push`; `decompose` Handoff and both READMEs name it.
+- `.github/workflows/check.yml`: installs tmux when the runner lacks it, so the
+  launcher's controls run in CI rather than skip; and runs `tests/task-wave.sh`
+  again under bash 3.2.57 (macOS's `/bin/bash`) in a `bash:3.2` image pinned by
+  digest — 43/43 there too.
+
+### Changed
+- `decompose` Handoff: a wave's tasks can run side by side, one session each,
+  through the launcher; offered with the return list when the tracker is
+  GitHub Issues.
+- README / README.ru: section "Running a wave in parallel" / «Волна задач
+  параллельно».
+
+Supply-chain self-check (`git diff v1.12.0` over skills/ templates/, plus the
+new payload file): the launcher talks to the network through `git fetch origin
+<base>` and `gh` (the issues list, issue view, the blocked-by API) — reads
+only. The one deletion is its own lock on exit (`rm -f` of the pid file it
+wrote, `rmdir` of the lock directory it created). No credentials handled, no
+`eval`, no base64.
+
+Cross-review (Codex, `xreview.sh`): round 1 — ready with fixes, three Required
+(the ready set cut at 200 issues before the label filter; any existing
+directory taken for the task's worktree; controls missing for an `issue view`
+failure, a dry-run fetch and a real `--base` start point); all three fixed as
+above. Round 2 — one Required: the blocked-by list is paginated too (30 per
+page), so an open blocker on page 2 read as ready, and the stub had hidden it
+by serving the whole fixture; fixed with every page read and the stub serving
+real pages. Round 3 — two Required: a wave needing a harness not on PATH
+reported success while its window died, fixed with the CLI check before
+anything is created; and the review spec had no premortem edges, now in the
+spec above with a control or a stated exclusion for each (one of them, an
+issue with both builder labels, led to the skip). Round 4 — two Required: a
+re-run started a second agent beside a live one in the same worktree (and the
+test had pinned that as correct), and a `task-<N>` branch checked out in
+another worktree passed the plan and failed `git worktree add` mid-run; both
+now refused or skipped in the plan. Round 5 — one Required: the same number
+given twice (`2 2`) still reached two windows in one worktree; numbers are now
+merged before the plan. Round 6 — one Required: two launchers started at once
+could both pass the live-window check; a repository-wide lock now serialises
+the check and the start, with a concurrent control. Round 7 — one Required: a
+window could run with the tmux server's environment rather than the launcher's,
+so a CLI checked on the launcher's PATH might not start there. Measured here,
+tmux 3.4 gives a new window the creating client's PATH; the fix (absolute path
+and the launcher's PATH) covers the setups where that does not hold, and a
+tmux shim that strips the client's PATH reproduces them in the controls.
+Round 8 — two Required: `command -v` can return a relative path (`bin/claude`
+when PATH holds `bin`), which the window, starting in the worktree, no longer
+resolves — fixed by making the CLI path and every PATH entry absolute; and
+"empty arrays under `set -u` break bash 3.2". Measured in bash 3.2.57: `${#a[@]}`
+on an empty array is fine, `"${a[@]}"` is what fails, and the launcher only
+expands arrays it has made non-empty — the whole suite passes there; it now
+runs under bash 3.2 in CI so that stays measured rather than argued. Round 9 —
+two Required: `2 02` named one issue twice past the deduplication (numbers
+compared as strings) — now read as canonical decimal; and the controls counting
+launches read the stub's file right after the launcher returned, a race on a
+slow runner — they now wait for the expected count and watch for an extra one.
+Round 10 — one Required: two checkouts with the same basename share the session
+name, so one could take the other's live window for its own task and skip it;
+the session now carries its owner and a foreign one is refused. By the
+maintainer's decision this last fix was not sent to an eleventh round: it is
+verified by its controls (two of them fail on each of its two mutations), the
+full suite and the bash 3.2 run, not by a further cross-review.
+
 ## [1.12.0] — 2026-10-16
 
 Two harnesses and cross-review: the three skills run unchanged in Codex CLI,
@@ -906,6 +1047,7 @@ Donor audit of the `hybrid-plan` / `hybrid-review` skill set —
   tool-agnostic migration-guard and protected-branch rules into any repo —
   GitLab and GitHub CI, pre-commit hooks, failing closed.
 
+[1.13.0]: https://github.com/umar-s/task-flow/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/umar-s/task-flow/compare/v1.11.0...v1.12.0
 [1.11.0]: https://github.com/umar-s/task-flow/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/umar-s/task-flow/compare/v1.9.1...v1.10.0

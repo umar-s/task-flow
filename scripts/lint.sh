@@ -260,6 +260,27 @@ if grep -nE '\|\| true|2>/dev/null' templates/xreview/*.sh | grep -v 'lint: allo
   err "fail-open idiom in templates/xreview (mark a deliberate one with '# lint: allow')"
   grep -nE '\|\| true|2>/dev/null' templates/xreview/*.sh | grep -v 'lint: allow' >&2
 fi
+TW=templates/wave/task-wave.sh
+bash -n "$TW" || err "syntax error: $TW"; [ -x "$TW" ] || err "not executable: $TW"
+if grep -nE '\|\| true|2>/dev/null' "$TW" | grep -v 'lint: allow' >/dev/null; then
+  err "fail-open idiom in $TW (mark a deliberate one with '# lint: allow')"; grep -nE '\|\| true|2>/dev/null' "$TW" | grep -v 'lint: allow' >&2
+fi
+grep -q 'refusing to guess that it is ready' "$TW" || err "$TW: an unreadable blocker list must stop the wave, never count as ready"
+grep -nE '^[^#]*\b(mapfile|readarray|declare -A|local -A)\b|\$\{[a-zA-Z_]+(,,|\^\^)\}' "$TW" >/dev/null && err "$TW uses a bash-4-only construct (it must run on macOS bash 3.2)"
+grep -q 'gh api --paginate' "$TW" && grep -q 'select(.pull_request == null)' "$TW" || err "$TW: the ready set must read every page and drop pull requests (a --limit cut loses ready tasks)"
+grep -qF 'gh api --paginate "repos/$repo/issues/$n/dependencies/blocked_by' "$TW" || err "$TW: blockers must be read on every page (30 per page by default — an open one on page 2 would read as ready)"
+grep -q 'command -v codex' "$TW" && grep -q 'command -v claude' "$TW" || err "$TW: the harnesses a wave needs must be on PATH before any worktree exists (a missing CLI closes its window at once)"
+grep -q 'not started again' "$TW" && grep -q 'is checked out at' "$TW" || err "$TW: a live task window must not get a second agent, and a branch held by another worktree must stop the plan"
+grep -q 'task-wave.lock' "$TW" && grep -q 'git rev-parse --git-common-dir' "$TW" || err "$TW: one launcher per repository — the lock in the git common dir serialises the window check and the start"
+grep -q '@task_wave_repo' "$TW" && grep -qF '[ "$owner" = "$common" ] || die' "$TW" || err "$TW: a wave-<name> session must carry its owner, and a foreign one must be refused (same basename, other repository)"
+grep -qF 'issues+=("$((10#' "$TW" || err "$TW: an issue number must be read as canonical decimal (02 and 2 are one issue)"
+grep -q 'launch_path=' "$TW" && grep -q 'abs "$(command -v claude)"' "$TW" || err "$TW: the CLI path and the PATH entries must be absolute — the window starts in another directory"
+grep -q 'BASH32_IMAGE' .github/workflows/check.yml || err "check.yml no longer runs the wave launcher's controls under bash 3.2"
+grep -q 'run_with_path="env PATH=' "$TW" || err "$TW: the window must run the checked CLI by absolute path with the launcher's PATH (a tmux window's environment can differ)"
+grep -q 'worktree list --porcelain' "$TW" || err "$TW: an existing directory is resumed only when it is this repository's worktree on task-<N>"
+grep -qE '^[^#]*\b(gh pr merge|git push)\b' "$TW" && err "$TW must not merge or push — sessions stay interactive and \`task\` owns landing"
+grep -q 'templates/wave/task-wave.sh' skills/decompose/SKILL.md || err "decompose Handoff no longer names the wave launcher"
+for r in README.md README.ru.md; do grep -q 'task-wave.sh' "$r" || err "$r does not describe the wave launcher"; done
 grep -q 'Ready to merge' "$XS" && err "$XS parses a Markdown verdict again (two review rounds showed a person and a parser read it differently)"
 grep -q 'last two non-empty lines' "$XS" || err "$XS no longer reads the verdict from the last two lines only"
 for w in 'exec -s read-only --ignore-rules' '--ignore-user-config' '--setting-sources ""' '"disableAllHooks":true' '--strict-mcp-config' '--disable-slash-commands' '--permission-mode dontAsk' \

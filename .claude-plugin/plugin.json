@@ -1,6 +1,6 @@
 {
   "name": "task-flow",
-  "version": "1.12.0",
+  "version": "1.13.0",
   "description": "Per-task quality flow + deterministic CI gate for Claude Code and Codex CLI — ingest → 2× premortem → TDD → adversarial code-review → conditional security-review → live verify → close, with phases 6/6b reviewed by the other model (headless, read-only, isolated from the author's session), plus a portable secret-scan + migration-guard + protected-branch gate scaffolded into any repo (optional Codex Security second pass on GitLab MRs) + a decompose skill that slices an epic/feature/spec into dependency-linked tasks (DoD, Story Points, graph) and pushes them to the tracker.",
   "author": {
     "name": "Sergei",

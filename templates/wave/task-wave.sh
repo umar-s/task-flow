@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+# task-wave.sh — start one wave of task-flow tasks side by side: every ready
+# task gets its own git worktree and its own interactive session in a tmux
+# window — Claude Code or Codex, by the issue's builder:* label.
+#
+#   bash scripts/task-wave.sh [--dry-run] [--base <branch>] [<issue>...]
+#
+# Run it from the repository (copy this file to scripts/ once). Tracker: GitHub
+# Issues through an authenticated `gh`. With no issue numbers it takes the ready
+# set — open issues carrying builder:claude or builder:codex whose blocked-by
+# issues are all closed. A task whose worktree already exists is resumed in it.
+# Sessions stay interactive — `task` asks on ingest and before merging, so
+# attach (`tmux attach -t wave-<repo>`) and answer each window. Nothing is
+# merged, pushed or deleted here.
+set -euo pipefail
+
+die() { echo "task-wave: $*" >&2; exit 2; }
+dry=0; base=""; issues=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) dry=1; shift ;;
+    --base) [ $# -ge 2 ] || die "--base needs a branch"; base="$2"; shift 2 ;;
+    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+    -*) die "unknown option $1" ;;
+    *) [[ "$1" =~ ^#?[0-9]+$ ]] || die "not an issue number: $1"
+       issues+=("$((10#${1#\#}))"); shift ;;   # canonical decimal: 02 and #2 are #2, deduplicated below
+  esac
+done
+
+command -v gh >/dev/null || die "gh is not on PATH"
+[ $dry = 1 ] || command -v tmux >/dev/null || die "tmux is not on PATH (try --dry-run to see the plan)"
+root="$(git rev-parse --show-toplevel)" || die "not inside a git repository"
+root="$(cd "$root" && pwd -P)"; name="$(basename "$root")"
+repo="$(gh repo view --json nameWithOwner -q .nameWithOwner)" || die "gh cannot read this repository"
+[ -n "$base" ] || base="$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)" || die "gh cannot read the default branch"
+
+# The ready set: every open issue with a builder label (server-side label filter,
+# all pages — no count limit), pull requests excluded, then its blockers.
+if [ ${#issues[@]} -eq 0 ]; then
+  labelled=""
+  for label in builder:claude builder:codex; do
+    page="$(gh api --paginate "repos/$repo/issues?state=open&per_page=100&labels=$label" \
+      -q '.[] | select(.pull_request == null) | .number')" || die "gh cannot list the issues labelled $label"
+    labelled="$labelled $page"
+  done
+  for n in $(printf '%s\n' $labelled | sort -nu); do
+    # every page of blockers (30 per page by default); ready = no open one on any page
+    open="$(gh api --paginate "repos/$repo/issues/$n/dependencies/blocked_by?per_page=100" \
+      -q '.[] | select(.state == "open") | .number')" \
+      || die "cannot read the blockers of #$n — refusing to guess that it is ready"
+    [ -z "$open" ] && issues+=("$n")
+  done
+  [ ${#issues[@]} -gt 0 ] || { echo "task-wave: no ready task in $repo (open, builder:claude|codex label, no open blocker)"; exit 0; }
+fi
+
+# One entry per issue: a number named twice must not get two agents in one checkout.
+uniq_issues=(); seen=" "
+for n in "${issues[@]}"; do
+  case "$seen" in *" $n "*) continue ;; esac
+  seen="$seen$n "; uniq_issues+=("$n")
+done
+issues=("${uniq_issues[@]}")
+
+# Is $1 a worktree of this repository, checked out on branch $2? (canonical paths)
+our_worktree() {
+  local want; want="$(cd "$1" && pwd -P)"
+  git -C "$root" worktree list --porcelain | awk -v w="$want" -v b="refs/heads/$2" '
+    $1 == "worktree" { cur = substr($0, 10) }
+    $1 == "branch" && cur == w && $2 == b { found = 1 }
+    END { exit !found }'
+}
+# Where is branch $1 checked out, if anywhere? (git refuses a second checkout)
+branch_path() {
+  git -C "$root" worktree list --porcelain | awk -v b="refs/heads/$1" '
+    $1 == "worktree" { cur = substr($0, 10) }
+    $1 == "branch" && $2 == b { print cur; exit }'
+}
+
+# One launcher per repository at a time: the window check below and the window it
+# leads to must not interleave with another run's (two agents in one checkout).
+# mkdir is atomic everywhere; the lock sits in the git dir every worktree shares.
+common="$(cd "$root" && cd "$(git rev-parse --git-common-dir)" && pwd -P)"
+if [ $dry = 0 ]; then
+  lock="$common/task-wave.lock"
+  if ! mkdir "$lock" 2>/dev/null; then   # lint: allow — a failing mkdir is the answer: the lock is held
+    holder="$(cat "$lock/pid" 2>/dev/null)" || holder="?"   # lint: allow — the holder may not have written its pid yet
+    die "another task-wave holds $lock (pid $holder) — wait for it; if that process is gone, remove the directory"
+  fi
+  trap 'rm -f "$lock/pid"; rmdir "$lock"' EXIT
+  echo $$ > "$lock/pid"
+fi
+
+# A live window #<N> in this wave's session is that task's agent, still running
+# (a window closes when its CLI exits) — never start a second one beside it.
+# The session is named by the checkout's basename, so two repositories can share
+# the name: it carries its owner (@task_wave_repo = this git common dir), and a
+# session owned by another repository — or by nobody — is not ours to read.
+session="wave-$name"; running=" "
+if command -v tmux >/dev/null && tmux has-session -t "=$session" 2>/dev/null; then   # lint: allow — "no session" is the answer, not an error
+  owner="$(tmux show-options -qv -t "=$session:" @task_wave_repo)"
+  [ "$owner" = "$common" ] || die "tmux session $session belongs to ${owner:-another use of that name} — not this repository ($common); rename or close it"
+  running=" $(tmux list-windows -t "=$session" -F '#{window_name}' | tr '\n' ' ')"
+fi
+
+# Plan every task first; anything that cannot be started safely stops the run
+# before a single worktree or window exists.
+plan_n=(); plan_wt=(); plan_mode=(); plan_cmd=(); need_claude=0; need_codex=0
+# A tmux server keeps the environment it started with, so a window may not see
+# this shell's PATH: run the CLI by the absolute path checked here, with this PATH.
+# Both are made absolute against this directory: the window starts in the task's
+# worktree, where a relative PATH entry (or "", which means ".") points elsewhere.
+here="$(pwd -P)"
+abs() { case "$1" in /*) printf '%s' "$1" ;; "") printf '%s' "$here" ;; *) printf '%s/%s' "$here" "$1" ;; esac; }
+launch_path=""; rest="$PATH:"
+while [ -n "$rest" ]; do d="${rest%%:*}"; rest="${rest#*:}"; launch_path="$launch_path${launch_path:+:}$(abs "$d")"; done
+claude_bin=claude; codex_bin=codex
+if command -v claude >/dev/null; then claude_bin="$(abs "$(command -v claude)")"; fi
+if command -v codex >/dev/null; then codex_bin="$(abs "$(command -v codex)")"; fi
+run_with_path="env PATH=$(printf %q "$launch_path")"
+for n in "${issues[@]}"; do
+  builder="$(gh issue view "$n" --json labels -q '[.labels[].name | select(. == "builder:claude" or . == "builder:codex")] | unique | join(" ")')" \
+    || die "gh cannot read #$n"
+  case "$builder" in
+    builder:claude) cmd="$run_with_path $(printf %q "$claude_bin") $(printf %q "/task-flow:task #$n")"; need_claude=1 ;;
+    builder:codex)  cmd="$run_with_path $(printf %q "$codex_bin") $(printf %q "\$task-flow:task #$n")"; need_codex=1 ;;
+    "") echo "task-wave: #$n has no builder:claude or builder:codex label — skipped"; continue ;;
+    *)  echo "task-wave: #$n has both builder labels — skipped (keep one)"; continue ;;
+  esac
+  wt="$(dirname "$root")/$name-$n"; br="task-$n"
+  case "$running" in *" #$n "*)
+    echo "task-wave: #$n is already running in tmux window #$n of $session — not started again"; continue ;;
+  esac
+  if [ -e "$wt" ]; then
+    our_worktree "$wt" "$br" || die "$wt exists but is not this repository's worktree on $br — move it or start #$n by hand"
+    mode=resume; how="worktree on $br exists — resuming in it"
+  elif git -C "$root" show-ref --verify --quiet "refs/heads/$br"; then
+    held="$(branch_path "$br")"
+    [ -z "$held" ] || die "$br is checked out at $held, not at $wt — finish #$n there or remove that worktree"
+    mode=branch; how="git worktree add $wt $br   (branch exists)"
+  else
+    mode=new; how="git worktree add $wt -b $br origin/$base"
+  fi
+  printf '#%s %s → %s\n    %s\n    tmux window #%s: %s\n' "$n" "$builder" "$wt" "$how" "$n" "$cmd"
+  plan_n+=("$n"); plan_wt+=("$wt"); plan_mode+=("$mode"); plan_cmd+=("$cmd")
+done
+[ ${#plan_n[@]} -gt 0 ] || exit 0
+# A window whose CLI is missing would close at once with "command not found",
+# after the worktree exists — check the harnesses this wave needs before anything.
+missing=""
+[ $need_claude = 1 ] && ! command -v claude >/dev/null && missing="$missing claude"
+[ $need_codex = 1 ] && ! command -v codex >/dev/null && missing="$missing codex"
+if [ -n "$missing" ]; then
+  [ $dry = 1 ] || die "not on PATH:$missing — install it, or relabel those tasks"
+  echo "task-wave: not on PATH:$missing — the real run will refuse"
+fi
+[ $dry = 1 ] && { echo "task-wave: dry run — nothing created"; exit 0; }
+
+git -C "$root" fetch -q origin "$base" || die "cannot fetch origin/$base"
+i=0
+while [ $i -lt ${#plan_n[@]} ]; do
+  n="${plan_n[$i]}"; wt="${plan_wt[$i]}"; cmd="${plan_cmd[$i]}"
+  case "${plan_mode[$i]}" in
+    new)    git -C "$root" worktree add -q "$wt" -b "task-$n" "origin/$base" ;;
+    branch) git -C "$root" worktree add -q "$wt" "task-$n" ;;
+  esac
+  if tmux has-session -t "=$session" 2>/dev/null; then   # lint: allow — "no session" is the answer, not an error
+    tmux new-window -t "=$session" -n "#$n" -c "$wt" "$cmd"
+  else
+    # one tmux call: the owner is set before a window that exits at once could take the session with it
+    tmux new-session -d -s "$session" -n "#$n" -c "$wt" "$cmd" \; set-option -t "=$session:" @task_wave_repo "$common"
+  fi
+  i=$((i+1))
+done
+echo "task-wave: ${#plan_n[@]} session(s) in tmux — attach with: tmux attach -t $session"
