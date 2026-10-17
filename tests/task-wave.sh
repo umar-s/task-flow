@@ -233,5 +233,16 @@ PATH="$TMP/tmuxshim:$PATH" bash "$TW" 2 >/dev/null 2>&1; rc=$?
 for i in $(seq 1 20); do [ -s "$STUB_LOG/launches-claude-lab-2" ] && break; sleep 0.2; done
 check "window with a stripped PATH still runs the checked claude" '[ $rc -eq 0 ] && [ -s "$STUB_LOG/launches-claude-lab-2" ]'
 
+# 11. a relative PATH entry (`relbin`, resolved from the repo root where the launcher
+#     runs) holds the CLI and its interpreter; the window starts in ../lab-2, where
+#     `relbin` does not exist — the launcher must have made both absolute.
+tmux kill-server >/dev/null 2>&1 || true
+mkdir -p "$TMP/w/lab/relbin"
+printf '#!/usr/bin/env tw-rel-interp\necho x >> "$STUB_LOG/launches-relclaude-$(basename "$PWD")"; sleep 60\n' > "$TMP/w/lab/relbin/claude"
+chmod +x "$TMP/w/lab/relbin/claude"; ln -s "$(command -v bash)" "$TMP/w/lab/relbin/tw-rel-interp"
+PATH="relbin:$PATH" bash "$TW" 2 >/dev/null 2>&1; rc=$?
+for i in $(seq 1 20); do [ -s "$STUB_LOG/launches-relclaude-lab-2" ] && break; sleep 0.2; done
+check "CLI and interpreter on a relative PATH entry still start in the worktree" '[ $rc -eq 0 ] && [ -s "$STUB_LOG/launches-relclaude-lab-2" ]'
+
 echo "tests/task-wave: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

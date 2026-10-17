@@ -100,10 +100,16 @@ fi
 plan_n=(); plan_wt=(); plan_mode=(); plan_cmd=(); need_claude=0; need_codex=0
 # A tmux server keeps the environment it started with, so a window may not see
 # this shell's PATH: run the CLI by the absolute path checked here, with this PATH.
+# Both are made absolute against this directory: the window starts in the task's
+# worktree, where a relative PATH entry (or "", which means ".") points elsewhere.
+here="$(pwd -P)"
+abs() { case "$1" in /*) printf '%s' "$1" ;; "") printf '%s' "$here" ;; *) printf '%s/%s' "$here" "$1" ;; esac; }
+launch_path=""; rest="$PATH:"
+while [ -n "$rest" ]; do d="${rest%%:*}"; rest="${rest#*:}"; launch_path="$launch_path${launch_path:+:}$(abs "$d")"; done
 claude_bin=claude; codex_bin=codex
-if command -v claude >/dev/null; then claude_bin="$(command -v claude)"; fi
-if command -v codex >/dev/null; then codex_bin="$(command -v codex)"; fi
-run_with_path="env PATH=$(printf %q "$PATH")"
+if command -v claude >/dev/null; then claude_bin="$(abs "$(command -v claude)")"; fi
+if command -v codex >/dev/null; then codex_bin="$(abs "$(command -v codex)")"; fi
+run_with_path="env PATH=$(printf %q "$launch_path")"
 for n in "${issues[@]}"; do
   builder="$(gh issue view "$n" --json labels -q '[.labels[].name | select(. == "builder:claude" or . == "builder:codex")] | unique | join(" ")')" \
     || die "gh cannot read #$n"

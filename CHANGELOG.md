@@ -46,15 +46,16 @@ tictactoe lab ran its wave 2 as one Claude Code task beside one Codex task.
   twice is planned once, and one launcher runs per repository at a time (an
   atomic `mkdir` lock in the git common dir, released on exit; a concurrent run
   is refused). The window runs the CLI by the absolute path the plan checked,
-  with the launcher's PATH, so a tmux whose window environment differs still
-  finds it and its `#!/usr/bin/env` interpreter. A `task-<N>` branch
+  with the launcher's PATH — both made absolute against the launcher's
+  directory — so a window whose environment or cwd differs still finds it and
+  its `#!/usr/bin/env` interpreter. A `task-<N>` branch
   checked out in some other worktree stops the plan before anything starts. A
   dry run does not fetch. Tracker: GitHub Issues through `gh` (the blocked-by
   API).
 - `docs/superpowers/specs/2026-10-17-task-flow-1-13-0-wave-launcher.md`: the
-  DoD and the premortem edges (E1–E22), each mapped to a control or an explicit
+  DoD and the premortem edges (E1–E23), each mapped to a control or an explicit
   exclusion.
-- `tests/task-wave.sh`: 38 controls with a stub `gh` that runs the script's own
+- `tests/task-wave.sh`: 39 controls with a stub `gh` that runs the script's own
   `-q` filters through `jq` over fixtures and serves GitHub's pages unless
   `--paginate` (100 issues, 30 blockers by default; the ready fixture sits past
   item 100 of its label and item 200 of all open issues, another issue's open
@@ -62,7 +63,8 @@ tictactoe lab ran its wave 2 as one Claude Code task beside one Codex task.
   the first was printed), a `git` wrapper counting fetches, stub `claude`/`codex`
   recording argv, cwd and every launch, and a private tmux server
   (`TMUX_TMPDIR`); `--base` is checked against a real commit only `develop`
-  has. Twenty-eight mutations of the script — a bare CLI name, an absolute path
+  has. Thirty mutations of the script — a relative CLI path, a relative PATH
+  entry kept, a bare CLI name, an absolute path
   without the launcher's PATH, no lock, a lock never released,
   duplicate numbers not merged, a
   live task window ignored, a
@@ -82,7 +84,9 @@ tictactoe lab ran its wave 2 as one Claude Code task beside one Codex task.
   elsewhere before anything starts, calls neither
   `gh pr merge` nor `git push`; `decompose` Handoff and both READMEs name it.
 - `.github/workflows/check.yml`: installs tmux when the runner lacks it, so the
-  launcher's controls run in CI rather than skip.
+  launcher's controls run in CI rather than skip; and runs `tests/task-wave.sh`
+  again under bash 3.2.57 (macOS's `/bin/bash`) in a `bash:3.2` image pinned by
+  digest — 39/39 there too.
 
 ### Changed
 - `decompose` Handoff: a wave's tasks can run side by side, one session each,
@@ -121,6 +125,13 @@ so a CLI checked on the launcher's PATH might not start there. Measured here,
 tmux 3.4 gives a new window the creating client's PATH; the fix (absolute path
 and the launcher's PATH) covers the setups where that does not hold, and a
 tmux shim that strips the client's PATH reproduces them in the controls.
+Round 8 — two Required: `command -v` can return a relative path (`bin/claude`
+when PATH holds `bin`), which the window, starting in the worktree, no longer
+resolves — fixed by making the CLI path and every PATH entry absolute; and
+"empty arrays under `set -u` break bash 3.2". Measured in bash 3.2.57: `${#a[@]}`
+on an empty array is fine, `"${a[@]}"` is what fails, and the launcher only
+expands arrays it has made non-empty — the whole suite passes there; it now
+runs under bash 3.2 in CI so that stays measured rather than argued.
 
 ## [1.12.0] — 2026-10-16
 
