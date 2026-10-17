@@ -281,6 +281,19 @@ grep -q 'worktree list --porcelain' "$TW" || err "$TW: an existing directory is 
 grep -qE '^[^#]*\b(gh pr merge|git push)\b' "$TW" && err "$TW must not merge or push — sessions stay interactive and \`task\` owns landing"
 grep -q 'templates/wave/task-wave.sh' skills/decompose/SKILL.md || err "decompose Handoff no longer names the wave launcher"
 for r in README.md README.ru.md; do grep -q 'task-wave.sh' "$r" || err "$r does not describe the wave launcher"; done
+# YouTrack adapter (1.14.0) — each guard is a measured failure of a live instance
+grep -qF '&\$top=$2&\$skip=$3' "$TW" || err "$TW: every YouTrack search must send \$top and page with \$skip — without \$top the server silently returns at most 500 issues"
+grep -qF 'curl -fsS --max-time 30 --config -' "$TW" || err "$TW: the YouTrack token must reach curl on stdin (--config -), never on its command line"
+grep -qE '^[^#]*(-H|--header)[ =]*"?Authorization' "$TW" && err "$TW passes the YouTrack token on curl's command line (visible in ps)"
+grep -qF '|| exit 2' "$TW" && grep -q 'set -e is off' "$TW" || err "$TW: yt_blocked runs as an if condition — a failed blocker read must exit by hand, or it reads as ready"
+grep -qF "jq -e \"\$2\"" "$TW" || err "$TW: a YouTrack answer must be checked for its JSON shape (a wrong base URL answers 200 with HTML)"
+grep -q 'https://?\*' "$TW" || err "$TW: YOUTRACK_URL must be https:// — the token goes with every request"
+grep -qF '"${line%%' "$TW" || err "$TW: an explicit YouTrack id must take the server's idReadable (dev-05 and DEV-5 are one task)"
+grep -qE '^[^#]*q=.*tag:' "$TW" && err "$TW puts a tag in the YouTrack search — an unknown tag is a 400, not an empty list; filter tags on the client"
+grep -q '/api/issueLinkTypes' "$TW" && grep -q 'not a link name on this instance' "$TW" || err "$TW: blocker link names must be checked against the instance — YouTrack searches an unknown one as text, and every blocked task reads as ready"
+grep -q 'symbolic-ref -q --short refs/remotes/origin/HEAD' "$TW" || err "$TW: on YouTrack (GitLab, no gh) the base is origin/HEAD or --base, never a guess"
+grep -q 'builder tag' skills/decompose/SKILL.md && grep -q 'tags?' skills/decompose/references/tracker-sync.md || err "decompose: phase 7 must plan, write and read back the builder tag"
+grep -q '| builder |' skills/decompose/references/draft-template.md || err "draft-template.md: the task table lost its builder column"
 grep -q 'Ready to merge' "$XS" && err "$XS parses a Markdown verdict again (two review rounds showed a person and a parser read it differently)"
 grep -q 'last two non-empty lines' "$XS" || err "$XS no longer reads the verdict from the last two lines only"
 for w in 'exec -s read-only --ignore-rules' '--ignore-user-config' '--setting-sources ""' '"disableAllHooks":true' '--strict-mcp-config' '--disable-slash-commands' '--permission-mode dontAsk' \

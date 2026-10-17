@@ -34,10 +34,10 @@ tracker-specific fields, states, or workflows outside of the illustrative
 "YouTrack adapter" mapping in §7.
 
 ```
-create_issue(summary, description, estimate?, parent?, issue_type?) -> <TASK-ID>
-update_issue(<TASK-ID>, summary?, description?, estimate?) -> ok
+create_issue(summary, description, estimate?, parent?, issue_type?, tags?) -> <TASK-ID>
+update_issue(<TASK-ID>, summary?, description?, estimate?, tags?) -> ok
 link(from: <TASK-ID>, to: <TASK-ID>, type: "depends" | "parent") -> ok
-read_issue(<TASK-ID>) -> { summary, description, estimate?, parent?, links[], url? }
+read_issue(<TASK-ID>) -> { summary, description, estimate?, parent?, links[], tags?, url? }
 search_issues(query) -> [{ id: <TASK-ID>, summary, url? }]   # optional; query in the tracker's own language
 describe_project(project) -> { issue_types[], fields[{ name, type }], link_types[], url_base? }   # optional; what preflight reads
 markup: "markdown" | "jira-wiki" | "adf-via-markdown" | "plain"   # declared, default markdown
@@ -57,6 +57,13 @@ markup: "markdown" | "jira-wiki" | "adf-via-markdown" | "plain"   # declared, de
 - **`update_issue` is what "update in place" means** (§6) and what the
   id-rewrite pass (§9 step 6) uses; an adapter without it is create-only, and
   the dry-run says so.
+- **`tags` carries one thing only: the task's builder** — `builder:claude` or
+  `builder:codex`, from the draft's `builder` column (the approval assigns it;
+  empty = no tag). It is what `task` reads as the author (the other model
+  reviews) and what the wave launcher reads as the harness to start. Added,
+  never replacing the issue's other tags or labels. A YouTrack tag, a GitHub
+  label (`gh issue edit --add-label`); a tracker with neither says
+  `builder: not writable — set by hand` in the dry-run, and the sync continues.
 - **`read_issue` is what makes a write verifiable.** An `ok` from
   `create_issue`/`link` is a claim by the side that did the writing — the same
   axiom that makes this plugin's gate deterministic applies here (§9 step 7).
@@ -187,8 +194,9 @@ writes:
   duplicates` (§6); so the plan below promises only what exists.
 - Every task's `summary` (from `name`), its full rendered `description`
   (from `context` + `requirements` + `dod` including `truths`, per §7),
-  its resolved `estimate` value and which fallback rung produced it, and
-  its stable idempotency key (§6).
+  its resolved `estimate` value and which fallback rung produced it, its
+  builder tag (`builder:claude` / `builder:codex` / none), and its stable
+  idempotency key (§6).
 - Every `link` call that would run: task → epic `parent` links and task →
   task `depends` links, listed by `<TASK-ID>` pair and type.
 - Tasks whose fields still carry a `<placeholder: …>`, listed by id: they are
@@ -297,6 +305,7 @@ illustrative only.
 | `link(from, to, "parent")` | YouTrack's native "subtask of" / epic-link command. |
 | `read_issue(<TASK-ID>)` | An issue-read MCP tool, or REST `GET /api/issues/{id}?fields=idReadable,summary,description,links(direction,linkType(name),issues(idReadable)),customFields(name,value(name,presentation))` — links and the Estimation field (a period value reads back as `presentation`) come back in the same read. |
 | `update_issue(<TASK-ID>, …)` | The same issue tool with the id, or REST `POST /api/issues/{id}` with the changed fields; links and estimate through `/api/commands`. |
+| `tags` (create / update) | The command `tag builder:claude` through a command tool or REST `POST /api/commands` — it creates the tag on first use. Never a tag in a search query before it exists: YouTrack answers an unknown tag with `400 invalid_query`, not an empty list. Read back as `tags(name)` on the issue read. |
 | `search_issues(query)` | YouTrack's own query language through an issue-search tool: duplicates `project: <KEY> #Unresolved summary: {<words>}` (braces keep a multi-word phrase together); the §6 key lookup `project: <KEY> description: {decompose-id:<slug>#<n>}` with no state filter. The dry-run shows at most three duplicate hits per task. |
 | `markup` | `markdown` — YouTrack renders Markdown natively; nothing to convert. |
 
@@ -387,7 +396,8 @@ it.
    rung 3, the `SP: N` line (not byte for byte — trackers normalise markup);
    `estimate` numerically equal on rungs 1–2; `parent` equal; `links` the set
    of (type, id) pairs the plan issued, a degraded one by its `Depends on:` /
-   `Parent:` line. Anything that differs, or an id that reads back empty, is a
+   `Parent:` line; `tags` holding the builder tag sent and **not the other
+   one** (both builder tags on one issue make the launcher skip it). Anything that differs, or an id that reads back empty, is a
    **partial failure** reported per §8 with the exact field. A match is
    **shown, not declared**: the report lists, per issue and per field, the
    value sent and the value read (`estimate: sent 5 / read 5`); the

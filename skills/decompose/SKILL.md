@@ -250,6 +250,12 @@ document that no longer exists. Fold the answer in, say what changed, show the
 revised draft, ask again. If you cannot quote the words that approved *this*
 version, you do not have approval.
 
+The one exception is the task table's `builder` column (who builds each task —
+`claude` or `codex`; the other model reviews): a dispatch annotation, not task
+content, so the approval may assign it in the same words ("approved; codex
+builds T1, T3") without re-approval — write it into the table, and Phase 7's
+dry-run shows it before anything is written.
+
 **Optional deep premortem on the draft.** If the `premortem` skill is
 installed (check the available skills list), **offer** — alongside the
 approval request, one line, never forced — a full premortem session on the
@@ -279,8 +285,8 @@ If a tracker is reachable: **preflight first** — one read of the target
 project/epic that proves the token and tells the plan what it may promise —
 then **default to
 dry-run**: render and print the full create/link plan (every summary,
-description, estimate + fallback rung, link, stable idempotency key, possible
-duplicates if the adapter can search) with **zero writes**, and get the
+description, estimate + fallback rung, builder tag, link, stable idempotency
+key, possible duplicates if the adapter can search) with **zero writes**, and get the
 user's confirmation on that plan. Only after confirmation, re-run the same
 plan with writes enabled (create-or-update by idempotency key, then `parent`
 and `depends` links), then **read every touched issue back** and compare it
@@ -300,8 +306,10 @@ optionally, a well-formed set of tracker issues) exists; running any task is
 not this skill's job. A wave's tasks can run side by side, one session each:
 `templates/wave/task-wave.sh` (copied once into the project's `scripts/`)
 gives every ready issue its own worktree and its own tmux window with the
-harness its `builder:*` label names — offer it with the return list when the
-tracker is GitHub Issues.
+harness its `builder:*` label or tag names — offer it with the return list:
+`bash scripts/task-wave.sh` on GitHub Issues, `bash scripts/task-wave.sh
+--tracker youtrack --epic <EPIC-ID>` on YouTrack (`YOUTRACK_URL` and the token
+variable's name from the binding).
 
 ## Fixed discipline (non-negotiable)
 - Where this flow and the project's instruction file genuinely conflict, the project

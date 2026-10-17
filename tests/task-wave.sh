@@ -270,5 +270,192 @@ PATH="relbin:$PATH" bash "$TW" 2 >/dev/null 2>&1; rc=$?
 for i in $(seq 1 20); do [ -s "$STUB_LOG/launches-relclaude-lab-2" ] && break; sleep 0.2; done
 check "CLI and interpreter on a relative PATH entry still start in the worktree" '[ $rc -eq 0 ] && [ -s "$STUB_LOG/launches-relclaude-lab-2" ]'
 
+# ===================== YouTrack (--tracker youtrack) =====================
+# A stub curl serves a YouTrack fixture db with the behaviour measured on a live
+# instance (1.14.0 spec): no $top → silently at most 500 items; a tag in a query →
+# 400 (the tag may not exist yet); a blocker query on an unknown id → 400; GET of an
+# unknown id → 404; ids are canonical (dev-05 → DEV-5). It reads the --config from
+# stdin like curl and records argv — the token must never be there.
+tmux kill-server >/dev/null 2>&1 || true
+#   DEV-1 epic · DEV-2 claude, blocker DEV-90 resolved (ready) · DEV-3 codex, blocked by
+#   open DEV-2 · DEV-4 no builder tag · DEV-5 codex (ready) · DEV-6 both tags · DEV-7
+#   claude, other epic (ready) · DEV-1000..1599 bugs · DEV-350 claude past item 600
+#   (ready) · DEV-370 codex, open only as a `blocks` link · OPS-1 claude, other project
+jq -n '
+  [ {id: "DEV-1", tags: []}, {id: "DEV-90", tags: [], resolved: true},
+    {id: "DEV-2", parent: "DEV-1", tags: ["builder:claude"], blockers: ["DEV-90"]},
+    {id: "DEV-3", parent: "DEV-1", tags: ["builder:codex"], blockers: ["DEV-2"]},
+    {id: "DEV-4", parent: "DEV-1", tags: ["bug"]},
+    {id: "DEV-5", parent: "DEV-1", tags: ["builder:codex", "bug"]},
+    {id: "DEV-6", parent: "DEV-1", tags: ["builder:claude", "builder:codex"]},
+    {id: "DEV-7", parent: "DEV-50", tags: ["builder:claude"]},
+    {id: "OPS-1", project: "OPS", tags: ["builder:claude"]} ]
+  + [range(1000; 1600) | {id: "DEV-\(.)", tags: ["bug"]}]
+  + [ {id: "DEV-350", tags: ["builder:claude"]},
+      {id: "DEV-370", tags: ["builder:codex"], blocks: ["DEV-1000"]} ]
+  | map({project: "DEV", resolved: false} + .)' > "$F/yt.json"
+cat > "$TMP/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+cfg="$(cat)"; printf '%s\n' "$*" >> "$STUB_LOG/curl-argv"
+err() { echo "curl: (22) The requested URL returned error: $1" >&2; exit 22; }
+url=""; for a in "$@"; do case "$a" in https://*|http://*) url="$a" ;; esac; done
+case "$cfg" in *"Authorization: Bearer $YT_EXPECT_TOKEN\""*) ;; *) err 401 ;; esac
+rest="${url#https://yt.test}"; [ "$rest" != "$url" ] || err 404
+path="${rest%%\?*}"; qs=""; case "$rest" in *\?*) qs="${rest#*\?}" ;; esac
+dec() { local s="${1//+/ }"; printf '%b' "${s//%/\\x}"; }
+query=""; top=""; skip=0
+IFS='&'; for kv in $qs; do
+  k="$(dec "${kv%%=*}")"; v="${kv#*=}"
+  case "$k" in query) query="$(dec "$v")" ;; '$top') top="$v" ;; '$skip') skip="$v" ;; esac
+done; unset IFS
+[ -n "${YT_FAIL:-}" ] && case "$path $query" in *"$YT_FAIL"*) err 500 ;; esac
+[ -n "${YT_HTML:-}" ] && { echo '<!doctype html><html><body>YouTrack</body></html>'; exit 0; }
+canon() { jq -rn --arg i "$1" '$i | ascii_upcase | capture("^(?<k>[A-Z][A-Z0-9_]*)-0*(?<n>[0-9]+)$") | "\(.k)-\(.n)"'; }
+case "$path" in
+  /api/issueLinkTypes)
+    if [ -n "${YT_NO_BLOCKS:-}" ]; then echo '[{"sourceToTarget":"is required for","targetToSource":"depends on"}]'
+    else echo '[{"sourceToTarget":"relates to","targetToSource":""},{"sourceToTarget":"is required for","targetToSource":"depends on"},{"sourceToTarget":"blocks","targetToSource":"blocked by"}]'; fi ;;
+  /api/issues/*)
+    id="$(canon "${path#/api/issues/}")" || err 404
+    out="$(jq --arg i "$id" '.[] | select(.id == $i) | {idReadable: .id, resolved: (if .resolved then 1 else null end), tags: [.tags[] | {name: .}]}' "$YT_DB")"
+    [ -n "$out" ] || err 404; printf '%s\n' "$out" ;;
+  /api/issues)
+    [ -n "$top" ] || top="${YT_DEFAULT_TOP:-500}"              # the silent cap (500 measured; other builds differ)
+    case "$query" in *tag:*) err 400 ;; esac
+    re_list='^(project: ([^ ]+) )?(subtask of: ([^ ]+) )?#Unresolved sort by: created asc$'
+    re_block='^(is required for|blocks): ([^ ]+) #Unresolved$'
+    re_other='^[a-z][a-z ]*: [^ ]+ #Unresolved$'            # an unknown link name: YouTrack searches it as text
+    if [ -n "${YT_NO_BLOCKS:-}" ] && [[ $query == blocks:* ]]; then echo '[]'; exit 0; fi
+    if [[ $query =~ $re_list ]]; then
+      sel="$(jq --arg p "${BASH_REMATCH[2]}" --arg e "${BASH_REMATCH[4]}" \
+        '[.[] | select(.resolved | not) | select($p == "" or .project == $p) | select($e == "" or .parent == $e)]' "$YT_DB")"
+    elif [[ $query =~ $re_block ]]; then
+      field=blockers; [ "${BASH_REMATCH[1]}" = blocks ] && field=blocks; id="${BASH_REMATCH[2]}"
+      jq -e --arg i "$id" 'any(.[]; .id == $i)' "$YT_DB" >/dev/null || err 400
+      sel="$(jq --arg i "$id" --arg f "$field" '. as $db | [(.[] | select(.id == $i) | .[$f] // [])[] as $b | $db[] | select(.id == $b and (.resolved | not))]' "$YT_DB")"
+    elif [[ $query =~ $re_other ]]; then sel='[]'                   # measured: no 400, a text search that finds nothing
+    else err 400; fi
+    [ -n "${YT_FAIL_PAGE2:-}" ] && [ "$skip" -ge 100 ] && case "$query" in *"$YT_FAIL_PAGE2"*) err 502 ;; esac
+    printf '%s' "$sel" | jq --argjson s "$skip" --argjson t "$top" '[.[$s:($s + $t)][] | {idReadable: .id, tags: [.tags[] | {name: .}]}]' ;;
+  *) err 404 ;;
+esac
+EOF
+chmod +x "$TMP/bin/curl"
+export YOUTRACK_URL=https://yt.test YOUTRACK_TOKEN_VAR=YT_TOK YT_TOK='perm:dGVzdA==.NDQtMQ==.AbC123' YT_DB="$F/yt.json"
+export YT_EXPECT_TOKEN="$YT_TOK"
+yt() { bash "$TW" --tracker youtrack "$@"; }
+ytids() { printf '%s\n' "$1" | sed -n 's/^\([A-Z][A-Z0-9_]*-[0-9]*\) builder.*/\1/p' | tr '\n' ' '; }
+git remote set-head origin -d >/dev/null 2>&1 || true   # origin/HEAD unset, as in a repo made with `remote add`
+WT0="$(git worktree list | wc -l)"; rm -f "$STUB_LOG/fetches"
+
+# Y1. no origin/HEAD and no --base → refused, naming the way out
+yt --dry-run --epic DEV-1 >/dev/null 2>"$TMP/err"; rc=$?
+check "youtrack: origin/HEAD unset, no --base → rc 2 naming --base" '[ $rc -eq 2 ] && grep -q -- "--base" "$TMP/err" && grep -q "set-head" "$TMP/err"'
+git remote set-head origin main >/dev/null
+
+# Y2. the epic's ready set: DEV-2 and DEV-5 — not DEV-3 (open blocker), DEV-4 (no tag), DEV-7 (other epic)
+out="$(yt --dry-run --epic DEV-1)"; rc=$?
+check "youtrack --epic DEV-1: ready set exactly DEV-2 DEV-5" '[ $rc -eq 0 ] && [ "$(ytids "$out")" = "DEV-2 DEV-5 " ]'
+check "youtrack: both builder tags → skipped with a message" 'printf "%s" "$out" | grep -q "DEV-6 has both builder"'
+check "youtrack: claude gets /task-flow:task DEV-2" 'printf "%s" "$out" | grep -qF "claude /task-flow:task\\ DEV-2"'
+check "youtrack: codex gets \$task-flow:task DEV-5" 'printf "%s" "$out" | grep -qF "codex \\\$task-flow:task\\ DEV-5"'
+check "youtrack: worktree lab-DEV-2 on task-DEV-2" 'printf "%s" "$out" | grep -qF "lab-DEV-2 -b task-DEV-2 origin/main"'
+check "youtrack dry run: no worktree, no session, no fetch" '[ "$(git worktree list | wc -l)" -eq "$WT0" ] && ! tmux has-session -t =wave-lab 2>/dev/null && [ "$(fetches)" = 0 ]'
+
+# Y3. --project pages past the silent 500 cap: DEV-350 is item ~610
+out="$(yt --dry-run --project DEV)"; rc=$?
+check "youtrack --project DEV: DEV-2 DEV-5 DEV-7 DEV-350 DEV-370 (past item 500)" '[ $rc -eq 0 ] && [ "$(ytids "$out")" = "DEV-2 DEV-5 DEV-7 DEV-350 DEV-370 " ]'
+out="$(YT_DEFAULT_TOP=42 yt --dry-run --project DEV)"
+check "youtrack: a server whose default page is 42, not 500 — same ready set (\$top is always sent)" '[ "$(ytids "$out")" = "DEV-2 DEV-5 DEV-7 DEV-350 DEV-370 " ]'
+out="$(yt --dry-run --project DEV --epic DEV-1)"
+check "youtrack --project + --epic: both apply" '[ "$(ytids "$out")" = "DEV-2 DEV-5 " ]'
+yt --dry-run >/dev/null 2>"$TMP/err"; rc=$?
+check "youtrack without --project or --epic → rc 2" '[ $rc -eq 2 ] && grep -q -- "--project" "$TMP/err"'
+
+# Y4. blocker link names come from YOUTRACK_BLOCKER_LINKS; an unknown name is a stop
+out="$(YOUTRACK_BLOCKER_LINKS='is required for;blocks' yt --dry-run --project DEV)"; rc=$?
+check "youtrack: with 'blocks' as a blocker link DEV-370 is not ready" '[ $rc -eq 0 ] && [ "$(ytids "$out")" = "DEV-2 DEV-5 DEV-7 DEV-350 " ]'
+YOUTRACK_BLOCKER_LINKS='precedes' yt --dry-run --epic DEV-1 >/dev/null 2>"$TMP/err"; rc=$?
+check "youtrack: a link name the instance does not have → rc 2, not a text search that finds no blocker" '[ $rc -eq 2 ] && grep -q "not a link name on this instance" "$TMP/err"'
+YT_NO_BLOCKS=1 YOUTRACK_BLOCKER_LINKS='is required for;blocks' yt --dry-run --project DEV >/dev/null 2>"$TMP/err"; rc=$?
+check "youtrack: 'blocks' on an instance without a Blocks link type → rc 2" '[ $rc -eq 2 ] && grep -q "blocks" "$TMP/err"'
+YT_FAIL=issueLinkTypes yt --dry-run --epic DEV-1 >/dev/null 2>&1; rc=$?
+check "youtrack: link types unreadable → rc 2" '[ $rc -eq 2 ]'
+
+# Y5. configuration refusals happen before any request
+for c in "YOUTRACK_URL=" "YOUTRACK_URL=http://yt.test" "YOUTRACK_TOKEN_VAR=NO_SUCH_VAR" "YOUTRACK_TOKEN_VAR=bad-name" "YT_TOK=a\"b" "YT_TOK=a b"; do
+  rm -f "$STUB_LOG/curl-argv"
+  env "$c" bash "$TW" --tracker youtrack --dry-run --epic DEV-1 >/dev/null 2>"$TMP/err"; rc=$?
+  check "youtrack: $c → rc 2 before any request" '[ $rc -eq 2 ] && [ ! -s "$STUB_LOG/curl-argv" ] && grep -q "task-wave:" "$TMP/err"'
+done
+YOUTRACK_TOKEN_VAR=NO_SUCH_VAR bash "$TW" --tracker youtrack --dry-run --epic DEV-1 >/dev/null 2>"$TMP/err"
+check "youtrack: an unset token variable is named as empty" 'grep -q "NO_SUCH_VAR is empty" "$TMP/err"'
+TASK_WAVE_TRACKER=jira bash "$TW" --dry-run >/dev/null 2>&1; rc=$?
+check "an unknown tracker → rc 2" '[ $rc -eq 2 ]'
+out="$(TASK_WAVE_TRACKER=youtrack bash "$TW" --dry-run --epic DEV-1)"
+check "TASK_WAVE_TRACKER=youtrack selects the adapter" '[ "$(ytids "$out")" = "DEV-2 DEV-5 " ]'
+bash "$TW" --dry-run --epic DEV-1 >/dev/null 2>&1; rc=$?
+check "--epic is refused on the github tracker" '[ $rc -eq 2 ]'
+
+# Y6. the token never reaches argv; it travels in the --config on stdin
+rm -f "$STUB_LOG/curl-argv"; yt --dry-run --epic DEV-1 >/dev/null
+check "youtrack: curl was called, token not in its argv" '[ -s "$STUB_LOG/curl-argv" ] && ! grep -qF "$YT_TOK" "$STUB_LOG/curl-argv" && ! grep -q "Authorization" "$STUB_LOG/curl-argv"'
+
+# Y7. every unreadable answer stops the run (rc 2), never reads as "none" or "ready"
+for f in "#Unresolved sort by" "is required for: DEV-5"; do
+  YT_FAIL="$f" yt --dry-run --epic DEV-1 >/dev/null 2>"$TMP/err"; rc=$?
+  check "youtrack: failure on '$f' → rc 2" '[ $rc -eq 2 ] && grep -q "task-wave:" "$TMP/err"'
+done
+YT_FAIL_PAGE2='project: DEV' yt --dry-run --project DEV >/dev/null 2>"$TMP/err"; rc=$?
+check "youtrack: the list fails on page 2 → rc 2" '[ $rc -eq 2 ]'
+YT_HTML=1 yt --dry-run --epic DEV-1 >/dev/null 2>"$TMP/err"; rc=$?
+check "youtrack: an HTML page (wrong base URL) → rc 2 naming YOUTRACK_URL" '[ $rc -eq 2 ] && grep -q "YOUTRACK_URL" "$TMP/err"'
+
+# Y8. explicit ids: canonical from the server, deduplicated; unknown → stop; readiness not checked
+out="$(yt --dry-run dev-5 DEV-05 DEV-5)"; rc=$?
+check "youtrack: 'dev-5 DEV-05 DEV-5' → one plan entry DEV-5" '[ $rc -eq 0 ] && [ "$(ytids "$out")" = "DEV-5 " ]'
+out="$(yt --dry-run DEV-3)"
+check "youtrack: an explicit id is planned even when blocked" '[ "$(ytids "$out")" = "DEV-3 " ]'
+out="$(yt --dry-run DEV-4)"
+check "youtrack: explicit DEV-4 without a builder tag → skipped" 'printf "%s" "$out" | grep -q "DEV-4 has no builder"'
+yt --dry-run DEV-9999 >/dev/null 2>"$TMP/err"; rc=$?
+check "youtrack: an unknown id → rc 2" '[ $rc -eq 2 ] && grep -q "DEV-9999" "$TMP/err"'
+yt --dry-run 42 >/dev/null 2>&1; rc=$?
+check "youtrack: '42' is not a YouTrack id → rc 2" '[ $rc -eq 2 ]'
+
+# Y9. youtrack needs curl and jq, not gh
+mkdir -p "$TMP/nocurl" "$TMP/nogh"
+for c in jq dirname basename bash awk sort seq sed tr wc tmux; do ln -sf "$(command -v $c)" "$TMP/nocurl/$c"; done
+ln -sf "$TMP/bin/git" "$TMP/nocurl/git"
+PATH="$TMP/nocurl" "$TMP/nocurl/bash" "$TW" --tracker youtrack --dry-run --epic DEV-1 >/dev/null 2>"$TMP/err"; rc=$?
+check "youtrack without curl → rc 2" '[ $rc -eq 2 ] && grep -q "curl is not on PATH" "$TMP/err"'
+for c in jq dirname basename bash awk sort seq sed tr wc tmux cat; do ln -sf "$(command -v $c)" "$TMP/nogh/$c"; done
+ln -sf "$TMP/bin/git" "$TMP/nogh/git"; ln -sf "$TMP/bin/curl" "$TMP/nogh/curl"
+out="$(PATH="$TMP/nogh" "$TMP/nogh/bash" "$TW" --tracker youtrack --dry-run --epic DEV-1)"; rc=$?
+check "youtrack without gh on PATH → works" '[ $rc -eq 0 ] && [ "$(ytids "$out")" = "DEV-2 DEV-5 " ]'
+
+# Y10. the real run: worktrees from origin/HEAD, windows named by id, the prompt byte-exact
+rm -f "$STUB_LOG/fetches"
+yt --epic DEV-1 > "$TMP/run.out"; rc=$?
+check "youtrack run exits 0, one fetch" '[ $rc -eq 0 ] && [ "$(fetches)" = 1 ]'
+check "youtrack: worktrees lab-DEV-2 / lab-DEV-5 on task-DEV-2 / task-DEV-5 at origin/main" '[ "$(git -C "$TMP/w/lab-DEV-2" branch --show-current)" = task-DEV-2 ] && [ "$(git -C "$TMP/w/lab-DEV-5" branch --show-current)" = task-DEV-5 ] && [ "$(git -C "$TMP/w/lab-DEV-2" rev-parse HEAD)" = "$MAIN_SHA" ]'
+check "youtrack: windows DEV-2 and DEV-5" '[ "$(tmux list-windows -t =wave-lab -F "#{window_name}" | sort | tr "\n" " ")" = "DEV-2 DEV-5 " ]'
+for i in $(seq 1 20); do [ -s "$STUB_LOG/claude-lab-DEV-2" ] && [ -s "$STUB_LOG/codex-lab-DEV-5" ] && break; sleep 0.3; done
+check "youtrack: claude ran in lab-DEV-2 with /task-flow:task DEV-2" '[ "$(sed -n 1p "$STUB_LOG/claude-lab-DEV-2")" = "$TMP/w/lab-DEV-2" ] && [ "$(sed -n 2p "$STUB_LOG/claude-lab-DEV-2")" = "/task-flow:task DEV-2" ]'
+check "youtrack: codex ran in lab-DEV-5 with \$task-flow:task DEV-5" '[ "$(sed -n 2p "$STUB_LOG/codex-lab-DEV-5")" = "\$task-flow:task DEV-5" ]'
+
+# Y11. a live window is matched on its whole name: DEV-2 running does not hide DEV-25,
+#      and dev-02 is DEV-2, already running
+out="$(yt dev-02)"
+check "youtrack: dev-02 is DEV-2, already running → not started again" 'printf "%s" "$out" | grep -q "DEV-2 is already running"'
+tmux kill-window -t "=wave-lab:DEV-2"; tmux new-window -t "=wave-lab" -n DEV-25 "sleep 60"
+out="$(yt --dry-run DEV-2)"
+check "youtrack: a live DEV-25 window does not count as DEV-2" '! printf "%s" "$out" | grep -q "already running" && printf "%s" "$out" | grep -q "exists — resuming"'
+tmux kill-server >/dev/null 2>&1 || true
+
+# Y12. --base still wins over origin/HEAD
+out="$(yt --dry-run --base develop DEV-7)"
+check "youtrack: --base develop → a new worktree from origin/develop" 'printf "%s" "$out" | grep -qF "lab-DEV-7 -b task-DEV-7 origin/develop"'
+
 echo "tests/task-wave: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
