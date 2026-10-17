@@ -28,7 +28,8 @@ F="$TMP/fx"; mkdir -p "$F"
 jq -n '
   [range(1000;1150) | {number: ., labels: [{name: "builder:claude"}]}]
   + [range(400;460) | {number: ., labels: [{name: "bug"}]}]
-  + [{number: 370, labels: [{name: "builder:codex"}]},
+  + [{number: 380, labels: [{name: "builder:claude"}, {name: "builder:codex"}]},
+     {number: 370, labels: [{name: "builder:codex"}]},
      {number: 360, labels: [{name: "builder:claude"}]},
      {number: 350, labels: [{name: "builder:claude"}]},
      {number: 7, labels: [{name: "builder:claude"}], pull_request: {url: "x"}},
@@ -42,7 +43,8 @@ echo '[]' > "$F/blocked-5.json"; echo '[]' > "$F/blocked-350.json"
 jq -n '[range(0;105) | {number: (2000 + .), state: "closed"}] + [{number: 2105, state: "open"}]' > "$F/blocked-360.json"
 jq -n '[range(0;120) | {number: (3000 + .), state: "closed"}]' > "$F/blocked-370.json"
 for n in $(seq 1000 1149); do echo '[{"number":9,"state":"open"}]' > "$F/blocked-$n.json"; done
-for n in 2 3 4 5 350 360 370; do jq "{labels: (.[] | select(.number == $n) | .labels)}" "$F/open.json" > "$F/issue-$n.json"; done
+echo '[]' > "$F/blocked-380.json"
+for n in 2 3 4 5 350 360 370 380; do jq "{labels: (.[] | select(.number == $n) | .labels)}" "$F/open.json" > "$F/issue-$n.json"; done
 echo '{"nameWithOwner":"o/lab","defaultBranchRef":{"name":"main"}}' > "$F/repo.json"
 
 mkdir -p "$TMP/bin" "$TMP/log"
@@ -113,6 +115,10 @@ check "dry run: no worktree, no tmux session, no fetch" '[ "$(git worktree list 
 
 # 2. an explicit issue without a builder label is skipped; a non-number is refused
 out="$(bash "$TW" --dry-run 4)"
+check "#380 with both builder labels is not in the ready set" '! printf "%s" "$(bash "$TW" --dry-run)" | grep -q "^#380 "'
+out="$(bash "$TW" --dry-run 380)"
+check "explicit #380 with both builder labels → skipped, not guessed" 'printf "%s" "$out" | grep -q "#380 has both builder labels"'
+out="$(bash "$TW" --dry-run 4)"
 check "explicit #4 without builder label → skipped" 'printf "%s" "$out" | grep -q "#4 has no builder"'
 bash "$TW" --dry-run abc >/dev/null 2>&1; rc=$?
 check "a non-number argument → rc 2" '[ $rc -eq 2 ]'
@@ -132,6 +138,18 @@ for c in gh jq dirname basename bash awk sort seq sed tr wc; do ln -sf "$(comman
 ln -sf "$TMP/bin/git" "$TMP/notmux/git"
 PATH="$TMP/notmux" "$TMP/notmux/bash" "$TW" 2 >/dev/null 2>"$TMP/err"; rc=$?
 check "no tmux → rc 2, no worktree, no fetch" '[ $rc -eq 2 ] && grep -q "tmux is not on PATH" "$TMP/err" && [ "$(git worktree list | wc -l)" -eq 1 ] && [ "$(fetches)" = 0 ]'
+
+# 4b. a wave that needs a harness not on PATH → refused before fetch, worktree or window
+mkdir -p "$TMP/nocodex"
+for c in gh jq dirname basename bash awk sort seq sed tr wc tmux; do ln -sf "$(command -v $c)" "$TMP/nocodex/$c"; done
+ln -sf "$TMP/bin/git" "$TMP/nocodex/git"; ln -sf "$TMP/bin/claude" "$TMP/nocodex/claude"
+PATH="$TMP/nocodex" "$TMP/nocodex/bash" "$TW" 2 5 >/dev/null 2>"$TMP/err"; rc=$?
+check "codex missing for #5 → rc 2, #2 not started, no fetch" '[ $rc -eq 2 ] && grep -q "not on PATH: codex" "$TMP/err" && [ ! -e "$TMP/w/lab-2" ] && ! tmux has-session -t =wave-lab 2>/dev/null && [ "$(fetches)" = 0 ]'
+out="$(PATH="$TMP/nocodex" "$TMP/nocodex/bash" "$TW" --dry-run 2 5)"; rc=$?
+check "dry run names the missing harness and still exits 0" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -q "the real run will refuse"'
+PATH="$TMP/nocodex" "$TMP/nocodex/bash" "$TW" 2 >/dev/null 2>&1; rc=$?
+check "a wave needing only claude starts without codex installed" '[ $rc -eq 0 ] && [ -d "$TMP/w/lab-2" ]'
+tmux kill-server >/dev/null 2>&1 || true; git worktree remove --force "$TMP/w/lab-2"; git branch -q -D task-2; rm -f "$STUB_LOG/fetches" "$STUB_LOG/claude-lab-2"
 
 # 5. a directory at a task's worktree path that is not this repo's worktree on task-<N> → refused, nothing started
 mkdir -p "$TMP/w/lab-5"

@@ -63,14 +63,15 @@ our_worktree() {
 
 # Plan every task first; anything that cannot be started safely stops the run
 # before a single worktree or window exists.
-plan_n=(); plan_wt=(); plan_mode=(); plan_cmd=()
+plan_n=(); plan_wt=(); plan_mode=(); plan_cmd=(); need_claude=0; need_codex=0
 for n in "${issues[@]}"; do
-  builder="$(gh issue view "$n" --json labels -q '[.labels[].name | select(. == "builder:claude" or . == "builder:codex")][0] // ""')" \
+  builder="$(gh issue view "$n" --json labels -q '[.labels[].name | select(. == "builder:claude" or . == "builder:codex")] | unique | join(" ")')" \
     || die "gh cannot read #$n"
   case "$builder" in
-    builder:claude) cmd="claude $(printf %q "/task-flow:task #$n")" ;;
-    builder:codex)  cmd="codex $(printf %q "\$task-flow:task #$n")" ;;
-    *) echo "task-wave: #$n has no builder:claude or builder:codex label — skipped"; continue ;;
+    builder:claude) cmd="claude $(printf %q "/task-flow:task #$n")"; need_claude=1 ;;
+    builder:codex)  cmd="codex $(printf %q "\$task-flow:task #$n")"; need_codex=1 ;;
+    "") echo "task-wave: #$n has no builder:claude or builder:codex label — skipped"; continue ;;
+    *)  echo "task-wave: #$n has both builder labels — skipped (keep one)"; continue ;;
   esac
   wt="$(dirname "$root")/$name-$n"; br="task-$n"
   if [ -e "$wt" ]; then
@@ -85,6 +86,15 @@ for n in "${issues[@]}"; do
   plan_n+=("$n"); plan_wt+=("$wt"); plan_mode+=("$mode"); plan_cmd+=("$cmd")
 done
 [ ${#plan_n[@]} -gt 0 ] || exit 0
+# A window whose CLI is missing would close at once with "command not found",
+# after the worktree exists — check the harnesses this wave needs before anything.
+missing=""
+[ $need_claude = 1 ] && ! command -v claude >/dev/null && missing="$missing claude"
+[ $need_codex = 1 ] && ! command -v codex >/dev/null && missing="$missing codex"
+if [ -n "$missing" ]; then
+  [ $dry = 1 ] || die "not on PATH:$missing — install it, or relabel those tasks"
+  echo "task-wave: not on PATH:$missing — the real run will refuse"
+fi
 [ $dry = 1 ] && { echo "task-wave: dry run — nothing created"; exit 0; }
 
 git -C "$root" fetch -q origin "$base" || die "cannot fetch origin/$base"
