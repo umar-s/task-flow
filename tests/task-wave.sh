@@ -87,7 +87,7 @@ case "$2" in
   *) echo "gh stub: unexpected api: $2" >&2; exit 3 ;;
 esac
 EOF
-printf '#!/usr/bin/env bash\ncase " $* " in *" fetch "*) echo fetch >> "$STUB_LOG/fetches" ;; *" ls-remote "*) [ -n "${GIT_LSREMOTE_FAIL:-}" ] && { echo "fatal: Could not read from remote repository." >&2; exit 128; } ;; esac\nexec %q "$@"\n' "$REAL_GIT" > "$TMP/bin/git"
+printf '#!/usr/bin/env bash\ncase " $* " in *" fetch "*) echo fetch >> "$STUB_LOG/fetches" ;; *" ls-remote "*) [ -n "${GIT_LSREMOTE_FAIL:-}" ] && { echo "fatal: Could not read from remote repository." >&2; exit 128; }; [ -n "${GIT_LSREMOTE_OUT+set}" ] && { printf "%%b" "$GIT_LSREMOTE_OUT"; exit 0; } ;; esac\nexec %q "$@"\n' "$REAL_GIT" > "$TMP/bin/git"
 # the stub CLIs' interpreter lives only in $TMP/bin, as node lives in nvm's bin for
 # the real ones (`#!/usr/bin/env node`): a window without the launcher's PATH cannot run them
 for a in claude codex; do
@@ -374,6 +374,10 @@ out="$(yt --dry-run --epic DEV-1 2>"$TMP/err")"; rc=$?
 check "youtrack: a stale local origin/HEAD (develop) is not the base — origin/main is, and the run says so" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -qF "lab-DEV-2 -b task-DEV-2 origin/main" && grep -q "stale" "$TMP/err"'
 GIT_LSREMOTE_FAIL=1 yt --dry-run --epic DEV-1 >/dev/null 2>"$TMP/err"; rc=$?
 check "youtrack: the remote cannot say its default branch → rc 2 naming --base, no guess from origin/HEAD" '[ $rc -eq 2 ] && grep -q -- "--base" "$TMP/err"'
+for o in '' "$(git rev-parse origin/main)\\tHEAD\\n"; do
+  GIT_LSREMOTE_OUT="$o" yt --dry-run --epic DEV-1 >"$TMP/out" 2>"$TMP/err"; rc=$?
+  check "youtrack: origin answers without a symbolic HEAD ('${o:0:7}…') → rc 2 naming --base, nothing planned" '[ $rc -eq 2 ] && grep -q "names no default branch" "$TMP/err" && ! grep -q "^DEV-" "$TMP/out"'
+done
 out="$(GIT_LSREMOTE_FAIL=1 yt --dry-run --base develop --epic DEV-1)"; rc=$?
 check "youtrack: --base needs no remote read" '[ $rc -eq 0 ] && printf "%s" "$out" | grep -qF "origin/develop"'
 git remote set-head origin main >/dev/null

@@ -30,13 +30,20 @@ download.
 - `--help` printed one line short after the help text grew a line.
 
 ### Tests
-- `tests/task-wave.sh`: 105 controls (1.14.0 had 102).
+- `tests/task-wave.sh`: 107 controls (1.14.0 had 102).
   - Y1 used to pin "no local `origin/HEAD` → rc 2" and now checks the base
     against the remote.
-  - New controls: a local `origin/HEAD` on `develop` while the remote's default
-    is `main` (the base is `main`, and the stale pointer is named); a remote
-    that cannot be asked (rc 2); `--base` with no remote read.
-  - The mutation "use the local pointer" is caught.
+  - New controls:
+    - a local `origin/HEAD` on `develop` while the remote's default is `main`:
+      the base is `main`, and the stale pointer is named;
+    - a remote that cannot be asked: rc 2;
+    - a remote that answers without a symbolic HEAD (an empty answer, or
+      `<sha>\tHEAD` alone): rc 2, nothing planned. Codex's review asked for
+      this one;
+    - `--base` with no remote read.
+  - Mutations "use the local pointer" and "accept an empty answer" are caught.
+- Codex review through `xreview.sh`, two rounds. The first found the untested
+  empty-answer guard; the spec's DoD-8 and E10 are amended to the new base rule.
 - Live, read-only, in a clone whose `origin/HEAD` named a feature branch: the
   base came out as `main`, and the note named the stale pointer.
 
