@@ -167,6 +167,15 @@ bash "$TW" 2 5 >/dev/null 2>"$TMP/err"; rc=$?
 check "task-5 held by another worktree → rc 2, #2 not started, no fetch" '[ $rc -eq 2 ] && grep -q "task-5 is checked out at" "$TMP/err" && [ ! -e "$TMP/w/lab-2" ] && ! tmux has-session -t =wave-lab 2>/dev/null && [ "$(fetches)" = 0 ]'
 git worktree remove --force "$TMP/w/elsewhere"; git branch -q -D task-5
 
+# 5c. a number named twice → one plan entry, one window, one launch (new worktree, then resumed)
+bash "$TW" 2 2 >/dev/null 2>&1; rc=$?
+check "'2 2' on a new worktree → one window, one claude launch" '[ $rc -eq 0 ] && [ "$(tmux list-windows -t =wave-lab | wc -l)" -eq 1 ] && [ "$(wc -l < "$STUB_LOG/launches-claude-lab-2")" -eq 1 ]'
+tmux kill-server >/dev/null 2>&1 || true
+bash "$TW" 2 '#2' >/dev/null 2>&1; rc=$?
+check "'2 #2' on the existing worktree → one window, one more launch" '[ $rc -eq 0 ] && [ "$(tmux list-windows -t =wave-lab | wc -l)" -eq 1 ] && [ "$(wc -l < "$STUB_LOG/launches-claude-lab-2")" -eq 2 ]'
+tmux kill-server >/dev/null 2>&1 || true; git worktree remove --force "$TMP/w/lab-2"; git branch -q -D task-2
+rm -f "$STUB_LOG/fetches" "$STUB_LOG/claude-lab-2" "$STUB_LOG/launches-claude-lab-2"
+
 # 6. the real run: one worktree per task from origin/main, one tmux window each, the right CLI and prompt
 bash "$TW" 2 5 > "$TMP/run.out"; rc=$?
 check "run exits 0, one fetch, names the session" '[ $rc -eq 0 ] && [ "$(fetches)" = 1 ] && grep -q "tmux attach -t wave-lab" "$TMP/run.out"'

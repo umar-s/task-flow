@@ -47,6 +47,8 @@ one interactive tmux window per task, Claude Code or Codex by the issue's
     is not started again (no second agent in one checkout); a `task-<N>` branch
     checked out in a worktree other than `../<repo>-<N>` is refused in the plan,
     before fetch, worktree or window.
+16. Round 5 fix holds: an issue number given twice (`2 2`, `2 #2`) is planned
+    once — one window, one launch — for a new and for a resumed worktree.
 
 ## Premortem edges
 
@@ -74,3 +76,4 @@ Imagined failures of the launcher, each mapped to the control in
 | E17 | Launched from inside an existing tmux session | Exclusion: `new-session -d` and `-t =wave-<repo>` work the same from inside tmux; the controls run with `TMUX` unset on a private server |
 | E18 | GitHub without the blocked-by API (older GHES) | covered by E3: the blocker read fails → rc 2, never "ready"; README names GitHub Issues as the tracker |
 | E19 | `task-N` is checked out in another worktree; `git worktree add` fails mid-run and the wave starts half-way | case 5b: refused in the plan, #2 not started, no fetch |
+| E20 | The same issue named twice on the command line starts two agents in one checkout | case 5c: `2 2` (new worktree) and `2 #2` (resumed) → one window, one launch |

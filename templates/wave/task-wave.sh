@@ -52,6 +52,14 @@ if [ ${#issues[@]} -eq 0 ]; then
   [ ${#issues[@]} -gt 0 ] || { echo "task-wave: no ready task in $repo (open, builder:claude|codex label, no open blocker)"; exit 0; }
 fi
 
+# One entry per issue: a number named twice must not get two agents in one checkout.
+uniq_issues=(); seen=" "
+for n in "${issues[@]}"; do
+  case "$seen" in *" $n "*) continue ;; esac
+  seen="$seen$n "; uniq_issues+=("$n")
+done
+issues=("${uniq_issues[@]}")
+
 # Is $1 a worktree of this repository, checked out on branch $2? (canonical paths)
 our_worktree() {
   local want; want="$(cd "$1" && pwd -P)"
